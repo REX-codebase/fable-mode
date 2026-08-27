@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+sessions/
+*.tmp
+.DS_Store
+Thumbs.db

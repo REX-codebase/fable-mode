@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradients -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#090D16" />
+      <stop offset="100%" stop-color="#030712" />
+    </radialGradient>
+    
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.5" />
+      <stop offset="40%" stop-color="#06B6D4" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#030712" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <linearGradient id="neonPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="50%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+
+    <linearGradient id="neonPink" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F43F5E" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <linearGradient id="badgeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0.1" />
+    </linearGradient>
+
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#E0E7FF" />
+      <stop offset="70%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <!-- Glow Filters -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Grid Pattern -->
+    <pattern id="cyberGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1E293B" stroke-width="0.75" stroke-opacity="0.4" />
+      <circle cx="40" cy="40" r="1" fill="#38BDF8" fill-opacity="0.3" />
+    </pattern>
+
+    <!-- Animations -->
+    <style>
+      @keyframes pulseGlow {
+        0%, 100% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(1.08); }
+      }
+      @keyframes rotateOrbit {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes counterRotate {
+        from { transform: rotate(360deg); }
+        to { transform: rotate(0deg); }
+      }
+      @keyframes scanline {
+        0% { transform: translateY(-100px); opacity: 0; }
+        50% { opacity: 0.7; }
+        100% { transform: translateY(450px); opacity: 0; }
+      }
+      @keyframes dashFlow {
+        to { stroke-dashoffset: -40; }
+      }
+      @keyframes floatSlow {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+      }
+      @keyframes ping {
+        0% { r: 6px; opacity: 1; }
+        100% { r: 24px; opacity: 0; }
+      }
+      .pulse-core { transform-origin: 980px 210px; animation: pulseGlow 4s ease-in-out infinite; }
+      .orbit-ring1 { transform-origin: 980px 210px; animation: rotateOrbit 24s linear infinite; }
+      .orbit-ring2 { transform-origin: 980px 210px; animation: counterRotate 18s linear infinite; }
+      .orbit-ring3 { transform-origin: 980px 210px; animation: rotateOrbit 12s linear infinite; }
+      .scan-beam { animation: scanline 8s ease-in-out infinite; }
+      .data-stream { stroke-dasharray: 6, 6; animation: dashFlow 2s linear infinite; }
+      .floating-badge { animation: floatSlow 5s ease-in-out infinite; }
+      .sonar-pulse { transform-origin: 980px 210px; animation: ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
+    </style>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1200" height="420" fill="url(#bgGrad)" />
+  <rect width="1200" height="420" fill="url(#cyberGrid)" />
+
+  <!-- Ambient Light Orbs -->
+  <circle cx="980" cy="210" r="320" fill="url(#coreGlow)" />
+  <circle cx="150" cy="80" r="220" fill="#6366F1" fill-opacity="0.08" filter="url(#softGlow)" />
+  <circle cx="500" cy="380" r="180" fill="#06B6D4" fill-opacity="0.06" filter="url(#softGlow)" />
+
+  <!-- Scanning Cyber Beam -->
+  <line x1="0" y1="0" x2="1200" y2="0" stroke="url(#neonCyan)" stroke-width="1.5" opacity="0.3" class="scan-beam" />
+
+  <!-- Left Content Area -->
+  <g transform="translate(70, 0)">
+    
+    <!-- Top Meta Category Tag -->
+    <g transform="translate(0, 58)">
+      <rect width="280" height="30" rx="15" fill="#1E1B4B" fill-opacity="0.7" stroke="url(#badgeBorder)" stroke-width="1" />
+      <circle cx="15" cy="15" r="4" fill="#38BDF8" />
+      <circle cx="15" cy="15" r="4" fill="#38BDF8" class="sonar-pulse" />
+      <text x="28" y="19.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" fill="#38BDF8" letter-spacing="1.5">FRONTIER COGNITIVE MCP</text>
+    </g>
+
+    <!-- Main Title -->
+    <g transform="translate(0, 140)">
+      <text x="0" y="0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif" font-size="64" font-weight="900" fill="url(#textGrad)" letter-spacing="-1.5">FABLE-MODE</text>
+      <!-- Sub-headline Pill / Badge -->
+      <g transform="translate(430, -48)">
+        <rect width="90" height="24" rx="6" fill="#8B5CF6" fill-opacity="0.25" stroke="#A855F7" stroke-width="1" />
+        <text x="45" y="16" font-family="monospace" font-size="11" font-weight="800" fill="#E9D5FF" text-anchor="middle">v1.1.0 PRO</text>
+      </g>
+    </g>
+
+    <!-- Punchy Tagline -->
+    <text x="0" y="180" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="#F8FAFC" letter-spacing="-0.2">
+      Deterministic System 2 Deliberation &amp; Fleet Orchestrator
+    </text>
+
+    <!-- Value Proposition Subtext -->
+    <text x="0" y="215" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="400" fill="#94A3B8">
+      Replaces hallucinated MCTS trees with <tspan fill="#38BDF8" font-weight="600">hard mechanical time-locks</tspan>,
+    </text>
+    <text x="0" y="238" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="400" fill="#94A3B8">
+      <tspan fill="#C084FC" font-weight="600">8-pass recursive `&lt;thinking&gt;` chains</tspan>, and continuous invariant verification.
+    </text>
+
+    <!-- Feature Telemetry Badges / Capability Matrix -->
+    <g transform="translate(0, 275)">
+      <!-- Badge 1: Time Lock -->
+      <g class="floating-badge">
+        <rect width="180" height="42" rx="8" fill="#0F172A" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
+        <rect width="4" height="42" rx="2" fill="#EC4899" />
+        <text x="16" y="19" font-family="sans-serif" font-size="11" font-weight="700" fill="#F43F5E">HARD TIME-LOCK</text>
+        <text x="16" y="33" font-family="monospace" font-size="11" font-weight="600" fill="#E2E8F0">30m • 45m • 24h Pacing</text>
+      </g>
+
+      <!-- Badge 2: Cognitive Loop -->
+      <g transform="translate(195, 0)" class="floating-badge" style="animation-delay: -1.5s;">
+        <rect width="190" height="42" rx="8" fill="#0F172A" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
+        <rect width="4" height="42" rx="2" fill="#06B6D4" />
+        <text x="16" y="19" font-family="sans-serif" font-size="11" font-weight="700" fill="#22D3EE">RETHINK-REFINE LOOP</text>
+        <text x="16" y="33" font-family="monospace" font-size="11" font-weight="600" fill="#E2E8F0">log_refinement_cycle</text>
+      </g>
+
+      <!-- Badge 3: Epistemic Grounding -->
+      <g transform="translate(400, 0)" class="floating-badge" style="animation-delay: -3s;">
+        <rect width="195" height="42" rx="8" fill="#0F172A" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
+        <rect width="4" height="42" rx="2" fill="#10B981" />
+        <text x="16" y="19" font-family="sans-serif" font-size="11" font-weight="700" fill="#34D399">EPISTEMIC GROUNDING</text>
+        <text x="16" y="33" font-family="monospace" font-size="11" font-weight="600" fill="#E2E8F0">[PROVEN] Zero Hallucinations</text>
+      </g>
+    </g>
+
+    <!-- Bottom Metric Bar -->
+    <g transform="translate(0, 350)">
+      <text x="0" y="18" font-family="monospace" font-size="12" fill="#64748B">
+        <tspan fill="#38BDF8">⚡ 13/13 Suites Passed (1.4s)</tspan>  │  <tspan fill="#A855F7">0 External Deps (Pure Stdlib)</tspan>  │  <tspan fill="#10B981">MCP JSON-RPC 2.0</tspan>  │  <tspan fill="#F59E0B">Antigravity Certified</tspan>
+      </text>
+    </g>
+  </g>
+
+  <!-- Right Visual: The Fable System 2 Cognitive Nexus Core -->
+  <g transform="translate(0, 0)">
+    
+    <!-- Outer Invariant Constraint Ring (Dashed) -->
+    <circle cx="980" cy="210" r="160" fill="none" stroke="#334155" stroke-width="1.5" stroke-opacity="0.6" />
+    <circle cx="980" cy="210" r="160" fill="none" stroke="url(#neonPurple)" stroke-width="2" stroke-opacity="0.8" class="data-stream" />
+
+    <!-- Orbital Ring 1: Axiom & Grounding Layer -->
+    <g class="orbit-ring1">
+      <circle cx="980" cy="210" r="130" fill="none" stroke="#38BDF8" stroke-width="1" stroke-opacity="0.3" stroke-dasharray="10, 15" />
+      <circle cx="980" cy="80" r="6" fill="#38BDF8" filter="url(#glow)" />
+      <text x="995" y="85" font-family="monospace" font-size="9" fill="#38BDF8" font-weight="700">PASS 1: EPISTEMIC</text>
+      
+      <circle cx="980" cy="340" r="6" fill="#A855F7" filter="url(#glow)" />
+      <text x="995" y="345" font-family="monospace" font-size="9" fill="#A855F7" font-weight="700">PASS 4: TRIZ</text>
+    </g>
+
+    <!-- Orbital Ring 2: Concurrency & Invariant Proofs -->
+    <g class="orbit-ring2">
+      <ellipse cx="980" cy="210" rx="105" ry="105" fill="none" stroke="#EC4899" stroke-width="1.5" stroke-opacity="0.5" stroke-dasharray="8, 12" />
+      <circle cx="875" cy="210" r="5" fill="#EC4899" filter="url(#glow)" />
+      <text x="810" y="214" font-family="monospace" font-size="9" fill="#EC4899" font-weight="700">TIME-LOCK</text>
+      
+      <circle cx="1085" cy="210" r="5" fill="#10B981" filter="url(#glow)" />
+      <text x="1098" y="214" font-family="monospace" font-size="9" fill="#10B981" font-weight="700">PROOFS</text>
+    </g>
+
+    <!-- Orbital Ring 3: Fast Inner Deliberation Loop -->
+    <g class="orbit-ring3">
+      <polygon points="980,140 1040,245 920,245" fill="none" stroke="url(#neonCyan)" stroke-width="1.5" stroke-opacity="0.7" />
+    </g>
+
+    <!-- Central Glowing Hexagon & Core Reactor -->
+    <g class="pulse-core">
+      <polygon points="980,165 1020,188 1020,232 980,255 940,232 940,188" fill="#1E1B4B" fill-opacity="0.8" stroke="url(#neonPurple)" stroke-width="3" filter="url(#glow)" />
+      
+      <!-- Inner Core Glyph (Infinity / System 2 Dialectic) -->
+      <path d="M 965 210 C 965 200, 975 200, 980 210 C 985 220, 995 220, 995 210 C 995 200, 985 200, 980 210 C 975 220, 965 220, 965 210 Z" 
+            fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" filter="url(#glow)" />
+      
+      <!-- Core Energy Point -->
+      <circle cx="980" cy="210" r="4" fill="#FFFFFF" filter="url(#glow)" />
+    </g>
+
+    <!-- Floating Telemetry Badges around Core -->
+    <g transform="translate(860, 42)">
+      <rect width="115" height="22" rx="11" fill="#0B0F19" fill-opacity="0.9" stroke="#334155" stroke-width="1" />
+      <circle cx="12" cy="11" r="3" fill="#10B981" />
+      <text x="22" y="15" font-family="monospace" font-size="10" fill="#E2E8F0">can_execute: 0</text>
+    </g>
+
+    <g transform="translate(1005, 360)">
+      <rect width="130" height="22" rx="11" fill="#0B0F19" fill-opacity="0.9" stroke="#8B5CF6" stroke-width="1" />
+      <circle cx="12" cy="11" r="3" fill="#C084FC" />
+      <text x="22" y="15" font-family="monospace" font-size="10" fill="#E9D5FF">System 2 Conductor</text>
+    </g>
+
+  </g>
+
+  <!-- High-Tech Frame Border -->
+  <rect x="1" y="1" width="1198" height="418" rx="12" fill="none" stroke="#1E293B" stroke-width="1.5" />
+  <line x1="30" y1="1" x2="120" y2="1" stroke="url(#neonCyan)" stroke-width="3" />
+  <line x1="1080" y1="419" x2="1170" y2="419" stroke="url(#neonPurple)" stroke-width="3" />
+</svg>

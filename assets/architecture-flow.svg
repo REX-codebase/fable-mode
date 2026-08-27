@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 360" width="900" height="360" fill="none">
+  <defs>
+    <linearGradient id="flowBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#030712"/>
+    </linearGradient>
+    <linearGradient id="accentPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="360" rx="12" fill="url(#flowBg)" stroke="#1e293b" stroke-width="1.5"/>
+  <text x="450" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="800" fill="url(#accentPurple)">FABLE-MODE COGNITIVE PIPELINE &amp; TIME-LOCK ARCHITECTURE</text>
+  
+  <!-- Phase 1 -->
+  <g transform="translate(30, 70)">
+    <rect width="250" height="110" rx="8" fill="#0f172a" stroke="#6366f1" stroke-width="1.2"/>
+    <text x="16" y="28" font-family="sans-serif" font-size="13" font-weight="700" fill="#a5b4fc">Phase 1: Epistemic Grounding</text>
+    <text x="16" y="52" font-family="monospace" font-size="11" fill="#cbd5e1">• [PROVEN] / [HYPOTHESIS] ledgers</text>
+    <text x="16" y="72" font-family="monospace" font-size="11" fill="#cbd5e1">• Zero-unverified claims rule</text>
+    <text x="16" y="92" font-family="monospace" font-size="11" fill="#38bdf8">• Live terminal inspection allowed</text>
+  </g>
+
+  <!-- Phase 2 -->
+  <g transform="translate(325, 70)">
+    <rect width="250" height="110" rx="8" fill="#0f172a" stroke="#8b5cf6" stroke-width="1.2"/>
+    <text x="16" y="28" font-family="sans-serif" font-size="13" font-weight="700" fill="#c084fc">Phase 2: Invariants &amp; TRIZ</text>
+    <text x="16" y="52" font-family="monospace" font-size="11" fill="#cbd5e1">• Formal Invariant definitions</text>
+    <text x="16" y="72" font-family="monospace" font-size="11" fill="#cbd5e1">• 10D Trade-off Evaluation Matrix</text>
+    <text x="16" y="92" font-family="monospace" font-size="11" fill="#38bdf8">• TRIZ contradiction resolution</text>
+  </g>
+
+  <!-- Phase 3 -->
+  <g transform="translate(620, 70)">
+    <rect width="250" height="110" rx="8" fill="#0f172a" stroke="#ec4899" stroke-width="1.2"/>
+    <text x="16" y="28" font-family="sans-serif" font-size="13" font-weight="700" fill="#f472b6">Phase 3: Rethink-Refine Loop</text>
+    <text x="16" y="52" font-family="monospace" font-size="11" fill="#cbd5e1">• Continuous log_refinement_cycle</text>
+    <text x="16" y="72" font-family="monospace" font-size="11" fill="#cbd5e1">• Red-teaming &amp; AST probes</text>
+    <text x="16" y="92" font-family="monospace" font-size="11" fill="#ef4444">• Hard Time-Lock: LOCKED</text>
+  </g>
+
+  <!-- Phase 4 & 5 Bottom Row -->
+  <g transform="translate(180, 210)">
+    <rect width="250" height="110" rx="8" fill="#0f172a" stroke="#10b981" stroke-width="1.2"/>
+    <text x="16" y="28" font-family="sans-serif" font-size="13" font-weight="700" fill="#34d399">Phase 4: Time-Lock Unlock</text>
+    <text x="16" y="52" font-family="monospace" font-size="11" fill="#cbd5e1">• Triggered ONLY when time expires</text>
+    <text x="16" y="72" font-family="monospace" font-size="11" fill="#cbd5e1">• Validates 2+ PROVEN, 1+ Invariant</text>
+    <text x="16" y="92" font-family="monospace" font-size="11" fill="#10b981">• Execution Lockout LIFTED</text>
+  </g>
+
+  <g transform="translate(470, 210)">
+    <rect width="250" height="110" rx="8" fill="#0f172a" stroke="#06b6d4" stroke-width="1.2"/>
+    <text x="16" y="28" font-family="sans-serif" font-size="13" font-weight="700" fill="#22d3ee">Phase 5: Subagent Fleet Execution</text>
+    <text x="16" y="52" font-family="monospace" font-size="11" fill="#cbd5e1">• 100% Coder subagent delegation</text>
+    <text x="16" y="72" font-family="monospace" font-size="11" fill="#cbd5e1">• Main Agent audits Definition of Done</text>
+    <text x="16" y="92" font-family="monospace" font-size="11" fill="#38bdf8">• Automated self-healing tests</text>
+  </g>
+</svg>

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -e
+
+echo "=========================================================="
+echo "  Fable-Mode: Deterministic System 2 Cognitive Engine"
+echo "=========================================================="
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "[+] Running Fable-Engine test suite..."
+python3 "$SCRIPT_DIR/fable_engine/test_server.py"
+echo "[✓] All tests passed (100%)."
+
+SKILL_DEST="$HOME/.gemini/config/skills/fable-mode"
+echo "[+] Installing skill to: $SKILL_DEST"
+mkdir -p "$SKILL_DEST"
+cp -r "$SCRIPT_DIR/skills/fable-mode/"* "$SKILL_DEST/"
+
+MCP_DIR="$HOME/.gemini/antigravity/mcp/fable-engine"
+mkdir -p "$MCP_DIR"
+cp "$SCRIPT_DIR/fable_engine/fable_session.json" "$MCP_DIR/fable_session.json"
+
+echo "=========================================================="
+echo "  Fable-Mode installation complete!"
+echo "=========================================================="
