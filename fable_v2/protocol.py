@@ -81,7 +81,11 @@ class TaskSpec:
 
 @dataclass(frozen=True)
 class ToolReceipt:
-    """A host-produced receipt proving that a capability was invoked."""
+    """A host-produced receipt proving invocation and captured output.
+
+    ``success`` means the tool call completed successfully. It is not a claim
+    that the output is correct or that the candidate is correct.
+    """
 
     receipt_id: str
     session_id: str
@@ -139,7 +143,11 @@ class ToolReceipt:
 
 @dataclass(frozen=True)
 class Evidence:
-    """Evidence whose content is integrity-bound to one successful receipt."""
+    """Captured evidence integrity-bound to one successful receipt.
+
+    Integrity binding proves provenance and content consistency only. It does
+    not prove that the claim is true; a verifier must establish that.
+    """
 
     evidence_id: str
     session_id: str
@@ -148,7 +156,6 @@ class Evidence:
     source: str
     receipt_id: str
     content_hash: str
-    verified: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
     content: Any = None
     source_output_hash: str = ""
@@ -160,6 +167,14 @@ class Evidence:
         if canonical_hash(self.content) != self.content_hash:
             raise ValueError("content_hash does not match the evidence content")
 
+    @property
+    def integrity_bound(self) -> bool:
+        """Whether provenance and content hashes agree; not claim truth."""
+        return (
+            canonical_hash(self.content) == self.content_hash
+            and self.content_hash == self.source_output_hash
+        )
+
     @classmethod
     def from_receipt(
         cls,
@@ -169,7 +184,6 @@ class Evidence:
         claim: str,
         kind: str,
         source: str,
-        verified: bool = False,
         metadata: Mapping[str, Any] | None = None,
     ) -> "Evidence":
         """Create full-output evidence directly from a host receipt.
@@ -188,7 +202,6 @@ class Evidence:
             source=source,
             receipt_id=receipt.receipt_id,
             content_hash=receipt.output_hash,
-            verified=verified,
             metadata=metadata or {},
             content=receipt.output,
             source_output_hash=receipt.output_hash,

@@ -67,6 +67,21 @@ must never receive a full-guarantee status merely because it loaded a prompt.
 
 ## Enforcement model
 
+### Invocation is not correctness
+
+A `ToolReceipt` proves only that a host tool was invoked and what output it
+returned. For example, a successful `pytest` receipt proves that pytest ran
+successfully; it does **not** prove that the candidate is correct. Likewise,
+integrity-bound evidence proves provenance and content consistency, not that
+its claim is true.
+
+Correctness is established only by the verifier policy: deterministic tests,
+machine checks, independent review, hidden tests, or other explicitly
+registered checks. A receipt or evidence object must never be treated as a
+correctness verdict.
+
+### Receipt and evidence integrity
+
 A model-facing prompt cannot prove that a tool was used. Each host tool must
 produce a `ToolReceipt` containing:
 

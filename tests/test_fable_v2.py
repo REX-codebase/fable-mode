@@ -41,7 +41,6 @@ class FableV2RuntimeTests(unittest.TestCase):
             claim="The regression tests pass",
             kind="test-result",
             source="pytest: tests",
-            verified=True,
         )
         self.run.attach_evidence(self.evidence)
         self.candidate = Candidate(
@@ -58,6 +57,7 @@ class FableV2RuntimeTests(unittest.TestCase):
     def test_receipts_are_hashed_and_recorded(self):
         self.assertEqual(len(self.run.receipts), 2)
         self.assertNotEqual(self.inspect.input_hash, self.inspect.output_hash)
+        self.assertTrue(self.evidence.integrity_bound)
         self.assertEqual(self.run.successful_capabilities(), {"inspect_files", "run_tests"})
 
     def test_direct_model_supplied_verification_is_rejected(self):
@@ -85,7 +85,7 @@ class FableV2RuntimeTests(unittest.TestCase):
         run.attach_evidence(Evidence.from_receipt(
             run.receipts["r"],
             evidence_id="e", claim="inspection completed", kind="inspection",
-            source="grep", verified=True,
+            source="grep",
         ))
         candidate = Candidate("c", "session-002", "approach", "artifact", ("r",), ("e",))
         run.register_candidate(candidate)
