@@ -12,7 +12,7 @@
 
 **An independent REX-codebase cognitive engine and fleet orchestrator for MCP-compatible language-model hosts.**
 
-[Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Quickstart](#-1-click-quickstart) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
+[Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Installation & downloads](#-installation--downloads) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
 
 </div>
 
@@ -313,61 +313,145 @@ stateDiagram-v2
 
 ---
 
-## 🚀 1-Click Quickstart
+## 📦 Installation & downloads
 
-### Option A: Windows 1-Click Automated Installer (Recommended)
+Fable-Mode is downloaded once to a local checkout, then connected to each host as a **local stdio MCP process**. There is no separate per-host download or network service: each configured host starts the selected Fable entry point from that checkout.
 
-**Fastest path — no Git required:** open PowerShell and run this single line:
+### Prerequisites and support boundary
 
-```powershell
-$installer="$env:TEMP\fable-mode-install.ps1"; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/REX-codebase/fable-mode/fc771cca41f24a46a460a5bd291e125558196a8e/install-antigravity.ps1" -OutFile $installer; & $installer
-```
+- **Python 3.10 or newer** is required.
+- **Git is optional**. Git is convenient for cloning, but a downloaded source archive works too.
+- The package has **no runtime dependencies** (it uses the Python standard library).
+- Windows, macOS, Linux, and WSL are supported. More generally, Fable-Mode works on any desktop or server OS that can run Python 3.10+ and a host able to launch stdio MCP processes. **Mobile platforms are not supported.** For WSL, use a host that can launch the WSL-side Python process, or use a native Windows checkout and Python.
 
-The bootstrap downloads a pinned REX-codebase package, verifies its SHA-256 digest before executing any downloaded installer code, runs the verification suite, installs the skill and MCP server, safely merges `fable-engine` into the host configuration, and keeps a backup of an existing config file. The command is pinned to a reviewed commit rather than mutable `main`; update the commit URL and installer checksum together for a new release. Use `-NoRegisterMcp` if you want to review the generated configuration before registering it.
+### Download the repository once (all operating systems)
 
-**From a local clone:**
+With Git:
 
-```powershell
+```sh
 git clone https://github.com/REX-codebase/fable-mode.git
 cd fable-mode
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -RegisterMcp
 ```
 
-The installer verifies your Python runtime, registers the `fable-engine` MCP server, deploys all cognitive skills and rule directives, and runs the complete verification suite.
+Without Git, download the repository source archive from its hosting page, extract it, and open a terminal in the extracted `fable-mode` directory. Keep this checkout in a stable location; every host can reuse it.
 
----
+### Verify and install
 
-### Option B: MCP Host Configuration
+Run the commands for the environment where the MCP host will launch Fable-Mode. Check that the version printed is 3.10 or newer.
 
-Add the following to the MCP configuration file used by your host. The path shown is an example of a Gemini-style host layout; Fable-Mode itself is host-independent.
+**Windows PowerShell**
+
+```powershell
+py -3 --version
+py -3 -m pip install -e .
+py -3 fable_engine/test_server.py
+```
+
+**macOS, Linux, or WSL**
+
+```sh
+python3 --version
+python3 -m pip install -e .
+python3 fable_engine/test_server.py
+```
+
+The editable install registers the local package and its entry points; it does not add runtime dependencies. The test command verifies the legacy V1 MCP server before you connect a host.
+
+### Choose the Fable entry point
+
+The commands below register **legacy V1**, which is the compatibility path:
+
+- `fable-engine` (or its explicit alias `fable-v1`) launches `fable_engine.server` and the legacy `fable_session` MCP server.
+- Experimental **V2** is separate: `fable-v2-broker --workspace <absolute-path>` launches the execution boundary for the portable runtime in `fable_v2/`. It is not a drop-in alias for the V1 `fable_session` server; hosts must route V2 execution through the broker. See the existing [V1/V2 migration guide](docs/fable-v1-v2-migration.md) and [V2 architecture](docs/fable-v2-architecture.md) before selecting it.
+
+### Connect a host over local stdio MCP
+
+Use an **absolute path** to the checkout in host configuration. The examples invoke `fable_engine/server.py` directly so the host uses the Python environment you verified above. Substitute your real checkout path; keep the host and Python installation in the same environment.
+
+#### Claude Code
+
+Claude Code's official local-stdio form puts the server command after `--`:
+
+```powershell
+# Windows PowerShell
+claude mcp add --transport stdio fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+```
+
+```sh
+# macOS, Linux, or WSL
+claude mcp add --transport stdio fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
+```
+
+Verify with:
+
+```sh
+claude mcp list
+```
+
+See the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp).
+
+#### Codex CLI
+
+Use Codex's official stdio form, with the server command after `--`:
+
+```powershell
+# Windows PowerShell
+codex mcp add fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+```
+
+```sh
+# macOS, Linux, or WSL
+codex mcp add fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
+```
+
+For file-based configuration, add the server to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.fable-engine]
+command = "python3"
+args = ["/absolute/path/to/fable-mode/fable_engine/server.py"]
+cwd = "/absolute/path/to/fable-mode"
+```
+
+On Windows, use `command = "py"` with `args = ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]` and set `cwd` to the checkout path. Verify with:
+
+```sh
+codex mcp list
+```
+
+See the [Codex MCP documentation](https://developers.openai.com/codex/mcp).
+
+#### Antigravity
+
+Antigravity accepts local stdio servers in either its global `~/.gemini/config/mcp_config.json` or the active workspace's `.agents/mcp_config.json`. Add this entry to the file you choose:
 
 ```json
 {
   "mcpServers": {
     "fable-engine": {
-      "command": "python",
+      "command": "python3",
       "args": [
-        "C:/Users/hp1/Desktop/Documents/fable-mode/fable_engine/server.py"
+        "/absolute/path/to/fable-mode/fable_engine/server.py"
       ],
-      "env": {
-        "PYTHONUNBUFFERED": "1"
-      }
+      "cwd": "/absolute/path/to/fable-mode"
     }
   }
 }
 ```
 
----
+For a Windows entry, use `"command": "py"`, `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`, and a Windows checkout path for `cwd`. Open `/mcp` in Antigravity to inspect the connection and use its reload control after editing configuration, as supported by your Antigravity client.
 
-### Option C: Other MCP-Compatible Clients
+See the [Antigravity MCP documentation](https://antigravity.google/docs/mcp/).
 
-For desktop clients, editors, or other MCP-compatible hosts:
+#### Other MCP-compatible hosts (generic JSON)
+
+For a host that accepts the conventional `mcpServers` JSON shape, adapt this local-stdio entry to that host's documented configuration file:
 
 ```json
 {
   "mcpServers": {
     "fable-engine": {
-      "command": "python",
+      "command": "python3",
       "args": [
         "/absolute/path/to/fable-mode/fable_engine/server.py"
       ]
@@ -376,7 +460,21 @@ For desktop clients, editors, or other MCP-compatible hosts:
 }
 ```
 
----
+On Windows, replace the command and arguments with `"command": "py"` and `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`. Configuration file names and reload steps are host-specific; do not assume this JSON belongs at a particular path.
+
+### Optional instructions and rules
+
+Instruction files, skills, and rules are **optional and host-specific**. If your host documents a project- or user-level instruction/rules location, add the guidance you want there manually and follow that host's naming and scope rules. MCP registration does not automatically install a skill or rules; omit this step when the host has no documented mechanism.
+
+### OS and host matrix
+
+| Environment | Python command | Example stdio hosts | Notes |
+| :--- | :--- | :--- | :--- |
+| Windows | `py -3` | Claude Code, Codex CLI, Antigravity | Use PowerShell paths and `py -3`. |
+| macOS | `python3` | Claude Code, Codex CLI, Antigravity | Use an absolute checkout path. |
+| Linux | `python3` | Claude Code, Codex CLI, Antigravity | Native stdio process launch required. |
+| WSL | `python3` | A host that can launch WSL processes | Keep the host, Python, and checkout in the same environment when possible. |
+| Mobile | — | — | Not supported. |
 
 ## 🛠️ MCP Tool Reference & API
 
@@ -506,7 +604,7 @@ fable-mode/
 │           ├── deepthink-analysis-proof.md
 │           ├── distributed-system-design.md
 │           └── swe-bench-pro-debugging.md
-├── install.ps1                             # 1-Click Windows PowerShell setup script
+├── install.ps1                             # Windows PowerShell setup script
 ├── LICENSE                                 # MIT Open-Source License
 └── README.md                               # Project documentation
 ```
