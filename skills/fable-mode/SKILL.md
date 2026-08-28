@@ -18,11 +18,11 @@ description: >-
 `fable-mode` upgrades any language model in Antigravity into a frontier-grade autonomous agent and multi-thought reasoning system operating at **Claude Fable 5 / Mythos-class `xhigh` effort**. It eliminates shallow heuristics, fragile execution, hallucinated claims, premature halting, and brittle compromises by combining:
 
 1. **Strict Cognitive Separation**: The Main Agent handles all **heavy cognitive lifting** (DeepThink reasoning, System 2 invariant verification, architectural blueprinting, API/type design, and verification quality gates) and **strictly does NOT write code directly in the project codebase**. All code writing, file edits, and test implementations are executed **exclusively by subagents**.
-2. **Unbypassable Mechanical Time-Lock**: Hard execution lock enforced at the engine/tool level. The AI cannot oppose, skip, or exit thinking prematurely before the user's allocated time budget has fully elapsed. Any premature `unlock_execution` call is rejected with a hard error (`current_time < deadline_time`).
+2. **Immutable Authority Time-Lock**: The outer execution budget is fixed at session creation. The agent may set a shorter internal pacing timer, but a pacing timeout cannot grant execution permission. Any premature `unlock_execution` call is rejected with a hard error (`current_time < authority_deadline`).
 3. **Continuous Rethink-Refine Cognitive Loop (`log_refinement_cycle`)**: When initial thinking passes conclude early, the AI enters a continuous refinement loop (`rethink, refine, rethink, refine`), mutating archetypes, probing invariant boundaries, stress-testing edge cases, and tightening proofs—logging each cycle via `log_refinement_cycle`.
 4. **Full Terminal & Artifact Privileges during Thinking**: Complete permission to run terminal commands (`run_command` for benchmarks, AST parsing, scratch compilers, probe scripts) and author rich markdown artifacts in `<appDataDir>\brain\<conversation-id>/` during the time-lock window.
 5. **Deterministic Deliberative System 2 Thinking**: Dual-process cognitive architecture where intuitive System 1 proposals undergo exhaustive invariant verification, axiomatic bounds checking, and dialectical falsification before any code is generated.
-6. **Anti-Hallucination Epistemic Grounding**: Rigorous classification of every proposition into `[PROVEN]` (empirically verified), `[HYPOTHESIS]` (untested assumptions), and `[UNKNOWN]` (parameters to probe). Zero unverified claims are permitted into design commits.
+6. **Evidence-Gated Epistemic Grounding**: Classify propositions as `[PROVEN]`, `[HYPOTHESIS]`, or `[UNKNOWN]`. `[PROVEN]` entries require concrete evidence pointers and formal invariants require a proof or rationale. These gates reduce unsupported claims; they do not make arbitrary model reasoning automatically true.
 7. **8-Pass Maximum-Depth Recursive `<thinking>` Chain**: Maximum compute scaling chaining 8 distinct thinking passes inside `<thinking>` to resolve axioms, TRIZ contradictions, formal concurrency proofs, and subagent delegation contracts.
 8. **Dedicated Session & Timer Management via `fable_session` MCP**: Mandatory session creation (`create_session`), active phase tracking (`advance_phase`), duration timers (`set_timer`), refinement logging (`log_refinement_cycle`), and atomic WAL checkpoints (`checkpoint_session`).
 
@@ -70,7 +70,7 @@ During Phases 1, 2, and 3 (while the Hard Mechanical Time-Lock is active), Antig
 | **Scratch Files (`.../scratch/*`)** | 🟢 **FULLY AUTHORIZED & ENCOURAGED** | Write standalone test harnesses, isolated benchmark scripts, or temporary probe code in the conversation's scratch directory. |
 | **Read Tools (`view_file`, `grep_search`, `list_dir`)** | 🟢 **FULLY AUTHORIZED & ENCOURAGED** | Deeply inspect repository files, dependency manifests, configuration files, and types. |
 | **fable_session MCP (`log_refinement_cycle`, `log_epistemic_item`)** | 🟢 **FULLY AUTHORIZED & MANDATORY** | Continuously record refinement cycles, epistemic items, and invariant proofs. |
-| **Project Workspace Code Edits (`write_to_file`, `replace_file_content`)** | 🔴 **STRICTLY LOCKED** | Modifying project repository source code is blocked until the time budget fully elapses and `unlock_execution` succeeds. |
+| **Project Workspace Code Edits (`write_to_file`, `replace_file_content`)** | 🔴 **STRICTLY LOCKED** | Modifying project repository source code is blocked until the immutable authority budget elapses and `unlock_execution` succeeds. |
 
 --------------------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ graph TD
    - Keeps the Main Agent's context and compute 100% focused on high-level reasoning and invariant verification.
 
 2. **Unbypassable Mechanical Time-Lock**:
-   - If a time budget (e.g. `30 mins`, `40 mins`, `4 hours`) is set, `unlock_execution` mathematically checks `current_time >= deadline_time`.
+   - The immutable authority budget is checked against a monotonic deadline; `set_timer` only changes internal pacing and cannot unlock execution.
    - If called prematurely, the engine rejects with a hard error containing the remaining duration.
    - The AI cannot bypass, skip, or argue against the timer; it must embrace the allocated time to achieve radical depth.
 
@@ -106,7 +106,7 @@ graph TD
    - Empirically test hypotheses with scratch compilers, AST analyzers, and performance micro-benchmarks before unlocking code execution.
 
 5. **Anti-Hallucination Epistemic Grounding**:
-   - **`[PROVEN]`**: Empirically verified via live tool inspection (`view_file`, `grep_search`, `run_command`).
+   - **`[PROVEN]`**: Supported by concrete live-tool evidence; the evidence pointer is required by the engine.
    - **`[HYPOTHESIS]`**: Plausible proposition that MUST undergo verification before commitment.
    - **`[UNKNOWN]`**: Ambiguity, unmeasured latency, or missing constraint that MUST be probed.
    - *Epistemic Hygiene Rule*: No architectural commitment may rest on an unverified `[HYPOTHESIS]`.
@@ -124,7 +124,7 @@ graph TD
 
 7. **Multi-Hour Persistence, Paced Telemetry & Multi-Tier Verification Gates**:
    - Session state is persisted to disk checkpoints (`checkpoint_session`) with WAL logging.
-   - Paced execution scales depth to match user time budgets (30m, 40m, 4h, 24h) without premature exits.
+   - Pacing can be adjusted inside the session, while the immutable authority deadline prevents early execution unlocks.
    - Multi-tier verification (Lint -> Unit -> Concurrency Fuzzing -> Integration -> Red-Team) validates completion.
 
 --------------------------------------------------------------------------------
@@ -143,7 +143,7 @@ graph TD
     
     C --> C1["Dual-Process Kahneman Architecture: Fast Proposals -> Deliberate Proofs"]
     C --> C2["fable_session MCP: create_session, set_timer, log_epistemic_item"]
-    C --> C3["Hard Mechanical Time-Lock: unlock_execution fails if current_time < deadline"]
+    C --> C3["Immutable Authority Time-Lock: unlock_execution fails before authority deadline"]
     C --> C4["Disk WAL Checkpointing + Crash Auto-Recovery"]
     
     D --> D1["Archetype mutation, cache line alignment, invariant stress testing"]
@@ -164,7 +164,7 @@ PHASE 1: Reconnaissance & Epistemic Grounding ───────┐
    - Log [PROVEN], [HYPOTHESIS], [UNKNOWN] items     │ 🔒 MECHANICAL TIME-LOCK ACTIVE
    - run_command & brain artifacts FULLY PERMITTED   │ (Workspace code edits LOCKED)
                                                      │ (unlock_execution rejected if
-PHASE 2: Axiomatic Bounds & Multi-Archetype Synth ───┤  current_time < deadline_time)
+PHASE 2: Axiomatic Bounds & Multi-Archetype Synth ───┤  current_time < authority_deadline)
    - 10D Trade-off Matrix + TRIZ Contradictions      │
    - Continuous Refinement: log_refinement_cycle     │
                                                      │
@@ -172,7 +172,7 @@ PHASE 3: System 2 Deliberation & Invariant Proofs ───┘
    - Formal safety, memory ordering & lock-freedom proofs
    - record_invariant on fable-engine MCP
    - Continuous Rethink-Refine loops until deadline expires
-   - Gate Review: unlock_execution invoked after timer elapses
+   - Gate Review: unlock_execution invoked after the authority deadline elapses
                          │
                          ▼ 🔓 EXECUTION UNLOCKED (Timer Elapsed & DoD Verified)
 PHASE 4: Orchestrated Subagent Implementation
@@ -215,4 +215,5 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 - [Ultra-Low Latency Distributed Broker](./examples/distributed-system-design.md) — Multi-archetype design of a 10M msg/sec distributed engine.
 - [Lock-Free Concurrent Cache Architecture](./examples/breakthrough-algorithm-synthesis.md) — TRIZ innovation resolving high-contention cache performance.
 - [Repo-Scale SWE-Bench Root-Cause Debugging](./examples/swe-bench-pro-debugging.md) — Systematic isolation and verified remediation of complex race condition.
+
 
