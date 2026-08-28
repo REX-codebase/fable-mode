@@ -83,8 +83,13 @@ writable layer or remount after authorization.
 Hostile workloads still require container/VM isolation and least-privilege OS
 controls. The broker resolves each allowlisted executable to a trusted absolute path at
 startup and rejects requests whose resolved path differs; a matching basename
-is not sufficient. The broker is covered by child-process, executable-path,
-allowlist, path-containment, and locked-write tests.
+is not sufficient. Command stdout/stderr are drained concurrently into bounded
+buffers; exceeding `max_output_bytes` terminates the process (and its POSIX
+process group) instead of truncating after unbounded `subprocess.run()` capture.
+The broker implements every advertised protocol capability, including bounded
+`inspect_files` and the `probe_capabilities` alias. It is covered by
+child-process, executable-path, output-limit, capability, allowlist,
+path-containment, and locked-write tests.
 
 The checked-in `HOST_PROFILES` are explicitly **expected capability
 profiles**, not attestations. They are useful defaults for planning and

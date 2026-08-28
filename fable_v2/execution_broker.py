@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -84,7 +85,9 @@ class ExecutionBroker:
         available = list(self.policy.resolved_executables)
         return {
             "host": "fable-execution-broker",
-            "capabilities": ["execute_command", "inspect_files", "probe_capabilities"],
+            "capabilities": [
+                "execute_command", "inspect_files", "probe_capabilities", "write_file"
+            ],
             "available_executables": available,
             "writes_enabled": self._writes_unlocked,
             "read_locked_interpreters": sorted(self.READ_LOCKED_INTERPRETERS),
@@ -116,6 +119,26 @@ class ExecutionBroker:
     def _authorize_write(self) -> None:
         if not self._writes_unlocked:
             raise PermissionError("workspace writes are locked")
+
+    def inspect_files(self, relative_path: str, max_bytes: int | None = None) -> dict[str, Any]:
+        """Read one workspace file with a bounded response."""
+        target = self._safe_path(relative_path)
+        if not target.is_file():
+            raise ValueError("inspect path must be a file inside the workspace")
+        limit = self.policy.max_output_bytes if max_bytes is None else int(max_bytes)
+        if limit < 1:
+            raise ValueError("max_bytes must be positive")
+        limit = min(limit, self.policy.max_output_bytes)
+        with target.open("rb") as handle:
+            raw = handle.read(limit + 1)
+        truncated = len(raw) > limit
+        raw = raw[:limit]
+        return {
+            "path": str(target.relative_to(self.policy.workspace)),
+            "content": raw.decode("utf-8", errors="replace"),
+            "content_hash": hashlib.sha256(raw).hexdigest(),
+            "truncated": truncated,
+        }
 
     def write_file(self, relative_path: str, content: str) -> dict[str, Any]:
         self._authorize_write()
@@ -175,50 +198,115 @@ class ExecutionBroker:
         if not directory.is_dir():
             raise ValueError("cwd must be a directory inside the workspace")
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
+        process: subprocess.Popen[bytes] | None = None
+        output_limit = self.policy.max_output_bytes
+        captured = {"stdout": bytearray(), "stderr": bytearray()}
+        output_limited = threading.Event()
+        kill_lock = threading.Lock()
+
+        def stop_process() -> None:
+            if process is None:
+                return
+            with kill_lock:
+                if process.poll() is not None:
+                    return
+                try:
+                    if os.name == "posix":
+                        os.killpg(process.pid, signal.SIGKILL)
+                    else:
+                        process.kill()
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+        def drain(name: str, stream: Any) -> None:
+            bucket = captured[name]
+            while True:
+                chunk = stream.read(64 * 1024)
+                if not chunk:
+                    return
+                remaining = output_limit - len(bucket)
+                if remaining <= 0:
+                    output_limited.set()
+                    stop_process()
+                    continue
+                if len(chunk) > remaining:
+                    bucket.extend(chunk[:remaining])
+                    output_limited.set()
+                    stop_process()
+                else:
+                    bucket.extend(chunk)
+
+        executed_argv = (registered_path, *argv[1:])
         try:
-            completed = subprocess.run(
-                (registered_path, *argv[1:]),
+            process = subprocess.Popen(
+                executed_argv,
                 cwd=directory,
                 env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 shell=False,
-                timeout=timeout_seconds,
-                check=False,
+                start_new_session=(os.name == "posix"),
+                creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                               if os.name == "nt" else 0),
             )
-            stdout = completed.stdout
-            stderr = completed.stderr
-            timed_out = False
-            exit_code = completed.returncode
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
-            timed_out = True
-            exit_code = None
+            assert process.stdout is not None and process.stderr is not None
+            readers = [
+                threading.Thread(target=drain, args=("stdout", process.stdout), daemon=True),
+                threading.Thread(target=drain, args=("stderr", process.stderr), daemon=True),
+            ]
+            for reader in readers:
+                reader.start()
+            try:
+                exit_code = process.wait(timeout=timeout_seconds)
+                timed_out = False
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                stop_process()
+                exit_code = None
+            for reader in readers:
+                reader.join(timeout=5)
+            if process.poll() is None:
+                stop_process()
+                process.wait(timeout=5)
+        finally:
+            if process is not None:
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()
+
+        stdout = bytes(captured["stdout"]).decode("utf-8", errors="replace")
+        stderr = bytes(captured["stderr"]).decode("utf-8", errors="replace")
 
         def truncate(value: str) -> str:
-            if len(value.encode("utf-8")) <= self.policy.max_output_bytes:
+            # Readers enforce this bound before decoding; this is only a
+            # defensive guard for future callers that supply strings directly.
+            encoded = value.encode("utf-8")
+            if len(encoded) <= output_limit:
                 return value
-            encoded = value.encode("utf-8")[: self.policy.max_output_bytes]
-            return encoded.decode("utf-8", errors="ignore") + "\n[truncated]"
+            return encoded[:output_limit].decode("utf-8", errors="ignore") + "\n[truncated]"
 
-        executed_argv = (registered_path, *argv[1:])
         return {
             "command": list(executed_argv),
             "cwd": str(directory.relative_to(self.policy.workspace)),
             "exit_code": exit_code,
             "timed_out": timed_out,
+            "output_limited": output_limited.is_set(),
             "stdout": truncate(stdout),
             "stderr": truncate(stderr),
-            "success": exit_code == 0 and not timed_out,
+            "success": exit_code == 0 and not timed_out and not output_limited.is_set(),
         }
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         action = request.get("action")
-        if action == "probe":
+        if action in {"probe", "probe_capabilities"}:
             return self.probe()
+        if action == "inspect_files":
+            return self.inspect_files(
+                request.get("path", ""),
+                max_bytes=request.get("max_bytes"),
+            )
         if action == "execute_command":
             return self.execute_command(
                 request.get("command", ()),

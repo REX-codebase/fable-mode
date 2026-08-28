@@ -43,6 +43,30 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertIn("broker-ok", result["stdout"])
 
+    def test_inspect_files_is_implemented_and_bounded(self):
+        target = self.workspace / "input.txt"
+        target.write_text("hello world", encoding="utf-8")
+        result = self.broker.handle({"action": "inspect_files", "path": "input.txt"})
+        self.assertEqual(result["content"], "hello world")
+        self.assertFalse(result["truncated"])
+        self.assertEqual(result["content_hash"], hashlib.sha256(b"hello world").hexdigest())
+        self.assertEqual(self.broker.handle({"action": "probe_capabilities"}), self.broker.probe())
+
+    def test_subprocess_output_is_bounded_before_capture(self):
+        limited = ExecutionBroker(BrokerPolicy(
+            workspace=self.workspace,
+            allowed_executables=(self.executable,),
+            max_output_bytes=4096,
+            write_token_digest=hashlib.sha256(b"admin-token").hexdigest(),
+        ))
+        limited.unlock_writes("admin-token")
+        result = limited.execute_command([
+            sys.executable, "-c", "import sys; sys.stdout.write('x' * 100000000)"
+        ])
+        self.assertTrue(result["output_limited"])
+        self.assertFalse(result["success"])
+        self.assertLessEqual(len(result["stdout"].encode("utf-8")), 4096)
+
     def test_same_basename_from_different_path_is_rejected(self):
         fake = self.workspace / self.executable
         fake.write_text("not the registered executable")
