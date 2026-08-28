@@ -12,6 +12,8 @@ import json
 import time
 import math
 import logging
+import hmac
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -52,6 +54,36 @@ PHASES = [
 
 PHASE_INDEX_MAP = {phase: i + 1 for i, phase in enumerate(PHASES)}
 
+MIN_TIME_BUDGET_MINUTES = 0.1
+MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
+FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
+SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+def _validate_time_budget(value: Any, field_name: str = "time_budget_minutes") -> float:
+    """Validate a duration before it can influence an execution deadline."""
+    try:
+        minutes = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {field_name}: expected a finite number of minutes.") from exc
+    if not math.isfinite(minutes) or not (MIN_TIME_BUDGET_MINUTES <= minutes <= MAX_TIME_BUDGET_MINUTES):
+        raise ValueError(
+            f"Invalid {field_name}: must be between {MIN_TIME_BUDGET_MINUTES} and "
+            f"{MAX_TIME_BUDGET_MINUTES} finite minutes."
+        )
+    return minutes
+
+
+def _validate_session_name(name: str) -> str:
+    """Keep session persistence inside SESSIONS_DIR and make identifiers portable."""
+    clean_name = (name or "").strip()
+    if not SESSION_NAME_PATTERN.fullmatch(clean_name):
+        raise ValueError(
+            "Invalid session_name: use 1-128 letters, numbers, '.', '_' or '-' "
+            "and do not include path separators."
+        )
+    return clean_name
+
 
 class FableSession:
     """Represents an active Fable reasoning & pacing session."""
@@ -64,14 +96,23 @@ class FableSession:
         session_id: Optional[str] = None,
         start_time: Optional[float] = None
     ):
-        self.session_name = session_name
+        self.session_name = _validate_session_name(session_name)
         self.objective = objective
         self.start_time = start_time if start_time is not None else time.time()
         self.session_id = session_id or f"fable_{session_name}_{int(self.start_time)}"
         
-        self.time_budget_minutes = float(time_budget_minutes)
+        # The authority budget is immutable after session creation.  A separate
+        # pacing timer may be shortened by the agent, but it can never grant
+        # execution permission or move this outer deadline earlier.
+        self.time_budget_minutes = _validate_time_budget(time_budget_minutes)
         self.time_budget_seconds = self.time_budget_minutes * 60.0
-        self.deadline_time = self.start_time + self.time_budget_seconds
+        self._deadline_time = self.start_time + self.time_budget_seconds
+        self._authority_deadline_monotonic = time.monotonic() + self.time_budget_seconds
+
+        self.pacing_budget_minutes = self.time_budget_minutes
+        self.pacing_budget_seconds = self.time_budget_seconds
+        self._pacing_deadline_time = self._deadline_time
+        self._pacing_deadline_monotonic = self._authority_deadline_monotonic
         
         self.active_phase = PHASES[0]
         self.execution_locked = True
@@ -89,23 +130,76 @@ class FableSession:
         ]
         self.unlock_details: Optional[Dict[str, Any]] = None
 
+    @property
+    def pacing_deadline_time(self) -> float:
+        """Wall-clock representation of the internal pacing deadline."""
+        return self._pacing_deadline_time
+
+    @property
+    def deadline_time(self) -> float:
+        """Wall-clock representation of the immutable authority deadline."""
+        return self._deadline_time
+
+    @deadline_time.setter
+    def deadline_time(self, value: float) -> None:
+        # Retain a setter for deterministic tests and legacy session restore,
+        # while keeping the monotonic clock as the enforcement source.
+        self._deadline_time = float(value)
+        self._authority_deadline_monotonic = time.monotonic() + max(0.0, self._deadline_time - time.time())
+
     def set_timer(self, time_budget_minutes: float) -> Dict[str, Any]:
-        """Updates the time budget and recalculates deadline and pacing metrics."""
-        self.time_budget_minutes = float(time_budget_minutes)
-        self.time_budget_seconds = self.time_budget_minutes * 60.0
-        self.deadline_time = self.start_time + self.time_budget_seconds
+        """Set an agent pacing timer without changing the authority deadline.
+
+        This is deliberately a sub-timer: an agent may choose to pace itself
+        for 20 minutes inside an 80-minute session, but expiry of this timer
+        never unlocks execution. Only the immutable outer deadline can do that.
+        """
+        pacing_minutes = _validate_time_budget(time_budget_minutes)
+        self.pacing_budget_minutes = pacing_minutes
+        self.pacing_budget_seconds = pacing_minutes * 60.0
+        self._pacing_deadline_time = min(
+            self.deadline_time,
+            self.start_time + self.pacing_budget_seconds
+        )
+        self._pacing_deadline_monotonic = time.monotonic() + max(
+            0.0, self._pacing_deadline_time - time.time()
+        )
         return self.get_telemetry()
 
+    def _authority_remaining_seconds(self) -> float:
+        """Use monotonic time while the process is alive to resist clock rollback."""
+        return self._authority_deadline_monotonic - time.monotonic()
+
+    def _pacing_remaining_seconds(self) -> float:
+        return self._pacing_deadline_monotonic - time.monotonic()
+
+    def _gate_report(self) -> Dict[str, Any]:
+        """Return auditable gate state instead of relying on raw item counts."""
+        proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN"]
+        proven_with_evidence = [i for i in proven_items if str(i.get("evidence", "")).strip()]
+        invariants_with_proof = [
+            inv for inv in self.invariants if str(inv.get("proof_or_rationale", "")).strip()
+        ]
+        phase_index = PHASE_INDEX_MAP.get(self.active_phase, 1)
+        checks = {
+            "two_proven_evidence_items": len(proven_with_evidence) >= 2,
+            "one_proved_invariant": len(invariants_with_proof) >= 1,
+            "adversarial_phase_reached": phase_index >= 3,
+        }
+        return {
+            "ready": all(checks.values()),
+            "checks": checks,
+            "proven_with_evidence": len(proven_with_evidence),
+            "invariants_with_proof": len(invariants_with_proof),
+        }
+
     def get_telemetry(self) -> Dict[str, Any]:
-        """Calculates runtime pacing telemetry and summary statistics."""
+        """Calculates runtime authority, pacing, and cognitive-gate telemetry."""
         now = time.time()
         elapsed_seconds = max(0.0, now - self.start_time)
-        remaining_seconds = self.deadline_time - now
-        
-        if self.time_budget_seconds > 0:
-            pacing_ratio = elapsed_seconds / self.time_budget_seconds
-        else:
-            pacing_ratio = 1.0
+        authority_remaining = self._authority_remaining_seconds()
+        pacing_remaining = self._pacing_remaining_seconds()
+        pacing_ratio = elapsed_seconds / self.pacing_budget_seconds
 
         proven_count = sum(1 for item in self.epistemic_ledger if item.get("tag") == "PROVEN")
         hypothesis_count = sum(1 for item in self.epistemic_ledger if item.get("tag") == "HYPOTHESIS")
@@ -119,10 +213,17 @@ class FableSession:
             "time_budget_minutes": self.time_budget_minutes,
             "time_budget_seconds": self.time_budget_seconds,
             "deadline_time": self.deadline_time,
+            "authority_deadline_time": self.deadline_time,
             "elapsed_seconds": round(elapsed_seconds, 2),
-            "remaining_seconds": round(remaining_seconds, 2),
+            "remaining_seconds": round(authority_remaining, 2),
             "elapsed_formatted": self._format_duration(elapsed_seconds),
-            "remaining_formatted": self._format_duration(max(0.0, remaining_seconds)),
+            "remaining_formatted": self._format_duration(max(0.0, authority_remaining)),
+            "authority_remaining_seconds": round(authority_remaining, 2),
+            "authority_remaining_formatted": self._format_duration(max(0.0, authority_remaining)),
+            "pacing_budget_minutes": self.pacing_budget_minutes,
+            "pacing_deadline_time": self._pacing_deadline_time,
+            "pacing_remaining_seconds": round(pacing_remaining, 2),
+            "pacing_remaining_formatted": self._format_duration(max(0.0, pacing_remaining)),
             "pacing_ratio": round(pacing_ratio, 4),
             "pacing_percentage": f"{pacing_ratio * 100.0:.1f}%",
             "active_phase": self.active_phase,
@@ -139,6 +240,7 @@ class FableSession:
             "invariants_count": len(self.invariants),
             "refinement_count": len(self.refinement_cycles),
             "refinement_cycles": self.refinement_cycles,
+            "cognitive_gates": self._gate_report(),
             "unlock_details": self.unlock_details
         }
 
@@ -169,6 +271,14 @@ class FableSession:
                 f"Invalid phase '{next_phase}'. Must be one of:\n{valid_list}"
             )
 
+        current_phase_idx = PHASE_INDEX_MAP.get(self.active_phase, 1)
+        target_phase_idx = PHASE_INDEX_MAP[matched_phase]
+        if target_phase_idx != current_phase_idx + 1:
+            raise ValueError(
+                f"Invalid phase transition: move one phase at a time from "
+                f"Phase {current_phase_idx} to Phase {current_phase_idx + 1}."
+            )
+
         now = time.time()
         self.active_phase = matched_phase
         self.phase_history.append({
@@ -186,6 +296,8 @@ class FableSession:
 
         if not claim or not claim.strip():
             raise ValueError("Claim description cannot be empty.")
+        if tag_upper == "PROVEN" and not str(evidence or "").strip():
+            raise ValueError("PROVEN claims require concrete evidence (file, command output, test, or URL).")
 
         item_id = f"epi_{len(self.epistemic_ledger) + 1:03d}"
         item = {
@@ -215,6 +327,8 @@ class FableSession:
             raise ValueError("Invariant name cannot be empty.")
         if not formal_statement or not formal_statement.strip():
             raise ValueError("Formal statement cannot be empty.")
+        if not proof_or_rationale or not proof_or_rationale.strip():
+            raise ValueError("Invariant proof or rationale cannot be empty.")
 
         inv_id = f"inv_{len(self.invariants) + 1:03d}"
         inv = {
@@ -263,32 +377,57 @@ class FableSession:
         self.refinement_cycles.append(entry)
         return entry
 
+    @staticmethod
+    def _force_override_authorized(token: Optional[str]) -> bool:
+        """Allow emergency override only through an out-of-band secret.
+
+        The old implementation accepted a public hard-coded string, which
+        allowed any model with tool access to self-authorize an early unlock.
+        """
+        configured = os.environ.get(FORCE_UNLOCK_ENV)
+        if not configured or not token:
+            return False
+        try:
+            return hmac.compare_digest(str(token), configured)
+        except TypeError:
+            return False
+
     def unlock_execution(self, rationale: str, force_override_token: Optional[str] = None) -> Dict[str, Any]:
         """
         Anti-Rush Lockout & Hard Time-Lock Validator:
         Ensures cognitive rigor and pacing compliance before code execution is permitted:
-        1. Hard Time-Lock: now >= deadline_time (unless force_override_token == "USER_OVERRIDE_FORCE_UNLOCK")
-        2. At least 2 PROVEN items recorded.
-        3. At least 1 formal invariant recorded.
+        1. Immutable authority deadline has elapsed. An internal pacing timer is never sufficient.
+        2. At least 2 evidence-backed PROVEN items are recorded.
+        3. At least 1 formal invariant includes a proof or rationale.
         4. Active phase is at least Phase 3 (Phase 3, 4, 5, or 6).
+
+        Emergency overrides are intentionally not exposed through the MCP
+        tool schema. A host application may configure an out-of-band secret
+        for direct administrative use, but the model cannot self-authorize it.
         """
         now = time.time()
-        if now < self.deadline_time and force_override_token != "USER_OVERRIDE_FORCE_UNLOCK":
-            remaining_sec = round(self.deadline_time - now, 1)
+        force_override_used = self._force_override_authorized(force_override_token)
+        remaining_sec = self._authority_remaining_seconds()
+        if remaining_sec > 0 and not force_override_used:
             rem_formatted = self._format_duration(remaining_sec)
             raise PermissionError(
-                f"🛑 HARD TIME-LOCK VIOLATION: Execution unlock rejected! The {self.time_budget_minutes}m timer has not elapsed yet (Remaining: {rem_formatted} / {remaining_sec}s). The AI is STRICTLY FORBIDDEN from rushing to code execution. You MUST continue the Rethink-Refine Cognitive Loop. Call 'log_refinement_cycle' to explore alternative archetypes, run terminal probes/benchmarks, write artifact blueprints, and refine formal proofs until the full time budget has elapsed."
+                f"🛑 HARD TIME-LOCK VIOLATION: Execution unlock rejected! The immutable "
+                f"{self.time_budget_minutes}m authority budget has not elapsed yet "
+                f"(Remaining: {rem_formatted} / {remaining_sec:.1f}s). An internal pacing "
+                f"timer cannot unlock execution. Continue the Rethink-Refine Cognitive Loop."
             )
 
+        gate_report = self._gate_report()
         proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN"]
-        current_phase_idx = PHASE_INDEX_MAP.get(self.active_phase, 1)
-
         errors: List[str] = []
-        if len(proven_items) < 2:
-            errors.append(f"Requires at least 2 [PROVEN] epistemic items (currently {len(proven_items)}).")
-        if len(self.invariants) < 1:
-            errors.append(f"Requires at least 1 formal Invariant specification (currently {len(self.invariants)}).")
-        if current_phase_idx < 3:
+        if not gate_report["checks"]["two_proven_evidence_items"]:
+            errors.append(
+                f"Requires at least 2 [PROVEN] items with evidence "
+                f"(currently {gate_report['proven_with_evidence']})."
+            )
+        if not gate_report["checks"]["one_proved_invariant"]:
+            errors.append("Requires at least 1 formal Invariant with a proof or rationale.")
+        if not gate_report["checks"]["adversarial_phase_reached"]:
             errors.append(
                 f"Requires phase progression to at least Phase 3: Adversarial Red-Teaming & Falsification "
                 f"(currently in {self.active_phase})."
@@ -310,7 +449,8 @@ class FableSession:
             "invariants_count": len(self.invariants),
             "refinement_cycles_count": len(self.refinement_cycles),
             "phase": self.active_phase,
-            "force_override_used": force_override_token == "USER_OVERRIDE_FORCE_UNLOCK"
+            "force_override_used": force_override_used,
+            "authority_deadline_elapsed": remaining_sec <= 0
         }
 
         return {
@@ -323,14 +463,18 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.1.0",
+            "version": "1.2.0",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,
             "start_time": self.start_time,
             "time_budget_minutes": self.time_budget_minutes,
             "time_budget_seconds": self.time_budget_seconds,
+            "authority_deadline_time": self.deadline_time,
             "deadline_time": self.deadline_time,
+            "pacing_budget_minutes": self.pacing_budget_minutes,
+            "pacing_budget_seconds": self.pacing_budget_seconds,
+            "pacing_deadline_time": self._pacing_deadline_time,
             "active_phase": self.active_phase,
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
@@ -351,8 +495,21 @@ class FableSession:
             session_id=data.get("session_id"),
             start_time=data.get("start_time")
         )
-        session.time_budget_seconds = data.get("time_budget_seconds", session.time_budget_minutes * 60.0)
-        session.deadline_time = data.get("deadline_time", session.start_time + session.time_budget_seconds)
+        session.time_budget_seconds = session.time_budget_minutes * 60.0
+        session.deadline_time = data.get(
+            "authority_deadline_time",
+            data.get("deadline_time", session.start_time + session.time_budget_seconds)
+        )
+        pacing_minutes = data.get("pacing_budget_minutes", session.time_budget_minutes)
+        session.pacing_budget_minutes = _validate_time_budget(pacing_minutes, "pacing_budget_minutes")
+        session.pacing_budget_seconds = session.pacing_budget_minutes * 60.0
+        session._pacing_deadline_time = min(
+            float(data.get("pacing_deadline_time", session.start_time + session.pacing_budget_seconds)),
+            session.deadline_time
+        )
+        session._pacing_deadline_monotonic = time.monotonic() + max(
+            0.0, session._pacing_deadline_time - time.time()
+        )
         session.active_phase = data.get("active_phase", PHASES[0])
         session.execution_locked = data.get("execution_locked", True)
         session.can_execute_code = data.get("can_execute_code", False)
@@ -396,7 +553,7 @@ ACTIVE_SESSIONS: Dict[str, FableSession] = {}
 
 def get_or_load_session(session_name: str) -> FableSession:
     """Retrieves session from memory or loads from disk if exists."""
-    clean_name = session_name.strip()
+    clean_name = _validate_session_name(session_name)
     if clean_name in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[clean_name]
 
@@ -428,6 +585,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
         if action in ("create_session", "init", "create"):
             if not session_name:
                 return "Error: 'session_name' is required for action 'create_session'."
+            session_name = _validate_session_name(session_name)
             objective = arguments.get("objective", "").strip()
             if not objective:
                 return "Error: 'objective' is required for action 'create_session'."
@@ -475,11 +633,13 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             return (
                 f"### ⏱️ Fable Session Timer Updated\n\n"
                 f"- **Session Name**: `{session.session_name}`\n"
-                f"- **New Time Budget**: `{session.time_budget_minutes}` minutes\n"
+                f"- **Pacing Timer**: `{session.pacing_budget_minutes}` minutes\n"
+                f"- **Authority Budget**: `{session.time_budget_minutes}` minutes (immutable)\n"
                 f"- **Elapsed Time**: `{tel['elapsed_formatted']}`\n"
-                f"- **Remaining Time**: `{tel['remaining_formatted']}`\n"
+                f"- **Pacing Remaining**: `{tel['pacing_remaining_formatted']}`\n"
+                f"- **Authority Remaining**: `{tel['authority_remaining_formatted']}`\n"
                 f"- **Pacing Ratio**: `{tel['pacing_percentage']}`\n"
-                f"- **Deadline**: `{time.ctime(session.deadline_time)}`"
+                f"- **Authority Deadline**: `{time.ctime(session.deadline_time)}`"
             )
 
         # 3. GET STATUS / TELEMETRY
@@ -517,7 +677,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Objective**: {session.objective}\n"
                 f"- **Active Phase**: `{session.active_phase}` (Phase {tel['phase_index']}/{tel['total_phases']})\n"
                 f"- **Execution Lock**: {lock_badge}\n"
-                f"- **Pacing**: `{tel['elapsed_formatted']}` elapsed / `{tel['remaining_formatted']}` remaining (`{tel['pacing_percentage']}` budget used)\n"
+                f"- **Pacing**: `{tel['elapsed_formatted']}` elapsed / `{tel['pacing_remaining_formatted']}` remaining (`{tel['pacing_percentage']}` budget used)\n"
+                f"- **Authority**: `{tel['authority_remaining_formatted']}` remaining (immutable outer deadline)\n"
                 f"- **Epistemic Breakdown**: `{counts['proven']} PROVEN`, `{counts['hypothesis']} HYPOTHESIS`, `{counts['unknown']} UNKNOWN` (Total: `{counts['total']}`)\n"
                 f"- **Invariants Recorded**: `{tel['invariants_count']}`\n"
                 f"- **Refinement Cycles**: `{tel['refinement_count']}`\n\n"
@@ -545,7 +706,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **New Active Phase**: `{session.active_phase}` (Phase {tel['phase_index']}/{tel['total_phases']})\n"
                 f"- **Phase Summary**: {phase_summary}\n"
                 f"- **Execution Status**: `{'LOCKED 🛑' if session.execution_locked else 'UNLOCKED 🟢'}`\n"
-                f"- **Pacing Remaining**: `{tel['remaining_formatted']}` (`{tel['pacing_percentage']}` used)"
+                f"- **Pacing Remaining**: `{tel['pacing_remaining_formatted']}` (`{tel['pacing_percentage']}` used)\n"
+                f"- **Authority Remaining**: `{tel['authority_remaining_formatted']}`"
             )
 
         # 5. LOG EPISTEMIC ITEM
@@ -660,13 +822,13 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             rationale = arguments.get("rationale", "").strip()
             if not rationale:
                 return "Error: 'rationale' is required for action 'unlock_execution'."
-            force_override_token = arguments.get("force_override_token")
-
+            # No model-provided override is accepted. Administrative callers
+            # must use the direct host API with an out-of-band secret.
             session = get_or_load_session(session_name)
             try:
-                res = session.unlock_execution(rationale, force_override_token=force_override_token)
+                res = session.unlock_execution(rationale)
                 session.save()
-                override_msg = " ⚠️ *(Forced via User Override Token)*" if force_override_token == "USER_OVERRIDE_FORCE_UNLOCK" else ""
+                override_msg = " ⚠️ *(Out-of-band emergency override)*" if session.unlock_details.get("force_override_used") else ""
                 return (
                     f"### 🔓 Execution Lock Lifted Successfully{override_msg}\n\n"
                     f"- **Session**: `{session.session_name}`\n"
@@ -793,7 +955,7 @@ TOOL_SCHEMA = {
             },
             "time_budget_minutes": {
                 "type": "number",
-                "description": "Session pacing duration budget in minutes (e.g. 15, 30, 60, 120)."
+                "description": "Immutable outer authority budget in minutes. set_timer can only change the internal pacing timer."
             },
             "next_phase": {
                 "type": "string",
@@ -862,10 +1024,6 @@ TOOL_SCHEMA = {
                 "type": "string",
                 "description": "Justification for unlocking code execution after satisfying cognitive gates."
             },
-            "force_override_token": {
-                "type": "string",
-                "description": "Manual override token ('USER_OVERRIDE_FORCE_UNLOCK') to bypass hard time-lock when explicitly ordered by user."
-            }
         },
         "required": ["action"]
     }
@@ -910,7 +1068,7 @@ def main():
                     },
                     "serverInfo": {
                         "name": "fable-engine",
-                        "version": "1.0.0"
+                        "version": "1.1.0"
                     }
                 }
             })
@@ -993,3 +1151,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

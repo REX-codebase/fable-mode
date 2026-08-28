@@ -4,11 +4,11 @@ Comprehensive Unit and Integration Test Suite for Fable-Engine MCP Server.
 Tests:
 - Core session data structures & invariants
 - Anti-rush execution lockout logic & cognitive gating validation
-- Hard mechanical time-lock enforcement & user override tokens
+- Immutable authority time-lock enforcement & host-only emergency overrides
 - Continuous rethink-refine cycle tracking & telemetry
 - Epistemic ledger tracking (PROVEN, HYPOTHESIS, UNKNOWN)
 - Formal invariant modeling
-- User-controlled time-budgeted pacing telemetry
+- Immutable authority deadlines and agent-only pacing telemetry
 - Persistence, atomic checkpointing, and restoration
 - Dispatch handler operations and edge-case handling
 - Full JSON-RPC 2.0 stdio MCP server protocol over subprocess
@@ -79,13 +79,18 @@ class TestFableSessionCore(unittest.TestCase):
         self.assertEqual(tel["refinement_count"], 0)
         self.assertEqual(tel["refinement_cycles"], [])
 
-    def test_timer_adjustment(self):
-        """Verifies dynamic budget updates and recalculation."""
-        tel = self.session.set_timer(90.0)
-        self.assertEqual(self.session.time_budget_minutes, 90.0)
-        self.assertEqual(self.session.time_budget_seconds, 5400.0)
-        self.assertIn("remaining_formatted", tel)
-        self.assertIn("pacing_ratio", tel)
+    def test_timer_adjustment_is_pacing_only(self):
+        """An agent sub-timer cannot shorten the authority deadline."""
+        authority_deadline = self.session.deadline_time
+        tel = self.session.set_timer(20.0)
+        self.assertEqual(self.session.time_budget_minutes, 45.0)
+        self.assertEqual(self.session.time_budget_seconds, 2700.0)
+        self.assertEqual(self.session.pacing_budget_minutes, 20.0)
+        self.assertEqual(self.session.deadline_time, authority_deadline)
+        self.assertLess(self.session.pacing_deadline_time, authority_deadline)
+        self.assertIn("authority_remaining_formatted", tel)
+        self.assertIn("pacing_remaining_formatted", tel)
+        self.assertIn("cognitive_gates", tel)
 
     def test_epistemic_ledger_logging(self):
         """Verifies logging fact, hypothesis, and unknown items."""
@@ -193,29 +198,42 @@ class TestFableSessionCore(unittest.TestCase):
     def test_hard_time_lock_enforcement(self):
         """
         Verifies Hard Mechanical Time-Lock:
-        1. Fails with PermissionError when now < deadline_time without force override token.
-        2. Bypasses time check when force_override_token == 'USER_OVERRIDE_FORCE_UNLOCK'.
-        3. Succeeds normally when clock has passed deadline_time (now >= deadline_time).
+        1. Fails with PermissionError when the immutable authority deadline is active.
+        2. A public hard-coded token cannot bypass the lock.
+        3. An explicitly configured out-of-band secret can be used for emergency override.
+        4. Succeeds normally when the authority deadline has elapsed.
         """
         # Set up satisfying cognitive gates
-        self.session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified")
-        self.session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds")
+        self.session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", "test_server.py:201")
+        self.session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", "test_server.py:202")
         self.session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
+        self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Advanced to Phase 2")
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Advanced to Phase 3")
 
         # 1. Timer has not elapsed -> must throw Hard Time-Lock Violation
         with self.assertRaises(PermissionError) as ctx:
             self.session.unlock_execution("Premature attempt before timer finishes")
         self.assertIn("🛑 HARD TIME-LOCK VIOLATION", str(ctx.exception))
-        self.assertIn("The 45.0m timer has not elapsed yet", str(ctx.exception))
-        self.assertIn("STRICTLY FORBIDDEN from rushing", str(ctx.exception))
-        self.assertIn("Call 'log_refinement_cycle'", str(ctx.exception))
+        self.assertIn("immutable 45.0m authority budget has not elapsed yet", str(ctx.exception))
+        self.assertIn("internal pacing timer cannot unlock execution", str(ctx.exception))
+        self.assertIn("Rethink-Refine Cognitive Loop", str(ctx.exception))
 
-        # 2. Force override token bypasses time-lock
-        res = self.session.unlock_execution(
-            "Emergency unlock ordered by user",
-            force_override_token="USER_OVERRIDE_FORCE_UNLOCK"
-        )
+        # 2. The old public hard-coded token must not bypass the lock.
+        with self.assertRaises(PermissionError):
+            self.session.unlock_execution(
+                "Attempted emergency unlock",
+                force_override_token="USER_OVERRIDE_FORCE_UNLOCK"
+            )
+
+        # 3. An administrative override works only through the direct host API.
+        os.environ["FABLE_FORCE_UNLOCK_TOKEN"] = "test-secret"
+        try:
+            res = self.session.unlock_execution(
+                "Emergency unlock ordered by host administrator",
+                force_override_token="test-secret"
+            )
+        finally:
+            os.environ.pop("FABLE_FORCE_UNLOCK_TOKEN", None)
         self.assertEqual(res["status"], "UNLOCKED")
         self.assertTrue(self.session.can_execute_code)
         self.assertTrue(self.session.unlock_details["force_override_used"])
@@ -226,9 +244,10 @@ class TestFableSessionCore(unittest.TestCase):
             objective="Test elapsed clock",
             time_budget_minutes=10.0
         )
-        new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified")
-        new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds")
+        new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", "test_server.py:229")
+        new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", "test_server.py:230")
         new_session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
+        new_session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2 ready")
         new_session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3 ready")
         
         # Simulate time elapsed past deadline
@@ -246,25 +265,25 @@ class TestFableSessionCore(unittest.TestCase):
         2. >= 1 formal invariant
         3. Active phase >= Phase 3
         """
-        # Use force override token to isolate cognitive gates
-        token = "USER_OVERRIDE_FORCE_UNLOCK"
+        # Simulate an elapsed authority deadline so this test isolates cognitive gates.
+        self.session.deadline_time = time.time() - 1.0
 
         # Attempt 1: In Phase 1 with 0 proven, 0 invariants -> Must fail cognitive gate
         with self.assertRaises(PermissionError) as ctx:
-            self.session.unlock_execution("Let me code", force_override_token=token)
+            self.session.unlock_execution("Let me code")
         self.assertIn("Anti-Rush Lockout Active", str(ctx.exception))
         self.assertIn("at least 2 [PROVEN]", str(ctx.exception))
 
         # Attempt 2: Add 1 PROVEN item -> Must still fail
-        self.session.log_epistemic_item("PROVEN", "Fact 1: Single producer queue is wait-free")
+        self.session.log_epistemic_item("PROVEN", "Fact 1: Single producer queue is wait-free", "test_server.py:259")
         with self.assertRaises(PermissionError) as ctx:
-            self.session.unlock_execution("Let me code", force_override_token=token)
+            self.session.unlock_execution("Let me code")
         self.assertIn("at least 2 [PROVEN]", str(ctx.exception))
 
         # Attempt 3: Add 2nd PROVEN item, but 0 invariants -> Must still fail
-        self.session.log_epistemic_item("PROVEN", "Fact 2: Atomic CAS is supported on target CPU")
+        self.session.log_epistemic_item("PROVEN", "Fact 2: Atomic CAS is supported on target CPU", "test_server.py:265")
         with self.assertRaises(PermissionError) as ctx:
-            self.session.unlock_execution("Let me code", force_override_token=token)
+            self.session.unlock_execution("Let me code")
         self.assertIn("at least 1 formal Invariant", str(ctx.exception))
 
         # Attempt 4: Add invariant, but active phase is Phase 1 -> Must still fail
@@ -275,20 +294,19 @@ class TestFableSessionCore(unittest.TestCase):
             "coding"
         )
         with self.assertRaises(PermissionError) as ctx:
-            self.session.unlock_execution("Let me code", force_override_token=token)
+            self.session.unlock_execution("Let me code")
         self.assertIn("at least Phase 3", str(ctx.exception))
 
         # Attempt 5: Advance to Phase 2 -> Must still fail
         self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Drafted blueprints")
         with self.assertRaises(PermissionError) as ctx:
-            self.session.unlock_execution("Let me code", force_override_token=token)
+            self.session.unlock_execution("Let me code")
         self.assertIn("at least Phase 3", str(ctx.exception))
 
         # Attempt 6: Advance to Phase 3 -> Satisfies ALL gates! Must succeed!
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Passed red team fuzzing")
         res = self.session.unlock_execution(
-            "All invariants proved and red-team checks passed.",
-            force_override_token=token
+            "All invariants proved and red-team checks passed."
         )
 
         self.assertEqual(res["status"], "UNLOCKED")
@@ -298,9 +316,40 @@ class TestFableSessionCore(unittest.TestCase):
         self.assertEqual(self.session.unlock_details["proven_count"], 2)
         self.assertEqual(self.session.unlock_details["invariants_count"], 1)
 
+    def test_pacing_expiry_cannot_unlock(self):
+        """A completed internal timer never satisfies the authority lock."""
+        self.session.set_timer(0.1)
+        self.session._pacing_deadline_time = time.time() - 1.0
+        self.session._pacing_deadline_monotonic = time.monotonic() - 1.0
+        self.session.log_epistemic_item("PROVEN", "Fact 1", "test_server.py:1")
+        self.session.log_epistemic_item("PROVEN", "Fact 2", "test_server.py:2")
+        self.session.record_invariant("INV-01", "x == x", "Reflexivity")
+        self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2")
+        self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3")
+        with self.assertRaises(PermissionError):
+            self.session.unlock_execution("Pacing timer expired")
+
+    def test_proven_claims_require_evidence(self):
+        """A truth label without an evidence pointer is not an admissible gate input."""
+        with self.assertRaises(ValueError):
+            self.session.log_epistemic_item("PROVEN", "An unreferenced assertion")
+
+        item = self.session.log_epistemic_item(
+            "PROVEN", "A referenced assertion", "tests/test_server.py:1"
+        )
+        self.assertEqual(item["tag"], "PROVEN")
+
+    def test_invalid_budget_and_session_name_are_rejected(self):
+        with self.assertRaises(ValueError):
+            FableSession("invalid/escape", "test", 10)
+        with self.assertRaises(ValueError):
+            FableSession("bad_budget", "test", float("nan"))
+        with self.assertRaises(ValueError):
+            self.session.set_timer(-1)
+
     def test_serialization_and_atomic_save(self):
         """Verifies session dictionary serialization, deserialization, and disk saving including refinement cycles."""
-        self.session.log_epistemic_item("PROVEN", "Proven item 1")
+        self.session.log_epistemic_item("PROVEN", "Proven item 1", "test_server.py:303")
         self.session.record_invariant("INV-01", "Statement", "Rationale")
         self.session.log_refinement_cycle(
             refinement_type="archetype_exploration",
@@ -481,25 +530,25 @@ class TestFableHandlerDispatch(unittest.TestCase):
         })
         self.assertIn("HARD TIME-LOCK VIOLATION", res)
 
-        # 9. Unlock execution with USER_OVERRIDE_FORCE_UNLOCK -> Must succeed!
+        # 9. The immutable authority deadline, not the internal pacing timer, unlocks.
+        ACTIVE_SESSIONS[self.session_name].deadline_time = time.time() - 1.0
         res = handle_fable_session({
             "action": "unlock_execution",
             "session_name": self.session_name,
-            "rationale": "Cognitive gates satisfied with 2 proven facts, 1 invariant, and 1 refinement cycle",
-            "force_override_token": "USER_OVERRIDE_FORCE_UNLOCK"
+            "rationale": "Cognitive gates satisfied with 2 proven facts, 1 invariant, and 1 refinement cycle"
         })
         self.assertIn("Execution Lock Lifted Successfully", res)
-        self.assertIn("Forced via User Override Token", res)
         self.assertIn("🟢 UNLOCKED", res)
 
-        # 10. Adjust timer
+        # 10. Adjust internal pacing timer without changing authority budget.
         res = handle_fable_session({
             "action": "set_timer",
             "session_name": self.session_name,
             "time_budget_minutes": 60
         })
-        self.assertIn("New Time Budget", res)
-        self.assertIn("60.0", res)
+        self.assertIn("Pacing Timer", res)
+        self.assertIn("Authority Budget", res)
+        self.assertIn("30.0", res)
 
         # 11. Checkpoint and restore
         res = handle_fable_session({
@@ -660,4 +709,5 @@ class TestFableMCPStdioServer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

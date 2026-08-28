@@ -28,7 +28,7 @@ Current autonomous AI coding agents suffer from a fatal structural flaw: **prema
 By coupling an **Unbypassable Mechanical Time-Lock** with **Deterministic System 2 Deliberation**, an **Anti-Hallucination Epistemic Ledger**, and a **Strict Cognitive Role Separation** (Architect Conductor $\to$ Subagent Coder Fleet), `fable-mode` forces the AI to deliberate continuously, empirically test hypotheses using live terminal probes (`run_command`), and mathematically prove domain invariants before a single line of codebase source code can be modified.
 
 > [!IMPORTANT]
-> **Zero-Unverified-Claims Guarantee**: In `fable-mode`, no architectural decision or design commit may rest upon an untested assumption. Every claim is strictly proven against live environment tools or rejected at the cognitive gate.
+> **Evidence-Gated Claims**: In `fable-mode`, `[PROVEN]` items must carry a concrete evidence pointer and formal invariants must include a proof or rationale. These are enforceable admission gates—not a claim that arbitrary model reasoning is automatically true.
 
 ---
 
@@ -111,21 +111,25 @@ flowchart TB
 
 ### 🛡️ 1. Unbypassable Mechanical Time-Lock
 
-When a user specifies a time budget (e.g. `30 mins`, `45 mins`, `4 hours`, `24 hours`), the `fable-engine` MCP server initializes a strict cryptographic deadline:
+When a user specifies a time budget (e.g. `30 mins`, `45 mins`, `4 hours`, `24 hours`), the `fable-engine` MCP server initializes an immutable authority deadline. Enforcement uses a monotonic clock while the process is alive:
 
 $$t_{\text{deadline}} = t_{\text{start}} + T_{\text{budget}}$$
 
-- **Zero-Bypass Mechanical Enforcement**: Code writing tools (`write_to_file`, `replace_file_content` in the project codebase) are hard-locked.
+- **Immutable Authority Budget**: The `create_session` budget is the outer execution authority. `set_timer` cannot shorten or extend it.
+- **Agent Pacing Sub-Timer**: The agent may set a shorter internal pacing timer (for example, 20 minutes inside an 80-minute session). Expiry of that sub-timer never unlocks execution.
+- **Mechanical Enforcement**: Code writing tools (`write_to_file`, `replace_file_content` in the project codebase) remain hard-locked until the authority deadline and cognitive gates pass.
 - **Hard Exception on Early Halting**: If the model attempts to call `unlock_execution` before $t_{\text{current}} \ge t_{\text{deadline}}$, the tool immediately fails with a `PermissionError`:
 
 ```json
 {
   "status": "ERROR",
   "error": "EXECUTION_LOCKOUT_ACTIVE",
-  "message": "🛑 HARD TIME-LOCK VIOLATION: Execution unlock rejected! The 45.0m timer has not elapsed yet (Remaining: 28m 42s / 1722.0s). The AI is STRICTLY FORBIDDEN from rushing to code execution. You MUST continue the Rethink-Refine Cognitive Loop. Call 'log_refinement_cycle' to explore alternative archetypes, run terminal probes/benchmarks, write artifact blueprints, and refine formal proofs until the full time budget has elapsed.",
+  "message": "🛑 HARD TIME-LOCK VIOLATION: Execution unlock rejected! The immutable 80.0m authority budget has not elapsed yet. An internal pacing timer cannot unlock execution. Continue the Rethink-Refine Cognitive Loop.",
   "can_execute_code": false
 }
 ```
+
+The legacy public string `USER_OVERRIDE_FORCE_UNLOCK` is no longer an override. Emergency unlocks require an out-of-band `FABLE_FORCE_UNLOCK_TOKEN` environment secret that is never supplied through the model-facing schema. This keeps a model from self-authorizing an early unlock.
 
 ---
 
@@ -166,7 +170,7 @@ Every piece of information entering the AI's cognitive workspace is assigned a s
 | **`[UNKNOWN]`** | Parameter, missing constraint, or hardware latency that must be probed. | Must formulate a concrete terminal probe script or inspection query. |
 
 > [!CAUTION]
-> **Cognitive Lockout Gate**: The `fable-engine` server will refuse to unlock execution unless the session contains **at least 2 `[PROVEN]` facts** and **at least 1 formal invariant proof**.
+> **Cognitive Lockout Gate**: The `fable-engine` server refuses to unlock execution unless the session contains **at least 2 `[PROVEN]` facts with evidence**, **at least 1 formal invariant with a proof or rationale**, and has reached the adversarial phase. Gate state is exposed in telemetry.
 
 ---
 
@@ -314,7 +318,7 @@ Run the included PowerShell installer from the repository root:
 
 ```powershell
 # Clone the repository
-git clone https://github.com/google-deepmind/fable-mode.git
+git clone https://github.com/REX-codebase/fable-mode.git
 cd fable-mode
 
 # Execute 1-click installer (auto-configures MCP, skills, rules & tests)
@@ -375,13 +379,13 @@ The `fable-engine` exposes a single, high-performance JSON-RPC 2.0 tool: `fable_
 | Action | Description | Key Parameters |
 | :--- | :--- | :--- |
 | `create_session` | Initializes a new Fable System 2 session, arms the time-lock, and writes the initial WAL state. | `session_name` (str), `objective` (str), `time_budget_minutes` (float) |
-| `set_timer` | Dynamically updates the time budget and recalculates the cryptographic deadline. | `session_name` (str), `time_budget_minutes` (float) |
+| `set_timer` | Sets an internal agent pacing timer; never changes the immutable authority deadline. | `session_name` (str), `time_budget_minutes` (float) |
 | `get_status` | Returns real-time session telemetry, pacing ratio, remaining time, active phase, and gate status. | `session_name` (str) |
 | `advance_phase` | Transitions the session to a subsequent engineering phase (Phases 1 through 6). | `session_name` (str), `target_phase` (str), `rationale` (str) |
-| `log_epistemic_item` | Records an epistemic fact (`[PROVEN]`), hypothesis (`[HYPOTHESIS]`), or ambiguity (`[UNKNOWN]`). | `session_name` (str), `tag` (str), `claim` (str), `evidence` (opt) |
+| `log_epistemic_item` | Records an epistemic fact (`[PROVEN]` requires evidence), hypothesis (`[HYPOTHESIS]`), or ambiguity (`[UNKNOWN]`). | `session_name` (str), `tag` (str), `claim` (str), `evidence` (required for PROVEN) |
 | `record_invariant` | Registers a formal mathematical invariant proof across architecture, design, or coding domains. | `session_name` (str), `invariant_name` (str), `formal_statement` (str), `proof_or_rationale` (str), `domain` (opt) |
 | `log_refinement_cycle` | Logs a continuous rethink-refine cycle (archetype mutation, benchmark, invariant stress test). | `session_name` (str), `refinement_type` (str), `focus_area` (str), `critique_or_bottleneck` (str), `architectural_refinement` (str), `terminal_probe_results` (opt), `artifact_path` (opt) |
-| `unlock_execution` | Anti-rush gatekeeper: validates time elapsed ($t \ge t_{\text{deadline}}$), $\ge 2$ facts, $\ge 1$ invariant, Phase $\ge 3$. | `session_name` (str), `rationale` (str), `force_override_token` (opt) |
+| `unlock_execution` | Anti-rush gatekeeper: validates the immutable authority deadline, evidence-backed facts, a proved invariant, and Phase $\ge 3$. | `session_name` (str), `rationale` (str) |
 | `checkpoint_session` | Performs an atomic Write-Ahead Log (WAL) snapshot and persists session state to disk. | `session_name` (str) |
 
 ---
@@ -513,3 +517,4 @@ fable-mode/
 *Eliminate shallow heuristics. Deliberate with absolute mathematical certainty.*
 
 </div>
+
