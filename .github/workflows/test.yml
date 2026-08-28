@@ -30,3 +30,23 @@ jobs:
     - name: Run test suite
       run: |
         python fable_engine/test_server.py
+
+    - name: Validate PowerShell installers
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $parseErrors = @()
+        foreach ($path in @('install.ps1', 'install-antigravity.ps1')) {
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD $path), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          $parseErrors += $errors
+        }
+        if ($parseErrors.Count -gt 0) {
+          $parseErrors | Format-List *
+          exit 1
+        }
+        Write-Host 'PowerShell installer syntax is valid.'
+
