@@ -13,31 +13,62 @@ from typing import Iterable, Mapping
 
 @dataclass(frozen=True)
 class HostCapabilities:
+    """Expected capabilities plus optional runtime-probed capabilities.
+
+    A profile is never authoritative until ``attest`` is called with the
+    result of a real host probe. This prevents documentation defaults from
+    silently becoming permission or compatibility claims.
+    """
+
     host: str
     capabilities: frozenset[str] = frozenset()
     tool_aliases: Mapping[str, str] = field(default_factory=dict)
+    observed_capabilities: frozenset[str] | None = None
+    source: str = "expected-profile"
 
-    def supports(self, capability: str) -> bool:
-        return capability in self.capabilities
+    @property
+    def is_attested(self) -> bool:
+        return self.observed_capabilities is not None
+
+    def supports(self, capability: str, *, authoritative: bool = False) -> bool:
+        available = self.observed_capabilities if self.is_attested else self.capabilities
+        return capability in available and (not authoritative or self.is_attested)
 
     def normalize(self, tool_name: str) -> str:
         return self.tool_aliases.get(tool_name, tool_name)
 
+    def attest(self, observed: Iterable[str], source: str = "host-probe") -> "HostCapabilities":
+        """Return a runtime-authoritative profile from actual probe results."""
+        observed_set = frozenset(str(item).strip() for item in observed if str(item).strip())
+        return HostCapabilities(
+            host=self.host,
+            capabilities=self.capabilities,
+            tool_aliases=self.tool_aliases,
+            observed_capabilities=observed_set,
+            source=source,
+        )
+
     def compatibility_report(self, required: Iterable[str]) -> dict[str, object]:
         required_set = set(required)
-        available = required_set & self.capabilities
-        missing = required_set - self.capabilities
+        expected = required_set & self.capabilities
+        available_set = self.observed_capabilities if self.is_attested else self.capabilities
+        available = required_set & available_set
+        missing = required_set - available_set
         return {
             "host": self.host,
-            "compatible": not missing,
+            "compatible": self.is_attested and not missing,
+            "authoritative": self.is_attested,
+            "capabilities_source": self.source,
             "required": sorted(required_set),
+            "expected": sorted(expected),
             "available": sorted(available),
             "missing": sorted(missing),
         }
 
 
-# These are conservative baseline profiles.  Real adapters should replace
-# them after probing the host, rather than assuming a feature is available.
+# These are conservative *expected* profiles. Real adapters must call
+# ``attest`` after probing the host; expected capabilities are never
+# runtime-authoritative.
 HOST_PROFILES: dict[str, HostCapabilities] = {
     "antigravity": HostCapabilities(
         "antigravity",

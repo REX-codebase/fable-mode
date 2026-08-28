@@ -62,8 +62,13 @@ Supported integrations should be implemented as thin adapters, not forks of
 the cognitive engine. MCP is the preferred tool binding, but a CLI or HTTP
 adapter is required for hosts that do not expose MCP.
 
-An adapter must probe and advertise actual capabilities at startup. A host
-must never receive a full-guarantee status merely because it loaded a prompt.
+The checked-in `HOST_PROFILES` are explicitly **expected capability
+profiles**, not attestations. They are useful defaults for planning and
+documentation, but they are not runtime-authoritative. A live adapter must
+probe the host at startup and call `HostCapabilities.attest(...)` with the
+observed capabilities. Compatibility is authoritative only after that probe;
+a host must never receive a full-guarantee status merely because it loaded a
+prompt or matched a hard-coded profile.
 
 ## Enforcement model
 

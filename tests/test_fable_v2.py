@@ -159,10 +159,16 @@ class FableV2RuntimeTests(unittest.TestCase):
         self.assertTrue(result.passed)
         self.assertEqual(result.verifier, "always-pass")
 
-    def test_host_profiles_are_conservative_and_normalize_aliases(self):
+    def test_host_profiles_are_expected_until_probed(self):
         profile = get_profile("antigravity")
+        self.assertFalse(profile.is_attested)
         self.assertTrue(profile.supports("run_tests"))
+        self.assertFalse(profile.supports("run_tests", authoritative=True))
         self.assertEqual(profile.normalize("run_command"), "execute_command")
+        self.assertFalse(profile.compatibility_report(["run_tests"])["compatible"])
+        attested = profile.attest(["run_tests"])
+        self.assertTrue(attested.is_attested)
+        self.assertTrue(attested.compatibility_report(["run_tests"])["compatible"])
         unknown = get_profile("unknown-host")
         self.assertFalse(unknown.compatibility_report(["run_tests"])["compatible"])
 
