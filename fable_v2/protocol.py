@@ -31,6 +31,29 @@ def _required_text(value: str, field_name: str) -> str:
 
 
 @dataclass(frozen=True)
+class VerificationPolicy:
+    """Acceptance policy declared by the task, not by the model."""
+
+    # The default policy requires both an objective/deterministic check and a
+    # separately registered independent check. Tasks may explicitly choose a
+    # narrower policy when no independent check is meaningful.
+    required_verifier_classes: tuple[str, ...] = ("deterministic", "independent")
+    minimum_passing_verifiers: int = 2
+    require_independent: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.required_verifier_classes:
+            raise ValueError("verification policy must require at least one verifier class")
+        if self.minimum_passing_verifiers < 1:
+            raise ValueError("minimum_passing_verifiers must be at least 1")
+        for item in self.required_verifier_classes:
+            _required_text(item, "verifier class")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TaskSpec:
     """The contract that defines what a run must accomplish."""
 
@@ -40,6 +63,7 @@ class TaskSpec:
     definition_of_done: tuple[str, ...] = ()
     required_capabilities: tuple[str, ...] = ()
     required_evidence: tuple[str, ...] = ()
+    verification_policy: VerificationPolicy = field(default_factory=VerificationPolicy)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -154,7 +178,12 @@ class Candidate:
 
 @dataclass(frozen=True)
 class VerificationResult:
-    """The result of a deterministic or independent model-based verifier."""
+    """A runtime-attested verifier result.
+
+    The attestation and candidate hash are populated by ``FableRun`` after a
+    registered verifier is executed. Callers must not construct a passing
+    result and submit it directly to the run.
+    """
 
     verification_id: str
     session_id: str
@@ -165,12 +194,21 @@ class VerificationResult:
     evidence_ids: tuple[str, ...] = ()
     score: float | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    verifier_class: str = ""
+    candidate_hash: str = ""
+    inspected_candidate: bool = False
+    independent: bool = False
+    trusted: bool = False
+    runtime_attestation: str = ""
 
     def __post_init__(self) -> None:
         for name in ("verification_id", "session_id", "candidate_id", "verifier"):
             _required_text(getattr(self, name), name)
         if self.score is not None and not 0 <= self.score <= 1:
             raise ValueError("score must be between 0 and 1")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

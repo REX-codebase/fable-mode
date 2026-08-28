@@ -6,6 +6,7 @@ from fable_v2 import (
     FunctionVerifier,
     TaskSpec,
     ToolReceipt,
+    VerificationPolicy,
     VerificationResult,
     get_profile,
     new_run,
@@ -57,37 +58,53 @@ class FableV2RuntimeTests(unittest.TestCase):
         self.assertNotEqual(self.inspect.input_hash, self.inspect.output_hash)
         self.assertEqual(self.run.successful_capabilities(), {"inspect_files", "run_tests"})
 
-    def test_finalization_requires_passing_verification(self):
+    def test_direct_model_supplied_verification_is_rejected(self):
+        forged = VerificationResult("v", "session-001", "candidate-001", "model", True)
+        with self.assertRaises(PermissionError):
+            self.run.record_verification(forged)
         with self.assertRaises(PermissionError):
             self.run.finalize("candidate-001")
-        self.assertEqual(self.run.state.value, "rejected")
 
     def test_finalization_requires_every_declared_capability(self):
         task = TaskSpec(
             task_id="missing", objective="x", definition_of_done=("done",),
             required_capabilities=("inspect_files", "search_web"),
+            verification_policy=VerificationPolicy(
+                required_verifier_classes=("deterministic",),
+                minimum_passing_verifiers=1,
+                require_independent=False,
+            ),
         )
         run = new_run("session-002", task)
-        run.record_receipt(self.inspect.__class__.from_result(
+        run.record_receipt(ToolReceipt.from_result(
             receipt_id="r", session_id="session-002", capability="inspect_files",
             tool_name="grep", tool_input="x", tool_output="y", success=True,
         ))
         candidate = Candidate("c", "session-002", "approach", "artifact", ("r",))
         run.register_candidate(candidate)
-        run.record_verification(VerificationResult(
-            "v", "session-002", "c", "tests", True,
-        ))
+        run.execute_verifier(FunctionVerifier(
+            "tests", lambda candidate: (True, ("checked",), 1.0)
+        ), "c")
         with self.assertRaises(PermissionError) as error:
             run.finalize("c")
         self.assertIn("search_web", str(error.exception))
 
+    def test_policy_requires_independent_verifier_class(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0)
+        ), "candidate-001")
+        with self.assertRaises(PermissionError) as error:
+            self.run.finalize("candidate-001")
+        self.assertIn("independent", str(error.exception))
+
     def test_verified_candidate_can_finalize(self):
-        self.run.record_verification(VerificationResult(
-            verification_id="v-001", session_id="session-001",
-            candidate_id="candidate-001", verifier="pytest+review",
-            passed=True, reasons=("tests pass",), score=1.0,
-            evidence_ids=("e-tests",),
-        ))
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0)
+        ), "candidate-001")
+        self.run.execute_verifier(FunctionVerifier(
+            "independent-review", lambda candidate: (True, ("review passed",), 1.0),
+            verifier_class="independent", independent=True,
+        ), "candidate-001")
         result = self.run.finalize("candidate-001")
         self.assertEqual(result.candidate_id, "candidate-001")
         self.assertEqual(self.run.state.value, "finalized")
@@ -103,6 +120,13 @@ class FableV2RuntimeTests(unittest.TestCase):
                 "e-failed", "session-001", "it passed", "test-result", "pytest",
                 "r-failed", "hash",
             ))
+
+    def test_untrusted_verifier_cannot_finalize(self):
+        verifier = FunctionVerifier(
+            "untrusted", lambda candidate: (True, ("claimed",), 1.0), trusted=False
+        )
+        with self.assertRaises(PermissionError):
+            self.run.execute_verifier(verifier, "candidate-001")
 
     def test_verifier_function_is_composable(self):
         verifier = FunctionVerifier("always-pass", lambda candidate: (True, ["ok"], 1.0))

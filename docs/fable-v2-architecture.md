@@ -78,20 +78,37 @@ produce a `ToolReceipt` containing:
 
 Evidence must reference a successful receipt. A candidate cannot be finalized
 until the task's declared capabilities and evidence kinds have been satisfied
-and at least one independent verifier has passed it.
+and its `VerificationPolicy` has passed.
 
-The runtime enforces required capabilities for the task, not every available
-tool. Requiring irrelevant tools would create waste and tool theatre.
+Verification is policy-enforced, not a free-form boolean. A result supplied
+from a model-facing call is rejected. A verifier must be registered by trusted
+runtime code, run against the exact candidate artifact, and be runtime-attested
+with the candidate hash. The task policy can require verifier classes such as
+`deterministic`, `machine-check`, and `independent`, a minimum number of passing
+verifiers, and at least one independently registered verifier. The runtime can
+prove that the registered checker ran on the exact artifact; semantic trust in
+a model judge remains an explicit deployment decision and should be backed by
+calibration and hidden tests.
+
+Deterministic verifiers should be executed before independent model judges by
+the host orchestrator. The core records the order and rejects missing policy
+classes, but it does not pretend that an arbitrary `VerificationResult` proves
+anything.
+
+The runtime enforces required capabilities and verifier classes for the task,
+not every available tool. Requiring irrelevant tools would create waste and
+tool theatre.
 
 ## Runtime objects
 
 The initial portable contract is implemented in `fable_v2/protocol.py`:
 
 - `TaskSpec`: task contract and definition of done;
+- `VerificationPolicy`: required verifier classes and pass thresholds;
 - `ToolReceipt`: host-produced invocation receipt;
 - `Evidence`: claim anchored to a successful receipt;
 - `Candidate`: one solution or trajectory;
-- `VerificationResult`: deterministic or independent model verdict.
+- `VerificationResult`: runtime-attested verdict bound to one candidate artifact.
 
 `fable_v2/runtime.py` implements the evidence-gated run state machine. It is
 intentionally model-agnostic and dependency-free. Hosts can wrap compilers,

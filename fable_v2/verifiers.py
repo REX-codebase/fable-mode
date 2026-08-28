@@ -22,14 +22,19 @@ class Verifier(Protocol):
 
 @dataclass(frozen=True)
 class FunctionVerifier:
-    """Adapt a deterministic function into a verifier.
+    """Adapt a deterministic function into a registered verifier.
 
     The function returns ``(passed, reasons, score)``.  It is deliberately
     dependency-free so hosts can wrap compilers, tests, schemas, or API calls.
+    Trust is assigned by the application registering the verifier, never by a
+    model-facing result.
     """
 
     name: str
     check: Callable[[Candidate], tuple[bool, Iterable[str], float | None]]
+    verifier_class: str = "deterministic"
+    independent: bool = False
+    trusted: bool = True
 
     def verify(self, candidate: Candidate) -> VerificationResult:
         passed, reasons, score = self.check(candidate)
