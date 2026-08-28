@@ -317,18 +317,23 @@ stateDiagram-v2
 
 ### Option A: Windows 1-Click Automated Installer (Recommended)
 
-Run the included PowerShell installer from the repository root:
+**Fastest path — no Git required:** open PowerShell and run this single line:
 
 ```powershell
-# Clone the repository
-git clone https://github.com/REX-codebase/fable-mode.git
-cd fable-mode
-
-# Execute 1-click installer (auto-configures MCP, skills, rules & tests)
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+$installer="$env:TEMP\fable-mode-install.ps1"; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/REX-codebase/fable-mode/fc771cca41f24a46a460a5bd291e125558196a8e/install-antigravity.ps1" -OutFile $installer; & $installer
 ```
 
-The installer verifies your Python runtime, registers the `fable-engine` MCP server, deploys all cognitive skills and rule directives, and executes the 13 automated invariant test suites.
+The bootstrap downloads a pinned REX-codebase package, verifies its SHA-256 digest before executing any downloaded installer code, runs the verification suite, installs the skill and MCP server, safely merges `fable-engine` into the host configuration, and keeps a backup of an existing config file. The command is pinned to a reviewed commit rather than mutable `main`; update the commit URL and installer checksum together for a new release. Use `-NoRegisterMcp` if you want to review the generated configuration before registering it.
+
+**From a local clone:**
+
+```powershell
+git clone https://github.com/REX-codebase/fable-mode.git
+cd fable-mode
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -RegisterMcp
+```
+
+The installer verifies your Python runtime, registers the `fable-engine` MCP server, deploys all cognitive skills and rule directives, and runs the complete verification suite.
 
 ---
 

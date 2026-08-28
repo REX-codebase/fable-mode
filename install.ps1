@@ -6,6 +6,7 @@
 [CmdletBinding()]
 param(
     [switch]$SkipTests = $false,
+    [switch]$RegisterMcp = $false,
     [string]$TargetDir = "$HOME\.gemini"
 )
 
@@ -85,12 +86,61 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Fable-Engine verification suite PASSED."
     } else {
-        Write-Alert "Tests finished with warnings or issues. Output log:"
         Write-Host $testOutput -ForegroundColor Red
+        throw "Fable-Engine verification failed; installation aborted."
     }
 }
 
-# Step 6: Final Setup Summary
+# Step 6: Register the server without clobbering existing MCP entries.
+if ($RegisterMcp) {
+    Write-Step "Registering fable-engine with the MCP host..."
+    $McpConfig = Join-Path $TargetDir "antigravity\mcp_config.json"
+    $McpConfigDir = Split-Path -Parent $McpConfig
+    New-Item -ItemType Directory -Path $McpConfigDir -Force | Out-Null
+    $config = [ordered]@{}
+    if (Test-Path $McpConfig) {
+        try {
+            $rawConfig = Get-Content -Raw -Path $McpConfig
+            if ($rawConfig.Trim()) {
+                $parsedConfig = $rawConfig | ConvertFrom-Json
+                foreach ($property in $parsedConfig.PSObject.Properties) {
+                    $config[$property.Name] = $property.Value
+                }
+            }
+        } catch {
+            throw "Existing MCP config is invalid JSON; installation aborted without modifying it."
+        }
+    }
+
+    if ($RegisterMcp) {
+        if (-not $config.Contains("mcpServers") -or $null -eq $config["mcpServers"]) {
+            $config["mcpServers"] = [pscustomobject]@{}
+        }
+        $servers = $config["mcpServers"]
+        if ($servers -is [System.Array] -or $servers -is [string] -or $servers -is [ValueType]) {
+            throw "Existing MCP config has an invalid mcpServers value; expected a JSON object."
+        }
+        $entry = [pscustomobject][ordered]@{
+            command = "python"
+            args = @((Join-Path $McpTarget "server.py"))
+        }
+        if ($servers.PSObject.Properties.Name -contains "fable-engine") {
+            $servers."fable-engine" = $entry
+        } else {
+            $servers | Add-Member -MemberType NoteProperty -Name "fable-engine" -Value $entry
+        }
+
+        if (Test-Path $McpConfig) {
+            Copy-Item $McpConfig "$McpConfig.bak" -Force
+        }
+        $tempConfig = "$McpConfig.tmp"
+        $config | ConvertTo-Json -Depth 20 | Set-Content -Path $tempConfig -Encoding UTF8
+        Move-Item -Path $tempConfig -Destination $McpConfig -Force
+        Write-Success "Registered fable-engine in: $McpConfig"
+    }
+}
+
+# Step 7: Final Setup Summary
 Write-Host @"
 
 ================================================================================
@@ -115,7 +165,7 @@ Write-Host @"
    }
  }
 
- Ready to deliberate! Trigger with /deepthink, /fable, or set a 45m budget.
+ Ready to deliberate! Trigger Fable-Mode in your MCP host or set an authority budget.
 ================================================================================
 "@ -ForegroundColor Green
 
