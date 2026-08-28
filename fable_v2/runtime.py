@@ -152,6 +152,32 @@ class FableRun:
         if evidence.content_hash != receipt.output_hash:
             raise PermissionError("evidence content hash does not match receipt output hash")
 
+    def _candidate_graph_hash(self, candidate: Candidate) -> str:
+        """Commit to a candidate and every receipt/evidence object it references."""
+        receipts = []
+        for receipt_id in candidate.receipt_ids:
+            receipt = self.receipts.get(receipt_id)
+            if receipt is None:
+                raise ValueError("candidate references an unknown receipt")
+            receipts.append({
+                "receipt_id": receipt_id,
+                "object_hash": canonical_hash(receipt.to_dict()),
+            })
+        evidence = []
+        for evidence_id in candidate.evidence_ids:
+            item = self.evidence.get(evidence_id)
+            if item is None:
+                raise ValueError("candidate references unknown evidence")
+            evidence.append({
+                "evidence_id": evidence_id,
+                "object_hash": canonical_hash(item.to_dict()),
+            })
+        return canonical_hash({
+            "candidate": candidate.to_dict(),
+            "receipts": receipts,
+            "evidence": evidence,
+        })
+
     def _validate_attested_verification(self, result: VerificationResult) -> None:
         """Validate every immutable verdict field and its candidate binding."""
         if result.session_id != self.session_id:
@@ -165,6 +191,11 @@ class FableRun:
             raise PermissionError("verification has no recognized trust boundary")
         if result.candidate_hash != canonical_hash(candidate.artifact):
             raise PermissionError("verification was not produced for the current candidate artifact")
+        expected_graph = self._candidate_graph_hash(candidate)
+        if not result.candidate_graph_hash or not hmac.compare_digest(
+            result.candidate_graph_hash, expected_graph
+        ):
+            raise PermissionError("verification is not bound to the current candidate dependency graph")
         expected = self._attestation(result)
         if not hmac.compare_digest(result.runtime_attestation, expected):
             raise PermissionError("verification has no valid runtime attestation")
@@ -266,6 +297,7 @@ class FableRun:
             inspected_candidate=True,
             independent=bool(getattr(verifier, "independent", False)),
             trust_boundary=trust_boundary,
+            candidate_graph_hash=self._candidate_graph_hash(candidate),
         )
         result = replace(result, runtime_attestation=self._attestation(result))
         self._record_attested_verification(result)
@@ -394,15 +426,23 @@ class FableRun:
         secret = data.get("attestation_secret")
         if secret:
             run._attestation_secret = bytes.fromhex(secret)
-        run.receipts = {item["receipt_id"]: ToolReceipt(**item)
-                        for item in data.get("receipts", [])}
-        run.candidates = {
-            item["candidate_id"]: Candidate(
+        run.receipts = {}
+        for item in data.get("receipts", []):
+            receipt = ToolReceipt(**item)
+            if receipt.session_id != run.session_id:
+                raise ValueError("restored tool receipt belongs to a different session")
+            if receipt.receipt_id in run.receipts:
+                raise ValueError("duplicate restored tool receipt")
+            run.receipts[receipt.receipt_id] = receipt
+        run.candidates = {}
+        for item in data.get("candidates", []):
+            candidate = Candidate(
                 **{**item,
                    "receipt_ids": tuple(item.get("receipt_ids", ())),
                    "evidence_ids": tuple(item.get("evidence_ids", ()))})
-            for item in data.get("candidates", [])
-        }
+            if candidate.candidate_id in run.candidates:
+                raise ValueError("duplicate restored candidate")
+            run.candidates[candidate.candidate_id] = candidate
         for candidate in run.candidates.values():
             if any(receipt_id not in run.receipts for receipt_id in candidate.receipt_ids):
                 raise ValueError("candidate references an unknown restored receipt")

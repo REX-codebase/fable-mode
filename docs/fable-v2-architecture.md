@@ -131,14 +131,20 @@ capabilities and evidence kinds have been satisfied and its
 Verification is policy-enforced, not a free-form boolean. A result supplied
 from a model-facing call is rejected. The in-process foundation API runs a
 verifier against the exact candidate artifact and runtime-attests that
-invocation with the candidate hash. This blocks forged model results, but it
-is **not** a security boundary against arbitrary Python application code: an
-in-process caller can still construct or alter verifier code. The task policy
-can require verifier classes such as `deterministic`, `machine-check`, and
-`independent`, a minimum number of passing verifiers, and a minimum trust
-boundary. The current foundation supports `in_process`; production-grade
-`process_attested` results must come from a separate broker with process
-isolation and signed/ authenticated registrations.
+invocation with the candidate hash. The attestation also includes a candidate
+dependency-graph commitment: the candidate state and authenticated object
+hashes for every referenced `ToolReceipt` and `Evidence`, including receipt
+capability/success fields and evidence provenance. Restore recomputes this
+commitment before accepting a stored verdict, so changing receipt/evidence
+references or their serialized state invalidates the verdict. This blocks
+forged model results, but it is **not** a security boundary against arbitrary
+Python application code: an in-process caller can still construct or alter
+verifier code. The task policy can require verifier classes such as
+`deterministic`, `machine-check`, and `independent`, a minimum number of
+passing verifiers, and a minimum trust boundary. The current foundation
+supports `in_process`; production-grade `process_attested` results must come
+from a separate broker with process isolation and signed/ authenticated
+registrations.
 
 Semantic trust in a model judge remains an explicit deployment decision and
 should be backed by calibration and hidden tests.

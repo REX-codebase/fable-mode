@@ -361,6 +361,27 @@ class FableV2RuntimeTests(unittest.TestCase):
             with self.assertRaises(PermissionError, msg=field):
                 FableRun.from_dict(tampered)
 
+    def test_dependency_graph_tampering_is_rejected_on_restore(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
+        ), "candidate-001")
+        payload = self.run.to_dict()
+        self.assertTrue(payload["verifications"][0]["candidate_graph_hash"])
+        mutations = []
+        candidate_tamper = copy.deepcopy(payload)
+        candidate_tamper["candidates"][0]["receipt_ids"] = ["r-inspect"]
+        mutations.append(candidate_tamper)
+        receipt_tamper = copy.deepcopy(payload)
+        receipt_tamper["receipts"][0]["capability"] = "run_tests"
+        mutations.append(receipt_tamper)
+        evidence_tamper = copy.deepcopy(payload)
+        evidence_tamper["evidence"][0]["metadata"] = {"tampered": True}
+        mutations.append(evidence_tamper)
+        for tampered in mutations:
+            with self.assertRaises(PermissionError):
+                FableRun.from_dict(tampered)
+
     def test_tampered_event_history_is_rejected_on_restore(self):
         payload = self.run.to_dict()
         payload["events"][0]["type"] = "tampered"
