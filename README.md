@@ -20,6 +20,8 @@
 
 > **Independence notice:** Fable-Mode is independently built and maintained by **REX-codebase**. It is not affiliated with, endorsed by, or sponsored by Google, Google DeepMind, Antigravity, Anthropic, Claude, or any model vendor. Host names and paths below describe compatibility integrations only.
 
+> **Ownership:** The source, documentation, and release history in this repository are maintained by REX-codebase under the MIT license.
+
 ## ⚡ Executive Summary
 
 Current autonomous AI coding agents suffer from a fatal structural flaw: **premature execution rushing and hallucinated reasoning**. When prompted to tackle complex, repo-scale engineering tasks, LLMs rush into shallow code generation within 15–45 seconds, failing to model axiomatic constraints, hardware topologies, concurrency races, or state invariants.
