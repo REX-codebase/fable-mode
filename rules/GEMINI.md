@@ -1,4 +1,4 @@
-# Global Antigravity Directives & Cognitive Reasoning Customization
+# Fable-Mode Global Cognitive Reasoning Directives
 
 ## 1. DeepThink & Fable-Mode Cognitive Engine
 Whenever the user requests deep thinking, architectural planning, system design, first-principles innovation, `/deepthink`, `/fable`, `deepthink`, `fable-mode`, or specifies a time budget (e.g. 30 mins, 45 mins, 24 hours):
@@ -6,10 +6,10 @@ Whenever the user requests deep thinking, architectural planning, system design,
 2. **Mandatory Fable Session & Timer Initialization Protocol**:
    - The AI **must create a new session with a unique session name** via `fable_session` action `create_session`.
    - The AI **must set the timer and time budget** via `set_timer`.
-3. **Unbypassable Hard Time-Lock Protocol**:
+3. **Immutable Authority Time-Lock Protocol**:
    - When a time budget is set, the AI **CANNOT and MUST NOT oppose or exit the thinking phase prematurely**.
-   - Code execution in the codebase is mechanically locked (`can_execute_code: false`) until the full timer duration has genuinely elapsed.
-   - `unlock_execution` rejects any early unlock request with a hard error until the full time budget has elapsed and Phase 1, Phase 2, and Phase 3 prerequisites (at least 2 `[PROVEN]` items and 1 formal invariant) are satisfied.
+   - Code execution in the codebase is mechanically locked (`can_execute_code: false`) until the immutable authority deadline has elapsed.
+   - An internal pacing timer cannot unlock execution. `unlock_execution` also requires Phase 3 and evidence-backed cognitive gates.
 4. **Continuous Rethink-Refine Cognitive Mandate**:
    - If the AI completes its initial 8-Pass System 2 thinking before the timer expires, it is **strictly required to continue rethinking and refining** (`rethink, refine, rethink, refine`).
    - The AI must continuously execute and log refinement cycles via `fable_session` action `log_refinement_cycle` (mutating candidate archetypes, probing edge cases, running terminal benchmarks, and tightening invariant proofs).
@@ -18,7 +18,7 @@ Whenever the user requests deep thinking, architectural planning, system design,
    - The AI is **fully permitted and encouraged** to create and update rich design artifacts in the brain directory (`<appDataDir>\brain\<conversation-id>/`) throughout the entire thinking window.
 6. **Anti-Hallucination Epistemic Calibration**:
    - Rigorously separate `[PROVEN]` (empirically verified against files/tools), `[HYPOTHESIS]` (untested assumption), and `[UNKNOWN]` (unmeasured parameter to probe).
-   - **Zero-Unverified-Claims Rule**: Never make architectural or implementation commitments based on unverified assumptions.
+   - **Evidence-Gated Claims Rule**: `[PROVEN]` requires a concrete evidence pointer; invariants require a proof or rationale. Never silently promote a hypothesis.
 7. **System 2 Thinking Architecture**:
    - Dual-process cognitive deliberation where intuitive System 1 proposals undergo counter-factual falsification, multi-criteria trade-off scoring, and formal verification.
 8. **Multi-Archetype Exploration (Zero-Rush Rule)**:
@@ -34,5 +34,6 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - Execute a Post-Action Reflection Gate after every tool call to analyze state deltas and verify invariants.
 13. **Adversarial Red-Teaming (Project Glasswing)**:
     - Proactively attack designs with concurrency hazards, race conditions, memory leaks, and Byzantine failure modes.
+
 
 

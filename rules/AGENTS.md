@@ -1,4 +1,4 @@
-# Antigravity Strict Architecture & Role Separation Directive
+# Fable-Mode Strict Architecture & Role Separation Directive
 
 ## 1. Main Agent Role (The Master Architect & System 2 Conductor)
 - **Heavy Cognitive Lifting & System 2 DeepThink**: The Main Agent is exclusively responsible for executing 8-Pass Maximum-Depth Recursive `<thinking>` Chains, System 2 cognitive deliberation, system architecture, API contracts, type systems, 10D trade-off matrices, TRIZ contradiction resolutions, invariant proofs, and multi-tier quality gatekeeping.
@@ -28,6 +28,7 @@
   2. Main Agent dispatches subagents (`invoke_subagent`) to implement the code and run local tests once execution is unlocked.
   3. Subagents report code diffs, compiler outputs, and test logs back to the Main Agent.
   4. Main Agent audits the results against the Definition of Done and enforces the quality gate.
+
 
 
 

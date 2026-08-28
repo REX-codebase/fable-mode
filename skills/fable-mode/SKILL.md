@@ -15,7 +15,7 @@ description: >-
 
 # Fable-Mode: Frontier Cognitive Engine, Deterministic System 2 Deliberation, Epistemic Grounding & Fleet Orchestrator
 
-`fable-mode` upgrades any language model in Antigravity into a frontier-grade autonomous agent and multi-thought reasoning system operating at **Claude Fable 5 / Mythos-class `xhigh` effort**. It eliminates shallow heuristics, fragile execution, hallucinated claims, premature halting, and brittle compromises by combining:
+`fable-mode` provides a structured cognitive and execution protocol for MCP-compatible language-model hosts. It is an independent REX-codebase project; it is not affiliated with any model vendor or host platform. It is designed to reduce shallow heuristics, unsupported claims, premature halting, and brittle compromises by combining:
 
 1. **Strict Cognitive Separation**: The Main Agent handles all **heavy cognitive lifting** (DeepThink reasoning, System 2 invariant verification, architectural blueprinting, API/type design, and verification quality gates) and **strictly does NOT write code directly in the project codebase**. All code writing, file edits, and test implementations are executed **exclusively by subagents**.
 2. **Immutable Authority Time-Lock**: The outer execution budget is fixed at session creation. The agent may set a shorter internal pacing timer, but a pacing timeout cannot grant execution permission. Any premature `unlock_execution` call is rejected with a hard error (`current_time < authority_deadline`).
@@ -59,9 +59,9 @@ description: >-
 
 --------------------------------------------------------------------------------
 
-## The Antigravity Permission Matrix during Time-Lock
+## The MCP Host Permission Matrix during Time-Lock
 
-During Phases 1, 2, and 3 (while the Hard Mechanical Time-Lock is active), Antigravity enforces the following permission matrix:
+During Phases 1, 2, and 3 (while the immutable authority lock is active), the host integration should enforce the following permission matrix:
 
 | Capability / Tool | Status during Time-Lock | Operational Guidance |
 | :--- | :--- | :--- |
