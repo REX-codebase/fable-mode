@@ -23,14 +23,23 @@ class ExecutionBrokerTests(unittest.TestCase):
     def tearDown(self):
         self.tempdir.cleanup()
 
-    def test_command_is_allowlisted_and_runs_without_shell(self):
+    def test_interpreters_are_blocked_before_write_authorization(self):
+        # shell=False does not stop Python from opening files directly.
+        with self.assertRaises(PermissionError):
+            self.broker.execute_command([
+                sys.executable, "-c", "open('unauthorized.txt', 'w').write('bypass')"
+            ])
+        self.assertFalse((self.workspace / "unauthorized.txt").exists())
+
+    def test_command_is_allowlisted_and_runs_after_authorization(self):
+        with self.assertRaises(PermissionError):
+            self.broker.execute_command(["sh", "-c", "echo escaped"])
+        self.broker.write_file("authorized.txt", "unlock", "admin-token")
         result = self.broker.execute_command([
             sys.executable, "-c", "print('broker-ok')"
         ])
         self.assertTrue(result["success"])
         self.assertIn("broker-ok", result["stdout"])
-        with self.assertRaises(PermissionError):
-            self.broker.execute_command(["sh", "-c", "echo escaped"])
 
     def test_paths_cannot_escape_workspace(self):
         with self.assertRaises(PermissionError):

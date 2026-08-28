@@ -68,10 +68,16 @@ adapter is required for hosts that do not expose MCP.
 V2. `fable-v2-broker` runs as a separate process, allowlists executables,
 executes without a shell, constrains working directories and file writes to a
 configured workspace, and keeps writes locked until administrative
-authorization. Hosts must route V2 command execution and writes through this
-broker instead of giving the model direct filesystem access.
+authorization. General interpreters and shell entry points are also blocked
+while writes are locked, because `shell=False` does not stop a command such as
+`python -c "open(...)"` from writing files. Hosts must route V2 command
+execution and writes through this broker instead of giving the model direct
+filesystem access.
 
 This is a process and policy boundary, not a complete operating-system sandbox.
+For a hardened deployment, the broker process must run with an OS-enforced
+read-only workspace before authorization, then receive a separately controlled
+writable layer or remount after authorization.
 Hostile workloads still require container/VM isolation and least-privilege OS
 controls. The broker is covered by child-process, allowlist, path-containment,
 and locked-write tests.

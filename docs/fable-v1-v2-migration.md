@@ -24,7 +24,9 @@ fable-v2-broker --workspace /path/to/workspace
 Hosts should communicate with the broker over its JSON-lines stdin/stdout
 protocol and route command execution and file writes through it. The broker
 allowlists executables, constrains paths to the workspace, keeps writes locked
-until administrative authorization, and runs commands without a shell.
+until administrative authorization, blocks general interpreters while writes
+are locked, and runs commands without a shell. This prevents the common
+`python -c "open(...)"` bypass at the broker policy layer.
 
 This is a process/policy boundary, not a complete operating-system sandbox.
 For hostile workloads, run the broker inside a container or equivalent OS

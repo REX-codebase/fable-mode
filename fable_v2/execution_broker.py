@@ -48,7 +48,17 @@ class BrokerPolicy:
 
 
 class ExecutionBroker:
-    """Allowlisted command and write broker intended to run in a child process."""
+    """Allowlisted command and write broker intended to run in a child process.
+
+    General interpreters and shell entry points are blocked while writes are
+    locked. ``shell=False`` alone is not a filesystem sandbox: an invocation
+    such as ``python -c`` can still write files directly.
+    """
+
+    READ_LOCKED_INTERPRETERS = frozenset({
+        "bash", "cmd", "node", "perl", "php", "pypy", "powershell",
+        "pwsh", "python", "pytest", "ruby", "sh", "zsh",
+    })
 
     def __init__(self, policy: BrokerPolicy):
         self.policy = policy
@@ -64,6 +74,7 @@ class ExecutionBroker:
             "capabilities": ["execute_command", "inspect_files", "probe_capabilities"],
             "available_executables": available,
             "writes_enabled": self._writes_unlocked,
+            "read_locked_interpreters": sorted(self.READ_LOCKED_INTERPRETERS),
             "workspace": str(self.policy.workspace),
         }
 
@@ -120,8 +131,17 @@ class ExecutionBroker:
         if not argv or any(not isinstance(item, str) or not item for item in argv):
             raise ValueError("command must be a non-empty sequence of strings")
         executable = Path(argv[0]).name
+        executable_key = Path(executable).stem.lower()
+        is_interpreter = (
+            executable_key in self.READ_LOCKED_INTERPRETERS
+            or executable_key.startswith("python")
+        )
         if executable not in self.policy.allowed_executables:
             raise PermissionError(f"executable is not allowlisted: {executable}")
+        if is_interpreter and not self._writes_unlocked:
+            raise PermissionError(
+                "general interpreters and shells are blocked while workspace writes are locked"
+            )
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         directory = self.policy.workspace if cwd is None else self._safe_path(cwd)
