@@ -1,6 +1,6 @@
 # ==============================================================================
 # FABLE-MODE: Frontier Cognitive Engine & Deterministic System 2 Installer
-# Certified for Google Antigravity, Claude Desktop, Cursor & Windsurf
+# Independent REX-codebase project; installs into a host-compatible MCP layout
 # ==============================================================================
 
 [CmdletBinding()]
@@ -79,11 +79,11 @@ Write-Success "Cognitive skill installed to: $SkillTarget"
 
 # Step 5: Run Automated Invariant & MCP Test Suites
 if (-not $SkipTests) {
-    Write-Step "Executing 13/13 Fable-Engine Invariant Verification Suites..."
+    Write-Step "Executing Fable-Engine verification suite..."
     $testScript = Join-Path $EngineSource "test_server.py"
     $testOutput = python $testScript 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "All 13/13 test suites PASSED with 100% invariant compliance!"
+        Write-Success "Fable-Engine verification suite PASSED."
     } else {
         Write-Alert "Tests finished with warnings or issues. Output log:"
         Write-Host $testOutput -ForegroundColor Red
@@ -97,12 +97,12 @@ Write-Host @"
  [SUCCESS] Fable-Mode installation completed successfully!
 ================================================================================
 
- Antigravity MCP Server Configuration:
+ MCP Host Configuration:
  ------------------------------------
  Location: $McpTarget\server.py
  Schema:   $McpTarget\fable_session.json
 
- Claude Desktop / Cursor / Windsurf mcpServers snippet:
+ MCP-compatible host mcpServers snippet:
  -----------------------------------------------------
  {
    "mcpServers": {
@@ -118,3 +118,4 @@ Write-Host @"
  Ready to deliberate! Trigger with /deepthink, /fable, or set a 45m budget.
 ================================================================================
 "@ -ForegroundColor Green
+

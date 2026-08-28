@@ -8,10 +8,9 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](./LICENSE)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0-8A2BE2?style=for-the-badge)](https://modelcontextprotocol.io/)
 [![Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20Stdlib)-brightgreen?style=for-the-badge)](#zero-dependencies-architecture)
-[![Antigravity](https://img.shields.io/badge/Antigravity-Certified-orange?style=for-the-badge)](https://antigravity.google/)
 [![Engine](https://img.shields.io/badge/Cognition-System%202%20Deliberation-ff69b4?style=for-the-badge)](#-the-why-fable-mode-paradigm-shift)
 
-**Upgrades any frontier language model into an uncompromising System 2 reasoning powerhouse operating at Claude Fable 5 / Mythos-class `xhigh` compute effort.**
+**An independent REX-codebase cognitive engine and fleet orchestrator for MCP-compatible language-model hosts.**
 
 [Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Quickstart](#-1-click-quickstart) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
 
@@ -19,11 +18,15 @@
 
 ---
 
+> **Independence notice:** Fable-Mode is independently built and maintained by **REX-codebase**. It is not affiliated with, endorsed by, or sponsored by Google, Google DeepMind, Antigravity, Anthropic, Claude, or any model vendor. Host names and paths below describe compatibility integrations only.
+
+> **Ownership:** The source, documentation, and release history in this repository are maintained by REX-codebase under the MIT license.
+
 ## ⚡ Executive Summary
 
 Current autonomous AI coding agents suffer from a fatal structural flaw: **premature execution rushing and hallucinated reasoning**. When prompted to tackle complex, repo-scale engineering tasks, LLMs rush into shallow code generation within 15–45 seconds, failing to model axiomatic constraints, hardware topologies, concurrency races, or state invariants.
 
-**`fable-mode` ends the era of shallow AI coding.** 
+**`fable-mode` is designed to reduce shallow AI coding through enforceable workflow gates.** 
 
 By coupling an **Unbypassable Mechanical Time-Lock** with **Deterministic System 2 Deliberation**, an **Anti-Hallucination Epistemic Ledger**, and a **Strict Cognitive Role Separation** (Architect Conductor $\to$ Subagent Coder Fleet), `fable-mode` forces the AI to deliberate continuously, empirically test hypotheses using live terminal probes (`run_command`), and mathematically prove domain invariants before a single line of codebase source code can be modified.
 
@@ -109,7 +112,7 @@ flowchart TB
 
 ---
 
-### 🛡️ 1. Unbypassable Mechanical Time-Lock
+### 🛡️ 1. Immutable Authority Time-Lock
 
 When a user specifies a time budget (e.g. `30 mins`, `45 mins`, `4 hours`, `24 hours`), the `fable-engine` MCP server initializes an immutable authority deadline. Enforcement uses a monotonic clock while the process is alive:
 
@@ -191,7 +194,7 @@ Pass 8: Blueprint & Subagent Contract> Finalize API specs, test suites, and suba
 
 ---
 
-### ⚡ 5. Antigravity Deliberation Permission Matrix
+### ⚡ 5. MCP Host Deliberation Permission Matrix
 
 During the time-lock window (Phases 1, 2, and 3), the agent has full access to inspect and verify the system, while the repository source code remains protected:
 
@@ -329,9 +332,9 @@ The installer verifies your Python runtime, registers the `fable-engine` MCP ser
 
 ---
 
-### Option B: Antigravity MCP Configuration
+### Option B: MCP Host Configuration
 
-Add the following to your Antigravity MCP configuration file (`~/.gemini/antigravity/mcp_config.json`):
+Add the following to the MCP configuration file used by your host. The path shown is an example of a Gemini-style host layout; Fable-Mode itself is host-independent.
 
 ```json
 {
@@ -351,9 +354,9 @@ Add the following to your Antigravity MCP configuration file (`~/.gemini/antigra
 
 ---
 
-### Option C: Claude Desktop / Cursor / Windsurf Configuration
+### Option C: Other MCP-Compatible Clients
 
-For Claude Desktop (`claude_desktop_config.json`), Cursor, or Windsurf:
+For desktop clients, editors, or other MCP-compatible hosts:
 
 ```json
 {
@@ -479,7 +482,7 @@ fable-mode/
 │   ├── test_server.py                      # 13 comprehensive unit/integration test suites
 │   └── sessions/                           # Persistent JSON session stores and WAL logs
 ├── rules/
-│   └── fable-mode.md                       # Antigravity strict architecture & role directives
+│   └── fable-mode.md                       # Fable-Mode architecture & role directives
 ├── skills/
 │   └── fable-mode/
 │       ├── SKILL.md                        # Master cognitive skill configuration & protocols
@@ -500,7 +503,7 @@ fable-mode/
 │           └── swe-bench-pro-debugging.md
 ├── install.ps1                             # 1-Click Windows PowerShell setup script
 ├── LICENSE                                 # MIT Open-Source License
-└── README.md                               # Masterpiece documentation
+└── README.md                               # Project documentation
 ```
 
 ---
@@ -513,8 +516,8 @@ fable-mode/
 
 <div align="center">
 
-**Built for the Google DeepMind Antigravity Ecosystem.**  
-*Eliminate shallow heuristics. Deliberate with absolute mathematical certainty.*
+**Built independently by REX-codebase.**  
+*Reduce unsupported claims. Deliberate with evidence.*
 
 </div>
 

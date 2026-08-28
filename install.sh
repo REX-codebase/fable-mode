@@ -16,10 +16,12 @@ echo "[+] Installing skill to: $SKILL_DEST"
 mkdir -p "$SKILL_DEST"
 cp -r "$SCRIPT_DIR/skills/fable-mode/"* "$SKILL_DEST/"
 
-MCP_DIR="$HOME/.gemini/antigravity/mcp/fable-engine"
+# This is a host-specific Gemini-style layout; override MCP_DIR for another host.
+MCP_DIR="${MCP_DIR:-$HOME/.gemini/antigravity/mcp/fable-engine}"
 mkdir -p "$MCP_DIR"
 cp "$SCRIPT_DIR/fable_engine/fable_session.json" "$MCP_DIR/fable_session.json"
 
 echo "=========================================================="
 echo "  Fable-Mode installation complete!"
 echo "=========================================================="
+

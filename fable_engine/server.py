@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fable-Engine MCP Server for Antigravity.
+Fable-Engine MCP Server for MCP-compatible agent hosts.
 Implements the fable_session tool for deep cognitive session management,
 epistemic tracking, invariant recording, anti-rush lockout enforcement,
 user-controlled time-budgeted pacing telemetry, and session persistence.
@@ -935,7 +935,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 TOOL_SCHEMA = {
     "name": "fable_session",
     "description": (
-        "Fable Cognitive Engine Session & Telemetry Manager for Antigravity.\n"
+        "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\n"
         "Enforces DeepThink cognitive rigor, hard mechanical time-lock, anti-rush execution lockout, epistemic truth logging (PROVEN/HYPOTHESIS/UNKNOWN),\n"
         "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, and live user-controlled time-budgeted pacing telemetry."
     ),
@@ -1053,7 +1053,7 @@ def send_response(response_dict: Dict[str, Any]):
 
 
 def main():
-    logger.info("Starting Antigravity Fable-Engine MCP Server on stdio...")
+    logger.info("Starting Fable-Engine MCP Server on stdio...")
     while True:
         line = sys.stdin.readline()
         if not line:
