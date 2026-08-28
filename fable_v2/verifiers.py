@@ -35,6 +35,7 @@ class FunctionVerifier:
     verifier_class: str = "deterministic"
     independent: bool = False
     trusted: bool = True
+    evidence_ids: tuple[str, ...] = ()
 
     def verify(self, candidate: Candidate) -> VerificationResult:
         passed, reasons, score = self.check(candidate)
@@ -46,6 +47,7 @@ class FunctionVerifier:
             passed=bool(passed),
             reasons=tuple(str(reason) for reason in reasons),
             score=score,
+            evidence_ids=self.evidence_ids,
         )
 
 

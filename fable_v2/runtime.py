@@ -131,6 +131,15 @@ class FableRun:
         unknown_evidence = [eid for eid in result.evidence_ids if eid not in self.evidence]
         if unknown_evidence:
             raise ValueError(f"verification references unknown evidence: {unknown_evidence}")
+        candidate_evidence = set(candidate.evidence_ids)
+        unrelated_evidence = [eid for eid in result.evidence_ids if eid not in candidate_evidence]
+        if unrelated_evidence:
+            raise PermissionError(
+                "verification evidence is not attached to the verified candidate: "
+                + ", ".join(unrelated_evidence)
+            )
+        if result.passed and not result.evidence_ids:
+            raise PermissionError("a passing verification must cite candidate evidence")
         self.state = RunState.VERIFYING
         self.verifications[result.verification_id] = result
         self._event("verification_recorded", verification_id=result.verification_id,
@@ -168,6 +177,20 @@ class FableRun:
         verifier_class = str(getattr(verifier, "verifier_class", "")).strip()
         if not verifier_class:
             raise ValueError("registered verifier must declare verifier_class")
+        # Objective checks must establish a baseline before an independent
+        # judge is allowed to approve the candidate. This prevents a model
+        # judge from becoming the first and only line of defense.
+        deterministic_classes = {"deterministic", "machine-check"}
+        required_deterministic = deterministic_classes & set(
+            self.task.verification_policy.required_verifier_classes
+        )
+        passed_classes = {v.verifier_class for v in self.passed_verifications(candidate_id)}
+        if (bool(getattr(verifier, "independent", False))
+                and required_deterministic - passed_classes):
+            raise PermissionError(
+                "independent verification must run after passing deterministic "
+                "verification: " + ", ".join(sorted(required_deterministic - passed_classes))
+            )
         raw = verifier.verify(candidate)
         if raw.candidate_id != candidate_id or raw.session_id != self.session_id:
             raise ValueError("verifier returned a result for the wrong session or candidate")

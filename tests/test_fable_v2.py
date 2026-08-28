@@ -80,18 +80,31 @@ class FableV2RuntimeTests(unittest.TestCase):
             receipt_id="r", session_id="session-002", capability="inspect_files",
             tool_name="grep", tool_input="x", tool_output="y", success=True,
         ))
-        candidate = Candidate("c", "session-002", "approach", "artifact", ("r",))
+        run.attach_evidence(Evidence(
+            "e", "session-002", "inspection completed", "inspection", "grep",
+            "r", "hash", verified=True,
+        ))
+        candidate = Candidate("c", "session-002", "approach", "artifact", ("r",), ("e",))
         run.register_candidate(candidate)
         run.execute_verifier(FunctionVerifier(
-            "tests", lambda candidate: (True, ("checked",), 1.0)
+            "tests", lambda candidate: (True, ("checked",), 1.0), evidence_ids=("e",)
         ), "c")
         with self.assertRaises(PermissionError) as error:
             run.finalize("c")
         self.assertIn("search_web", str(error.exception))
 
+    def test_deterministic_verifier_must_run_before_independent(self):
+        with self.assertRaises(PermissionError) as error:
+            self.run.execute_verifier(FunctionVerifier(
+                "independent-first", lambda candidate: (True, ("reviewed",), 1.0),
+                verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+            ), "candidate-001")
+        self.assertIn("after passing deterministic", str(error.exception))
+
     def test_policy_requires_independent_verifier_class(self):
         self.run.execute_verifier(FunctionVerifier(
-            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0)
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
         ), "candidate-001")
         with self.assertRaises(PermissionError) as error:
             self.run.finalize("candidate-001")
@@ -99,11 +112,12 @@ class FableV2RuntimeTests(unittest.TestCase):
 
     def test_verified_candidate_can_finalize(self):
         self.run.execute_verifier(FunctionVerifier(
-            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0)
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
         ), "candidate-001")
         self.run.execute_verifier(FunctionVerifier(
             "independent-review", lambda candidate: (True, ("review passed",), 1.0),
-            verifier_class="independent", independent=True,
+            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
         ), "candidate-001")
         result = self.run.finalize("candidate-001")
         self.assertEqual(result.candidate_id, "candidate-001")
