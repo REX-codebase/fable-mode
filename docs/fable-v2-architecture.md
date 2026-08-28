@@ -165,6 +165,27 @@ behind the same verifier contract in `fable_v2/verifiers.py`.
 8. Publish results only after hidden evaluation; do not claim 10x/50x from
    plumbing tests.
 
+## Boundary-test coverage
+
+The foundation test suite covers failure modes that can silently turn a
+receipt ledger into a false correctness oracle:
+
+- cross-candidate and mismatched-evidence verification;
+- evidence/source hash mismatches;
+- duplicate or contradictory verifier results;
+- verifier invalidation after a prior pass;
+- malformed and reversed timestamps;
+- mutable metadata and artifact snapshotting;
+- run serialization round-trips;
+- concurrent candidate registration;
+- expected versus probed capability aliases;
+- verifier policy enforcement; and
+- tampered event-history detection.
+
+The suite is still a runtime-foundation suite. It does not replace real host
+adapters, sandbox tests, hidden task benchmarks, or calibration of model-based
+judges.
+
 ## Success criteria
 
 For each target domain, publish:

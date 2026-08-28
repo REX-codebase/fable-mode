@@ -9,16 +9,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
+import copy
 import hashlib
 import hmac
 import secrets
-from typing import Any, Callable, Iterable, Protocol
+import threading
+from typing import Any, Iterable, Protocol
 
 from .protocol import (
     Candidate,
     Evidence,
     TaskSpec,
     ToolReceipt,
+    VerificationPolicy,
     VerificationResult,
     canonical_hash,
     utc_now,
@@ -63,11 +66,30 @@ class FableRun:
     verifications: dict[str, VerificationResult] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     final_candidate_id: str | None = None
+    invalidated_verifiers: dict[str, str] = field(default_factory=dict)
     _attestation_secret: bytes = field(default_factory=lambda: secrets.token_bytes(32),
                                        repr=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock,
+                                    repr=False, compare=False)
 
     def _event(self, event_type: str, **data: Any) -> None:
-        self.events.append({"type": event_type, "at": utc_now(), **data})
+        with self._lock:
+            event = {"type": event_type, "at": utc_now(), **data}
+            event["prev_hash"] = self.events[-1].get("event_hash", "0" * 64) if self.events else "0" * 64
+            event["event_hash"] = canonical_hash(event)
+            self.events.append(event)
+
+    def validate_event_history(self) -> None:
+        """Reject edited, reordered, or truncated event history."""
+        previous = "0" * 64
+        for event in self.events:
+            if event.get("prev_hash") != previous:
+                raise ValueError("event history chain is broken")
+            supplied_hash = event.get("event_hash")
+            body = {key: value for key, value in event.items() if key != "event_hash"}
+            if supplied_hash != canonical_hash(body):
+                raise ValueError("event history contains a tampered event")
+            previous = supplied_hash
 
     def start(self) -> None:
         if self.state is not RunState.CREATED:
@@ -76,29 +98,42 @@ class FableRun:
         self._event("run_started", session_id=self.session_id)
 
     def record_receipt(self, receipt: ToolReceipt) -> None:
-        if receipt.session_id != self.session_id:
-            raise ValueError("tool receipt belongs to a different session")
-        if receipt.receipt_id in self.receipts:
-            raise ValueError(f"duplicate receipt: {receipt.receipt_id}")
-        self.receipts[receipt.receipt_id] = receipt
-        self._event("tool_receipt", receipt_id=receipt.receipt_id,
-                    capability=receipt.capability, success=receipt.success)
+        with self._lock:
+            if receipt.session_id != self.session_id:
+                raise ValueError("tool receipt belongs to a different session")
+            if receipt.receipt_id in self.receipts:
+                raise ValueError(f"duplicate receipt: {receipt.receipt_id}")
+            self.receipts[receipt.receipt_id] = receipt
+            self._event("tool_receipt", receipt_id=receipt.receipt_id,
+                        capability=receipt.capability, success=receipt.success)
 
     def register_candidate(self, candidate: Candidate) -> None:
-        if candidate.session_id != self.session_id:
-            raise ValueError("candidate belongs to a different session")
-        if candidate.candidate_id in self.candidates:
-            raise ValueError(f"duplicate candidate: {candidate.candidate_id}")
-        missing = [rid for rid in candidate.receipt_ids if rid not in self.receipts]
-        if missing:
-            raise ValueError(f"candidate references unknown receipts: {missing}")
-        missing_evidence = [eid for eid in candidate.evidence_ids if eid not in self.evidence]
-        if missing_evidence:
-            raise ValueError(f"candidate references unknown evidence: {missing_evidence}")
-        self.candidates[candidate.candidate_id] = candidate
-        self._event("candidate_registered", candidate_id=candidate.candidate_id)
+        with self._lock:
+            if candidate.session_id != self.session_id:
+                raise ValueError("candidate belongs to a different session")
+            if candidate.candidate_id in self.candidates:
+                raise ValueError(f"duplicate candidate: {candidate.candidate_id}")
+            missing = [rid for rid in candidate.receipt_ids if rid not in self.receipts]
+            if missing:
+                raise ValueError(f"candidate references unknown receipts: {missing}")
+            missing_evidence = [eid for eid in candidate.evidence_ids if eid not in self.evidence]
+            if missing_evidence:
+                raise ValueError(f"candidate references unknown evidence: {missing_evidence}")
+            # Keep a private snapshot so callers cannot mutate an artifact or
+            # metadata after it enters the auditable run.
+            stored = replace(
+                candidate,
+                artifact=copy.deepcopy(candidate.artifact),
+                metadata=copy.deepcopy(dict(candidate.metadata)),
+            )
+            self.candidates[candidate.candidate_id] = stored
+            self._event("candidate_registered", candidate_id=candidate.candidate_id)
 
     def attach_evidence(self, evidence: Evidence) -> None:
+        with self._lock:
+            self._attach_evidence(evidence)
+
+    def _attach_evidence(self, evidence: Evidence) -> None:
         if evidence.session_id != self.session_id:
             raise ValueError("evidence belongs to a different session")
         receipt = self.receipts.get(evidence.receipt_id)
@@ -125,6 +160,9 @@ class FableRun:
             raise ValueError("verification references an unknown candidate")
         if result.verification_id in self.verifications:
             raise ValueError(f"duplicate verification: {result.verification_id}")
+        if any(v.candidate_id == result.candidate_id and v.verifier == result.verifier
+               for v in self.verifications.values()):
+            raise ValueError("verifier already produced a result for this candidate")
         if not result.trusted or not result.inspected_candidate:
             raise PermissionError("verification must be produced by a trusted registered verifier")
         if result.candidate_hash != canonical_hash(candidate.artifact):
@@ -176,8 +214,11 @@ class FableRun:
         candidate = self.candidates.get(candidate_id)
         if candidate is None:
             raise ValueError(f"unknown candidate: {candidate_id}")
+        verifier_name = str(getattr(verifier, "name", "")).strip()
+        if verifier_name in self.invalidated_verifiers:
+            raise PermissionError(f"verifier is invalidated: {verifier_name}")
         if not getattr(verifier, "trusted", False):
-            raise PermissionError(f"verifier is not trusted: {getattr(verifier, 'name', '')}")
+            raise PermissionError(f"verifier is not trusted: {verifier_name}")
         verifier_class = str(getattr(verifier, "verifier_class", "")).strip()
         if not verifier_class:
             raise ValueError("registered verifier must declare verifier_class")
@@ -200,7 +241,7 @@ class FableRun:
             raise ValueError("verifier returned a result for the wrong session or candidate")
         result = replace(
             raw,
-            verifier=getattr(verifier, "name", raw.verifier),
+            verifier=verifier_name or raw.verifier,
             verifier_class=verifier_class,
             candidate_hash=canonical_hash(candidate.artifact),
             inspected_candidate=True,
@@ -210,6 +251,15 @@ class FableRun:
         result = replace(result, runtime_attestation=self._attestation(result))
         self._record_attested_verification(result)
         return result
+
+    def invalidate_verifier(self, verifier: str, reason: str) -> None:
+        """Revoke a verifier's authority for future finalization decisions."""
+        if not verifier or not verifier.strip() or not reason or not reason.strip():
+            raise ValueError("verifier and reason must be non-empty")
+        with self._lock:
+            self.invalidated_verifiers[verifier.strip()] = reason.strip()
+            self._event("verifier_invalidated", verifier=verifier.strip(),
+                        reason=reason.strip())
 
     def successful_capabilities(self) -> set[str]:
         return {r.capability for r in self.receipts.values() if r.success}
@@ -234,7 +284,7 @@ class FableRun:
     def passed_verifications(self, candidate_id: str) -> list[VerificationResult]:
         return [v for v in self.verifications.values()
                 if v.candidate_id == candidate_id and v.passed and v.trusted
-                and v.inspected_candidate]
+                and v.inspected_candidate and v.verifier not in self.invalidated_verifiers]
 
     def verification_requirements(self, candidate_id: str) -> list[str]:
         """Return missing policy requirements for the exact candidate."""
@@ -267,6 +317,70 @@ class FableRun:
         self.state = RunState.FINALIZED
         self._event("run_finalized", candidate_id=candidate_id)
         return self.candidates[candidate_id]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize a run for round-trip checkpointing."""
+        return {
+            "version": "2.0",
+            "session_id": self.session_id,
+            "task": self.task.to_dict(),
+            "state": self.state.value,
+            "started_at": self.started_at,
+            "receipts": [receipt.to_dict() for receipt in self.receipts.values()],
+            "candidates": [candidate.to_dict() for candidate in self.candidates.values()],
+            "evidence": [item.to_dict() for item in self.evidence.values()],
+            "verifications": [item.to_dict() for item in self.verifications.values()],
+            "events": copy.deepcopy(self.events),
+            "final_candidate_id": self.final_candidate_id,
+            "invalidated_verifiers": dict(self.invalidated_verifiers),
+            # Production deployments should protect this with an external key
+            # store; it is included here so an in-memory checkpoint can be
+            # faithfully restored without silently trusting new signatures.
+            "attestation_secret": self._attestation_secret.hex(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FableRun":
+        """Restore a run and reject tampered event history or payload hashes."""
+        task_data = dict(data["task"])
+        policy_data = dict(task_data.pop("verification_policy", {}))
+        task_data["constraints"] = tuple(task_data.get("constraints", ()))
+        task_data["definition_of_done"] = tuple(task_data.get("definition_of_done", ()))
+        task_data["required_capabilities"] = tuple(task_data.get("required_capabilities", ()))
+        task_data["required_evidence"] = tuple(task_data.get("required_evidence", ()))
+        task_data["verification_policy"] = VerificationPolicy(**policy_data)
+        run = cls(
+            session_id=data["session_id"],
+            task=TaskSpec(**task_data),
+            state=RunState(data.get("state", RunState.CREATED.value)),
+            started_at=data.get("started_at", utc_now()),
+        )
+        secret = data.get("attestation_secret")
+        if secret:
+            run._attestation_secret = bytes.fromhex(secret)
+        run.receipts = {item["receipt_id"]: ToolReceipt(**item)
+                        for item in data.get("receipts", [])}
+        run.candidates = {
+            item["candidate_id"]: Candidate(
+                **{**item,
+                   "receipt_ids": tuple(item.get("receipt_ids", ())),
+                   "evidence_ids": tuple(item.get("evidence_ids", ()))})
+            for item in data.get("candidates", [])
+        }
+        run.evidence = {item["evidence_id"]: Evidence(**item)
+                        for item in data.get("evidence", [])}
+        run.verifications = {
+            item["verification_id"]: VerificationResult(
+                **{**item,
+                   "reasons": tuple(item.get("reasons", ())),
+                   "evidence_ids": tuple(item.get("evidence_ids", ()))})
+            for item in data.get("verifications", [])
+        }
+        run.events = copy.deepcopy(data.get("events", []))
+        run.final_candidate_id = data.get("final_candidate_id")
+        run.invalidated_verifiers = dict(data.get("invalidated_verifiers", {}))
+        run.validate_event_history()
+        return run
 
     def status(self) -> dict[str, Any]:
         return {

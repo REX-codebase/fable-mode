@@ -1,8 +1,10 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from fable_v2 import (
     Candidate,
     Evidence,
+    FableRun,
     FunctionVerifier,
     TaskSpec,
     ToolReceipt,
@@ -158,6 +160,118 @@ class FableV2RuntimeTests(unittest.TestCase):
         result = verifier.verify(self.candidate)
         self.assertTrue(result.passed)
         self.assertEqual(result.verifier, "always-pass")
+
+    def test_verifier_cannot_return_a_result_for_another_candidate(self):
+        class WrongCandidateVerifier:
+            name = "wrong-candidate"
+            verifier_class = "deterministic"
+            independent = False
+            trusted = True
+
+            def verify(self, candidate):
+                return VerificationResult(
+                    "wrong", candidate.session_id, "another-candidate", self.name, True,
+                    evidence_ids=("e-tests",),
+                )
+
+        with self.assertRaises(ValueError):
+            self.run.execute_verifier(WrongCandidateVerifier(), "candidate-001")
+
+    def test_verifier_evidence_must_belong_to_candidate(self):
+        candidate = Candidate(
+            "candidate-002", "session-001", "second approach", "other artifact",
+            ("r-inspect",), (),
+        )
+        self.run.register_candidate(candidate)
+        with self.assertRaises(PermissionError):
+            self.run.execute_verifier(FunctionVerifier(
+                "wrong-evidence", lambda candidate: (True, ("checked",), 1.0),
+                evidence_ids=("e-tests",),
+            ), "candidate-002")
+
+    def test_duplicate_or_contradictory_verification_is_rejected(self):
+        verifier = FunctionVerifier(
+            "single-use", lambda candidate: (True, ("checked",), 1.0),
+            evidence_ids=("e-tests",),
+        )
+        self.run.execute_verifier(verifier, "candidate-001")
+        with self.assertRaises(ValueError):
+            self.run.execute_verifier(verifier, "candidate-001")
+        with self.assertRaises(ValueError):
+            self.run.execute_verifier(FunctionVerifier(
+                "single-use", lambda candidate: (False, ("contradiction",), 0.0),
+                evidence_ids=("e-tests",),
+            ), "candidate-001")
+
+    def test_finalization_rechecks_verifier_validity(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
+        ), "candidate-001")
+        self.run.execute_verifier(FunctionVerifier(
+            "independent-review", lambda candidate: (True, ("review passed",), 1.0),
+            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+        ), "candidate-001")
+        self.run.invalidate_verifier("independent-review", "calibration drift")
+        with self.assertRaises(PermissionError) as error:
+            self.run.finalize("candidate-001")
+        self.assertIn("independent", str(error.exception))
+
+    def test_malformed_or_reversed_timestamps_are_rejected(self):
+        with self.assertRaises(ValueError):
+            ToolReceipt.from_result(
+                receipt_id="bad-time", session_id="session-001", capability="x",
+                tool_name="x", tool_input="x", tool_output="x", success=True,
+                started_at="not-a-time", finished_at="not-a-time",
+            )
+        with self.assertRaises(ValueError):
+            ToolReceipt.from_result(
+                receipt_id="reversed", session_id="session-001", capability="x",
+                tool_name="x", tool_input="x", tool_output="x", success=True,
+                started_at="2026-08-28T12:00:00+00:00",
+                finished_at="2026-08-28T11:00:00+00:00",
+            )
+
+    def test_mutable_payloads_are_snapshotted(self):
+        output = {"passed": True}
+        metadata = {"host": {"name": "test"}}
+        receipt = ToolReceipt.from_result(
+            receipt_id="snapshot", session_id="session-001", capability="x",
+            tool_name="x", tool_input="x", tool_output=output, success=True,
+            metadata=metadata,
+        )
+        output["passed"] = False
+        metadata["host"]["name"] = "mutated"
+        self.assertTrue(receipt.output["passed"])
+        self.assertEqual(receipt.metadata["host"]["name"], "test")
+
+        artifact = {"items": [1]}
+        candidate = Candidate("snapshot-candidate", "session-001", "approach", artifact)
+        self.run.register_candidate(candidate)
+        artifact["items"].append(2)
+        self.assertEqual(self.run.candidates["snapshot-candidate"].artifact, {"items": [1]})
+
+    def test_run_serialization_round_trip(self):
+        restored = FableRun.from_dict(self.run.to_dict())
+        self.assertEqual(restored.status(), self.run.status())
+        restored.validate_event_history()
+        self.assertEqual(restored.evidence["e-tests"].content_hash, self.evidence.content_hash)
+
+    def test_parallel_candidate_registration_is_safe(self):
+        candidates = [
+            Candidate(f"parallel-{i}", "session-001", "parallel approach", {"i": i})
+            for i in range(32)
+        ]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(self.run.register_candidate, candidates))
+        self.assertEqual(len(self.run.candidates), 33)
+        self.run.validate_event_history()
+
+    def test_tampered_event_history_is_rejected_on_restore(self):
+        payload = self.run.to_dict()
+        payload["events"][0]["type"] = "tampered"
+        with self.assertRaises(ValueError):
+            FableRun.from_dict(payload)
 
     def test_host_profiles_are_expected_until_probed(self):
         profile = get_profile("antigravity")

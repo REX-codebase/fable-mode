@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import copy
 import hashlib
 import json
 from typing import Any, Mapping
@@ -28,6 +29,18 @@ def _required_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _parse_timestamp(value: str, field_name: str) -> datetime:
+    text = _required_text(value, field_name)
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field_name} must include a timezone offset")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -103,6 +116,14 @@ class ToolReceipt:
         for name in ("receipt_id", "session_id", "capability", "tool_name",
                      "input_hash", "output_hash", "started_at", "finished_at"):
             _required_text(getattr(self, name), name)
+        started = _parse_timestamp(self.started_at, "started_at")
+        finished = _parse_timestamp(self.finished_at, "finished_at")
+        if finished < started:
+            raise ValueError("finished_at cannot be earlier than started_at")
+        # Snapshot mutable host payloads so later caller mutation cannot change
+        # what the receipt hashes or what evidence derives from it.
+        object.__setattr__(self, "output", copy.deepcopy(self.output))
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata)))
         if canonical_hash(self.output) != self.output_hash:
             raise ValueError("output_hash does not match the actual receipt output")
 
@@ -164,6 +185,8 @@ class Evidence:
         for name in ("evidence_id", "session_id", "claim", "kind", "source",
                      "receipt_id", "content_hash", "source_output_hash"):
             _required_text(getattr(self, name), name)
+        object.__setattr__(self, "content", copy.deepcopy(self.content))
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata)))
         if canonical_hash(self.content) != self.content_hash:
             raise ValueError("content_hash does not match the evidence content")
 
