@@ -526,3 +526,21 @@ fable-mode/
 
 </div>
 
+
+
+## 🧭 Fable V2 Portable Runtime (Experimental)
+
+Fable V2 evolves the project from a cognitive prompt and session manager into
+an evidence-gated, model-agnostic runtime. Its goal is to improve weak and
+frontier models through structured task contracts, diverse candidate search,
+real tool receipts, independent verification, targeted repair, adaptive
+compute, and portable host adapters.
+
+MCP is used as a tool interface, not as the intelligence itself. The portable
+core lives in `fable_v2/`; see [`docs/fable-v2-architecture.md`](docs/fable-v2-architecture.md)
+for the architecture, enforcement model, adapter contract, and benchmark
+criteria.
+
+The 10x/50x uplift figures are ambitious hypotheses for measured task classes,
+not universal guarantees. Results must be established on held-out benchmarks
+with success, error reduction, cost, latency, and verifier-quality metrics.
