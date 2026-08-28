@@ -218,7 +218,9 @@ receipt ledger into a false correctness oracle:
 - verifier invalidation after a prior pass;
 - malformed and reversed timestamps;
 - mutable metadata and artifact snapshotting;
+- candidate dependency-graph and receipt/evidence state tampering;
 - run serialization round-trips;
+- bounded broker output and capability dispatch;
 - concurrent candidate registration;
 - expected versus probed capability aliases;
 - verifier policy enforcement; and
