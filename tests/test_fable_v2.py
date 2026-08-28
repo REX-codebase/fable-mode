@@ -1,3 +1,4 @@
+import copy
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
@@ -301,6 +302,31 @@ class FableV2RuntimeTests(unittest.TestCase):
             list(pool.map(self.run.register_candidate, candidates))
         self.assertEqual(len(self.run.candidates), 33)
         self.run.validate_event_history()
+
+    def test_restored_verdict_is_checked_against_complete_attestation(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
+        ), "candidate-001")
+        self.run.execute_verifier(FunctionVerifier(
+            "independent-review", lambda candidate: (True, ("review passed",), 1.0),
+            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+        ), "candidate-001")
+        payload = self.run.to_dict()
+        self.assertEqual(FableRun.from_dict(payload).status()["verifications"], 2)
+        mutations = {
+            "passed": False,
+            "reasons": ["tampered"],
+            "evidence_ids": [],
+            "score": 0.0,
+            "independent": True,
+            "inspected_candidate": False,
+        }
+        for field, value in mutations.items():
+            tampered = copy.deepcopy(payload)
+            tampered["verifications"][0][field] = value
+            with self.assertRaises(PermissionError, msg=field):
+                FableRun.from_dict(tampered)
 
     def test_tampered_event_history_is_rejected_on_restore(self):
         payload = self.run.to_dict()

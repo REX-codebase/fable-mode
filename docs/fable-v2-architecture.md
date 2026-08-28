@@ -194,10 +194,14 @@ judges.
 ## Checkpoint trust boundary
 
 `FableRun.to_dict()` and `from_dict()` provide serialization and restoration,
-not a generally tamper-proof audit artifact. The event hash chain detects
-edited or reordered events, but the experimental checkpoint currently stores
-the HMAC attestation secret in the same payload. Someone who can rewrite that
-payload could rewrite state and recompute the in-process HMAC.
+not a generally tamper-proof audit artifact. Each verification attestation now
+covers a canonical hash of the complete immutable `VerificationResult` (apart
+from the attestation itself), and restoration revalidates every restored
+verdict against its candidate, evidence, and attestation before it can affect
+finalization. The event hash chain detects edited or reordered events, but the
+experimental checkpoint currently stores the HMAC attestation secret in the
+same payload. Someone who can rewrite that payload could rewrite state and
+recompute the in-process HMAC.
 
 Production checkpoints must keep signing keys outside the serialized state,
 ideally in an external key store or isolated broker. The broker should sign
