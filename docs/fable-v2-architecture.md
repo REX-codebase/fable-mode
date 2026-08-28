@@ -79,8 +79,10 @@ For a hardened deployment, the broker process must run with an OS-enforced
 read-only workspace before authorization, then receive a separately controlled
 writable layer or remount after authorization.
 Hostile workloads still require container/VM isolation and least-privilege OS
-controls. The broker is covered by child-process, allowlist, path-containment,
-and locked-write tests.
+controls. The broker resolves each allowlisted executable to a trusted absolute path at
+startup and rejects requests whose resolved path differs; a matching basename
+is not sufficient. The broker is covered by child-process, executable-path,
+allowlist, path-containment, and locked-write tests.
 
 The checked-in `HOST_PROFILES` are explicitly **expected capability
 profiles**, not attestations. They are useful defaults for planning and

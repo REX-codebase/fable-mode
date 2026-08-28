@@ -10,7 +10,7 @@ or an equivalent hardened isolation layer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import argparse
 import hashlib
 import hmac
@@ -30,6 +30,9 @@ class BrokerPolicy:
     allowed_executables: tuple[str, ...] = ("python", "python3", "pytest")
     max_output_bytes: int = 1_000_000
     write_token_digest: str | None = None
+    resolved_executables: dict[str, str] = field(
+        init=False, default_factory=dict, repr=False, compare=False
+    )  # populated from trusted PATH at startup
 
     def __post_init__(self) -> None:
         workspace = self.workspace.expanduser().resolve()
@@ -39,12 +42,24 @@ class BrokerPolicy:
             raise ValueError("max_output_bytes must be positive")
         if not self.allowed_executables:
             raise ValueError("at least one executable must be allowlisted")
+        resolved: dict[str, str] = {}
+        normalized_names: list[str] = []
+        for item in self.allowed_executables:
+            requested = Path(item).expanduser()
+            located = requested if requested.is_absolute() else Path(shutil.which(str(requested)) or "")
+            if not located or not located.exists() or not located.is_file():
+                continue
+            absolute = str(located.resolve())
+            key = os.path.normcase(Path(item).name)
+            if key in resolved and os.path.normcase(resolved[key]) != os.path.normcase(absolute):
+                raise ValueError(f"ambiguous executable allowlist entry: {item}")
+            resolved[key] = absolute
+            normalized_names.append(Path(item).name)
+        if not resolved:
+            raise ValueError("no allowlisted executable could be resolved at broker startup")
         object.__setattr__(self, "workspace", workspace)
-        object.__setattr__(
-            self,
-            "allowed_executables",
-            tuple(Path(item).name for item in self.allowed_executables),
-        )
+        object.__setattr__(self, "allowed_executables", tuple(dict.fromkeys(normalized_names)))
+        object.__setattr__(self, "resolved_executables", resolved)
 
 
 class ExecutionBroker:
@@ -65,10 +80,7 @@ class ExecutionBroker:
         self._writes_unlocked = False
 
     def probe(self) -> dict[str, Any]:
-        available = [
-            executable for executable in self.policy.allowed_executables
-            if shutil.which(executable)
-        ]
+        available = list(self.policy.resolved_executables)
         return {
             "host": "fable-execution-broker",
             "capabilities": ["execute_command", "inspect_files", "probe_capabilities"],
@@ -130,14 +142,23 @@ class ExecutionBroker:
         argv = tuple(command)
         if not argv or any(not isinstance(item, str) or not item for item in argv):
             raise ValueError("command must be a non-empty sequence of strings")
-        executable = Path(argv[0]).name
+        requested_executable = Path(argv[0])
+        executable = requested_executable.name
         executable_key = Path(executable).stem.lower()
         is_interpreter = (
             executable_key in self.READ_LOCKED_INTERPRETERS
             or executable_key.startswith("python")
         )
-        if executable not in self.policy.allowed_executables:
+        registered_path = self.policy.resolved_executables.get(os.path.normcase(executable))
+        if not registered_path:
             raise PermissionError(f"executable is not allowlisted: {executable}")
+        requested_path = requested_executable if requested_executable.is_absolute() else Path(
+            shutil.which(str(requested_executable)) or ""
+        )
+        if not requested_path or not requested_path.exists():
+            raise PermissionError(f"executable cannot be resolved: {argv[0]}")
+        if os.path.normcase(str(requested_path.resolve())) != os.path.normcase(registered_path):
+            raise PermissionError("executable path does not match its startup registration")
         if is_interpreter and not self._writes_unlocked:
             raise PermissionError(
                 "general interpreters and shells are blocked while workspace writes are locked"
@@ -150,7 +171,7 @@ class ExecutionBroker:
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
         try:
             completed = subprocess.run(
-                argv,
+                (registered_path, *argv[1:]),
                 cwd=directory,
                 env=env,
                 stdin=subprocess.DEVNULL,
@@ -177,8 +198,9 @@ class ExecutionBroker:
             encoded = value.encode("utf-8")[: self.policy.max_output_bytes]
             return encoded.decode("utf-8", errors="ignore") + "\n[truncated]"
 
+        executed_argv = (registered_path, *argv[1:])
         return {
-            "command": list(argv),
+            "command": list(executed_argv),
             "cwd": str(directory.relative_to(self.policy.workspace)),
             "exit_code": exit_code,
             "timed_out": timed_out,
@@ -216,13 +238,32 @@ def serve(broker: ExecutionBroker) -> None:
         sys.stdout.flush()
 
 
+def _load_write_token_digest() -> str | None:
+    """Load write authorization from administrator-controlled configuration."""
+    digest = os.environ.get("FABLE_BROKER_WRITE_TOKEN_DIGEST", "").strip()
+    digest_file = os.environ.get("FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE", "").strip()
+    if digest and digest_file:
+        raise ValueError("configure only one write-token digest source")
+    if digest_file:
+        digest = Path(digest_file).read_text(encoding="utf-8").strip()
+    if not digest:
+        return None
+    if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
+        raise ValueError("write-token digest must be a SHA-256 hexadecimal string")
+    return digest.lower()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Fable V2 execution broker")
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--allow-executable", action="append", default=[])
     args = parser.parse_args(argv)
     allowed = tuple(args.allow_executable) or BrokerPolicy.allowed_executables
-    policy = BrokerPolicy(workspace=args.workspace, allowed_executables=allowed)
+    policy = BrokerPolicy(
+        workspace=args.workspace,
+        allowed_executables=allowed,
+        write_token_digest=_load_write_token_digest(),
+    )
     serve(ExecutionBroker(policy))
     return 0
 

@@ -21,6 +21,12 @@ Start the broker with a workspace it owns:
 fable-v2-broker --workspace /path/to/workspace
 ```
 
+The CLI loads write authorization from an administrator-controlled
+`FABLE_BROKER_WRITE_TOKEN_DIGEST` environment variable or
+`FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE` protected file. The value is a SHA-256
+hex digest of the administrative token; it is never returned by the broker's
+probe response and must not be added to a model-facing tool schema.
+
 Hosts should communicate with the broker over its JSON-lines stdin/stdout
 protocol and route command execution and file writes through it. The broker
 allowlists executables, constrains paths to the workspace, keeps writes locked
