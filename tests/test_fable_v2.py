@@ -35,10 +35,12 @@ class FableV2RuntimeTests(unittest.TestCase):
         )
         self.run.record_receipt(self.inspect)
         self.run.record_receipt(self.tests)
-        self.evidence = Evidence(
-            evidence_id="e-tests", session_id="session-001",
-            claim="The regression tests pass", kind="test-result",
-            source="pytest: tests", receipt_id="r-tests", content_hash="abc",
+        self.evidence = Evidence.from_receipt(
+            self.tests,
+            evidence_id="e-tests",
+            claim="The regression tests pass",
+            kind="test-result",
+            source="pytest: tests",
             verified=True,
         )
         self.run.attach_evidence(self.evidence)
@@ -80,9 +82,10 @@ class FableV2RuntimeTests(unittest.TestCase):
             receipt_id="r", session_id="session-002", capability="inspect_files",
             tool_name="grep", tool_input="x", tool_output="y", success=True,
         ))
-        run.attach_evidence(Evidence(
-            "e", "session-002", "inspection completed", "inspection", "grep",
-            "r", "hash", verified=True,
+        run.attach_evidence(Evidence.from_receipt(
+            run.receipts["r"],
+            evidence_id="e", claim="inspection completed", kind="inspection",
+            source="grep", verified=True,
         ))
         candidate = Candidate("c", "session-002", "approach", "artifact", ("r",), ("e",))
         run.register_candidate(candidate)
@@ -130,10 +133,18 @@ class FableV2RuntimeTests(unittest.TestCase):
         )
         self.run.record_receipt(failed)
         with self.assertRaises(ValueError):
-            self.run.attach_evidence(Evidence(
-                "e-failed", "session-001", "it passed", "test-result", "pytest",
-                "r-failed", "hash",
-            ))
+            Evidence.from_receipt(
+                failed, evidence_id="e-failed", claim="it passed",
+                kind="test-result", source="pytest",
+            )
+
+    def test_evidence_hash_must_match_actual_content(self):
+        with self.assertRaises(ValueError):
+            Evidence(
+                "e-tampered", "session-001", "claim", "test-result", "pytest",
+                "r-tests", "not-the-output-hash", source_output_hash=self.tests.output_hash,
+                content=self.tests.output,
+            )
 
     def test_untrusted_verifier_cannot_finalize(self):
         verifier = FunctionVerifier(

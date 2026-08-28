@@ -76,9 +76,13 @@ produce a `ToolReceipt` containing:
 - success/failure status;
 - timestamps and host metadata.
 
-Evidence must reference a successful receipt. A candidate cannot be finalized
-until the task's declared capabilities and evidence kinds have been satisfied
-and its `VerificationPolicy` has passed.
+Evidence must be constructed from a successful receipt using
+`Evidence.from_receipt(...)`. The receipt retains the actual tool output and
+its canonical hash; construction recomputes the content hash, and attachment
+rejects any mismatch between evidence content, evidence hash, and the receipt
+output hash. A candidate cannot be finalized until the task's declared
+capabilities and evidence kinds have been satisfied and its
+`VerificationPolicy` has passed.
 
 Verification is policy-enforced, not a free-form boolean. A result supplied
 from a model-facing call is rejected. A verifier must be registered by trusted
@@ -105,8 +109,8 @@ The initial portable contract is implemented in `fable_v2/protocol.py`:
 
 - `TaskSpec`: task contract and definition of done;
 - `VerificationPolicy`: required verifier classes and pass thresholds;
-- `ToolReceipt`: host-produced invocation receipt;
-- `Evidence`: claim anchored to a successful receipt;
+- `ToolReceipt`: host-produced invocation receipt with the actual output hash;
+- `Evidence`: claim constructed from receipt output and integrity-bound to it;
 - `Candidate`: one solution or trajectory;
 - `VerificationResult`: runtime-attested verdict bound to one candidate artifact.
 

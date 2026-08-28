@@ -93,11 +93,14 @@ class ToolReceipt:
     started_at: str
     finished_at: str
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    output: Any = None
 
     def __post_init__(self) -> None:
         for name in ("receipt_id", "session_id", "capability", "tool_name",
                      "input_hash", "output_hash", "started_at", "finished_at"):
             _required_text(getattr(self, name), name)
+        if canonical_hash(self.output) != self.output_hash:
+            raise ValueError("output_hash does not match the actual receipt output")
 
     @classmethod
     def from_result(
@@ -127,6 +130,7 @@ class ToolReceipt:
             started_at=start,
             finished_at=finish,
             metadata=metadata or {},
+            output=tool_output,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -135,7 +139,7 @@ class ToolReceipt:
 
 @dataclass(frozen=True)
 class Evidence:
-    """Evidence attached to a claim and anchored to a successful tool receipt."""
+    """Evidence whose content is integrity-bound to one successful receipt."""
 
     evidence_id: str
     session_id: str
@@ -146,11 +150,49 @@ class Evidence:
     content_hash: str
     verified: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    content: Any = None
+    source_output_hash: str = ""
 
     def __post_init__(self) -> None:
         for name in ("evidence_id", "session_id", "claim", "kind", "source",
-                     "receipt_id", "content_hash"):
+                     "receipt_id", "content_hash", "source_output_hash"):
             _required_text(getattr(self, name), name)
+        if canonical_hash(self.content) != self.content_hash:
+            raise ValueError("content_hash does not match the evidence content")
+
+    @classmethod
+    def from_receipt(
+        cls,
+        receipt: ToolReceipt,
+        *,
+        evidence_id: str,
+        claim: str,
+        kind: str,
+        source: str,
+        verified: bool = False,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "Evidence":
+        """Create full-output evidence directly from a host receipt.
+
+        Keeping the receipt output in the content-addressed evidence object
+        makes the integrity relationship checkable. Large-output adapters can
+        replace ``content`` with a content-addressed blob in a later version.
+        """
+        if not receipt.success:
+            raise ValueError("evidence must be derived from a successful receipt")
+        return cls(
+            evidence_id=evidence_id,
+            session_id=receipt.session_id,
+            claim=claim,
+            kind=kind,
+            source=source,
+            receipt_id=receipt.receipt_id,
+            content_hash=receipt.output_hash,
+            verified=verified,
+            metadata=metadata or {},
+            content=receipt.output,
+            source_output_hash=receipt.output_hash,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

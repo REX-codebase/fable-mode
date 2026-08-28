@@ -106,6 +106,10 @@ class FableRun:
             raise ValueError("evidence must reference a known tool receipt")
         if not receipt.success:
             raise ValueError("evidence cannot be anchored to a failed tool call")
+        if evidence.source_output_hash != receipt.output_hash:
+            raise PermissionError("evidence is not bound to the receipt output hash")
+        if evidence.content_hash != receipt.output_hash:
+            raise PermissionError("evidence content hash does not match receipt output hash")
         if evidence.evidence_id in self.evidence:
             raise ValueError(f"duplicate evidence: {evidence.evidence_id}")
         self.evidence[evidence.evidence_id] = evidence
