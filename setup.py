@@ -9,7 +9,11 @@ setup(
     install_requires=[],
     entry_points={
         "console_scripts": [
+            # Legacy V1 MCP entry point.
             "fable-engine=fable_engine.server:main",
+            "fable-v1=fable_engine.server:main",
+            # V2 process execution boundary.
+            "fable-v2-broker=fable_v2.execution_broker:main",
         ],
     },
     classifiers=[
@@ -18,3 +22,4 @@ setup(
         "Operating System :: OS Independent",
     ],
 )
+

@@ -1,0 +1,211 @@
+"""Process-isolated execution boundary for Fable V2.
+
+The broker is the only component in this foundation that should be granted
+workspace write permission. It exposes a small JSON-lines protocol so hosts
+can launch it as a child process and keep model-facing tools away from direct
+filesystem writes. This is a policy boundary, not a complete OS sandbox;
+production deployments should add containers, OS MAC, seccomp/job objects,
+or an equivalent hardened isolation layer.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import argparse
+import hashlib
+import hmac
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+from typing import Any, Iterable
+
+
+@dataclass(frozen=True)
+class BrokerPolicy:
+    workspace: Path
+    allowed_executables: tuple[str, ...] = ("python", "python3", "pytest")
+    max_output_bytes: int = 1_000_000
+    write_token_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        workspace = self.workspace.expanduser().resolve()
+        if not workspace.exists() or not workspace.is_dir():
+            raise ValueError("workspace must be an existing directory")
+        if self.max_output_bytes < 1:
+            raise ValueError("max_output_bytes must be positive")
+        if not self.allowed_executables:
+            raise ValueError("at least one executable must be allowlisted")
+        object.__setattr__(self, "workspace", workspace)
+        object.__setattr__(
+            self,
+            "allowed_executables",
+            tuple(Path(item).name for item in self.allowed_executables),
+        )
+
+
+class ExecutionBroker:
+    """Allowlisted command and write broker intended to run in a child process."""
+
+    def __init__(self, policy: BrokerPolicy):
+        self.policy = policy
+        self._writes_unlocked = False
+
+    def probe(self) -> dict[str, Any]:
+        available = [
+            executable for executable in self.policy.allowed_executables
+            if shutil.which(executable)
+        ]
+        return {
+            "host": "fable-execution-broker",
+            "capabilities": ["execute_command", "inspect_files", "probe_capabilities"],
+            "available_executables": available,
+            "writes_enabled": self._writes_unlocked,
+            "workspace": str(self.policy.workspace),
+        }
+
+    def _safe_path(self, relative_path: str) -> Path:
+        if not isinstance(relative_path, str) or not relative_path.strip():
+            raise ValueError("path must be a non-empty relative path")
+        candidate = (self.policy.workspace / relative_path).resolve()
+        try:
+            candidate.relative_to(self.policy.workspace)
+        except ValueError as exc:
+            raise PermissionError("path escapes the broker workspace") from exc
+        return candidate
+
+    def _authorize_write(self, token: str | None) -> None:
+        if self._writes_unlocked:
+            return
+        digest = self.policy.write_token_digest
+        if not digest or not token:
+            raise PermissionError("workspace writes are locked")
+        supplied = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(supplied, digest):
+            raise PermissionError("invalid write authorization")
+        self._writes_unlocked = True
+
+    def write_file(self, relative_path: str, content: str, token: str | None = None) -> dict[str, Any]:
+        self._authorize_write(token)
+        if not isinstance(content, str):
+            raise ValueError("file content must be text")
+        target = self._safe_path(relative_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".fable-", dir=str(target.parent), text=True)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return {
+            "path": str(target.relative_to(self.policy.workspace)),
+            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "writes_enabled": True,
+        }
+
+    def execute_command(
+        self,
+        command: Iterable[str],
+        cwd: str | None = None,
+        timeout_seconds: float = 120.0,
+    ) -> dict[str, Any]:
+        argv = tuple(command)
+        if not argv or any(not isinstance(item, str) or not item for item in argv):
+            raise ValueError("command must be a non-empty sequence of strings")
+        executable = Path(argv[0]).name
+        if executable not in self.policy.allowed_executables:
+            raise PermissionError(f"executable is not allowlisted: {executable}")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        directory = self.policy.workspace if cwd is None else self._safe_path(cwd)
+        if not directory.is_dir():
+            raise ValueError("cwd must be a directory inside the workspace")
+        env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=directory,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            stdout = completed.stdout
+            stderr = completed.stderr
+            timed_out = False
+            exit_code = completed.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            timed_out = True
+            exit_code = None
+
+        def truncate(value: str) -> str:
+            if len(value.encode("utf-8")) <= self.policy.max_output_bytes:
+                return value
+            encoded = value.encode("utf-8")[: self.policy.max_output_bytes]
+            return encoded.decode("utf-8", errors="ignore") + "\n[truncated]"
+
+        return {
+            "command": list(argv),
+            "cwd": str(directory.relative_to(self.policy.workspace)),
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "stdout": truncate(stdout),
+            "stderr": truncate(stderr),
+            "success": exit_code == 0 and not timed_out,
+        }
+
+    def handle(self, request: dict[str, Any]) -> dict[str, Any]:
+        action = request.get("action")
+        if action == "probe":
+            return self.probe()
+        if action == "execute_command":
+            return self.execute_command(
+                request.get("command", ()),
+                cwd=request.get("cwd"),
+                timeout_seconds=float(request.get("timeout_seconds", 120.0)),
+            )
+        if action == "write_file":
+            # The write token is an administrative input and must never be
+            # exposed through a model-facing tool schema.
+            return self.write_file(request.get("path", ""), request.get("content", ""), request.get("token"))
+        raise ValueError(f"unsupported broker action: {action}")
+
+
+def serve(broker: ExecutionBroker) -> None:
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            response = {"ok": True, "result": broker.handle(json.loads(line))}
+        except Exception as exc:  # protocol boundary: never crash the broker loop
+            response = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
+        sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Fable V2 execution broker")
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--allow-executable", action="append", default=[])
+    args = parser.parse_args(argv)
+    allowed = tuple(args.allow_executable) or BrokerPolicy.allowed_executables
+    policy = BrokerPolicy(workspace=args.workspace, allowed_executables=allowed)
+    serve(ExecutionBroker(policy))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

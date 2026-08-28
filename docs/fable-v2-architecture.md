@@ -62,6 +62,20 @@ Supported integrations should be implemented as thin adapters, not forks of
 the cognitive engine. MCP is the preferred tool binding, but a CLI or HTTP
 adapter is required for hosts that do not expose MCP.
 
+## Execution boundary
+
+`fable_v2.execution_broker` provides the first concrete execution boundary for
+V2. `fable-v2-broker` runs as a separate process, allowlists executables,
+executes without a shell, constrains working directories and file writes to a
+configured workspace, and keeps writes locked until administrative
+authorization. Hosts must route V2 command execution and writes through this
+broker instead of giving the model direct filesystem access.
+
+This is a process and policy boundary, not a complete operating-system sandbox.
+Hostile workloads still require container/VM isolation and least-privilege OS
+controls. The broker is covered by child-process, allowlist, path-containment,
+and locked-write tests.
+
 The checked-in `HOST_PROFILES` are explicitly **expected capability
 profiles**, not attestations. They are useful defaults for planning and
 documentation, but they are not runtime-authoritative. A live adapter must
