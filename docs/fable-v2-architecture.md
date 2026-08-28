@@ -125,8 +125,10 @@ classes, but it does not pretend that an arbitrary `VerificationResult` proves
 anything.
 
 The runtime enforces required capabilities and verifier classes for the task,
-not every available tool. Requiring irrelevant tools would create waste and
-tool theatre.
+not every available tool. Required capabilities are resolved exclusively from
+the selected candidate's referenced successful receipts; work performed only
+by another candidate cannot satisfy the policy. Requiring irrelevant tools
+would create waste and tool theatre.
 
 ## Runtime objects
 

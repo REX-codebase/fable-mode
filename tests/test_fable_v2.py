@@ -70,6 +70,39 @@ class FableV2RuntimeTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.run.finalize("candidate-001")
 
+    def test_required_capabilities_are_candidate_scoped(self):
+        task = TaskSpec(
+            task_id="scoped-capabilities", objective="x", definition_of_done=("done",),
+            required_capabilities=("inspect_files", "run_tests"),
+            verification_policy=VerificationPolicy(
+                required_verifier_classes=("deterministic",),
+                minimum_passing_verifiers=1,
+                require_independent=False,
+            ),
+        )
+        run = new_run("session-scoped", task)
+        inspect = ToolReceipt.from_result(
+            receipt_id="r-scope-inspect", session_id="session-scoped",
+            capability="inspect_files", tool_name="grep", tool_input="x",
+            tool_output="inspection", success=True,
+        )
+        tests = ToolReceipt.from_result(
+            receipt_id="r-scope-tests", session_id="session-scoped",
+            capability="run_tests", tool_name="pytest", tool_input="x",
+            tool_output="tests", success=True,
+        )
+        run.record_receipt(inspect)
+        run.record_receipt(tests)
+        run.register_candidate(Candidate(
+            "inspect-only", "session-scoped", "inspection", "a", (inspect.receipt_id,)
+        ))
+        run.register_candidate(Candidate(
+            "tests-only", "session-scoped", "tests", "b", (tests.receipt_id,)
+        ))
+        self.assertEqual(run.successful_capabilities(), {"inspect_files", "run_tests"})
+        self.assertIn("run_tests", " ".join(run.missing_requirements("inspect-only")))
+        self.assertIn("inspect_files", " ".join(run.missing_requirements("tests-only")))
+
     def test_finalization_requires_every_declared_capability(self):
         task = TaskSpec(
             task_id="missing", objective="x", definition_of_done=("done",),

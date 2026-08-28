@@ -280,12 +280,20 @@ class FableRun:
             self._event("verifier_invalidated", verifier=verifier.strip(),
                         reason=reason.strip())
 
-    def successful_capabilities(self) -> set[str]:
-        return {r.capability for r in self.receipts.values() if r.success}
+    def successful_capabilities(self, candidate_id: str | None = None) -> set[str]:
+        """Return successful capabilities, scoped to a candidate when given."""
+        if candidate_id is None:
+            receipts = self.receipts.values()
+        else:
+            candidate = self.candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError(f"unknown candidate: {candidate_id}")
+            receipts = (self.receipts[receipt_id] for receipt_id in candidate.receipt_ids)
+        return {receipt.capability for receipt in receipts if receipt.success}
 
     def missing_requirements(self, candidate_id: str | None = None) -> list[str]:
         missing: list[str] = []
-        used = self.successful_capabilities()
+        used = self.successful_capabilities(candidate_id)
         for capability in self.task.required_capabilities:
             if capability not in used:
                 missing.append(f"required capability not completed: {capability}")
