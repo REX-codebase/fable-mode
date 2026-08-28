@@ -108,8 +108,7 @@ if ($RegisterMcp) {
                 }
             }
         } catch {
-            Write-Alert "Existing MCP config is not valid JSON; leaving it untouched at $McpConfig."
-            $RegisterMcp = $false
+            throw "Existing MCP config is invalid JSON; installation aborted without modifying it."
         }
     }
 
@@ -118,6 +117,9 @@ if ($RegisterMcp) {
             $config["mcpServers"] = [pscustomobject]@{}
         }
         $servers = $config["mcpServers"]
+        if ($servers -is [System.Array] -or $servers -is [string] -or $servers -is [ValueType]) {
+            throw "Existing MCP config has an invalid mcpServers value; expected a JSON object."
+        }
         $entry = [pscustomobject][ordered]@{
             command = "python"
             args = @((Join-Path $McpTarget "server.py"))

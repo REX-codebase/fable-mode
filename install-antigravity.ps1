@@ -17,7 +17,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repoArchive = "https://api.github.com/repos/REX-codebase/fable-mode/zipball/main"
+# Pin the downloaded source to an immutable commit and verify the archive bytes
+# before any installer code is executed. Update both values together for a release.
+$pinnedCommit = "458a72985e4a31e2794b2a9a0fe967abf16a421f"
+$expectedArchiveSha256 = "92ed89abdc8a66738418ce0f6f74a8a50968e304247afd53ef29a0e9cdf0b0f9"
+$repoArchive = "https://api.github.com/repos/REX-codebase/fable-mode/zipball/$pinnedCommit"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("fable-mode-" + [guid]::NewGuid().ToString("N"))
 $archivePath = Join-Path $tempRoot "fable-mode.zip"
 
@@ -28,6 +32,11 @@ try {
         Accept = "application/vnd.github+json"
         "User-Agent" = "fable-mode-installer"
     }
+    $actualArchiveSha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualArchiveSha256 -ne $expectedArchiveSha256) {
+        throw "Downloaded archive integrity check failed; no installer code was executed."
+    }
+    Write-Host "[OK] Verified commit $pinnedCommit and SHA-256 $actualArchiveSha256" -ForegroundColor Green
 
     Write-Host "[+] Expanding package..." -ForegroundColor Cyan
     Expand-Archive -Path $archivePath -DestinationPath $tempRoot -Force
