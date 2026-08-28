@@ -14,6 +14,8 @@ Tests:
 - Full JSON-RPC 2.0 stdio MCP server protocol over subprocess
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import json
@@ -54,7 +56,18 @@ from server import (
     PHASES,
     PHASE_INDEX_MAP,
     handle_fable_session,
-    TOOL_SCHEMA
+    TOOL_SCHEMA,
+    FableCASError,
+    IntegrityError,
+    CASNotFoundError,
+    ThreadSafeLRUCache,
+    FableCASStore,
+    CompositeFrame,
+    AdaptiveChunkAccumulator,
+    FableGrammar333,
+    CASSliceViewer,
+    FableCompress,
+    CAS_ENGINE
 )
 
 
@@ -716,7 +729,20 @@ class TestFableMCPStdioServer(unittest.TestCase):
         content = resp["result"]["content"][0]["text"]
         self.assertIn("Rethink-Refine Cycle #1 Logged", content)
 
-        # 5. Ping
+        # 5. Call fable_session: compress_payload & view_slice over stdio
+        resp = self._rpc_call("tools/call", {
+            "name": "fable_session",
+            "arguments": {
+                "action": "compress_payload",
+                "content": "Line 1: Sample MCP payload\nLine 2: Another line\nLine 3: Third line\n",
+                "label": "stdio_test_payload"
+            }
+        })
+        self.assertFalse(resp["result"].get("isError", True))
+        content = resp["result"]["content"][0]["text"]
+        self.assertIn("Fable CAS Payload Compressed", content)
+
+        # 6. Ping
         resp = self._rpc_call("ping")
         self.assertEqual(resp.get("result"), {})
 
@@ -729,7 +755,191 @@ class TestFableMCPStdioServer(unittest.TestCase):
                 pass
 
 
+class TestFableTokenCompression(unittest.TestCase):
+    """Direct subsystem tests for FableCASStore, AdaptiveChunkAccumulator, FableGrammar333, CASSliceViewer, and FableCompress."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="fable_test_cas_"))
+        self.compressor = FableCompress(root_dir=self.test_dir)
+
+    def tearDown(self):
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_cas_store_atomic_put_get(self):
+        """Verify atomic writes, SHA-256 addresses, and byte-exact retrieval."""
+        store = self.compressor.cas_store
+        sample = "Fable-Mode Token Compression Subsystem verification payload."
+        uri = store.put(sample)
+        self.assertTrue(uri.startswith("cas://"))
+        self.assertEqual(len(store.normalize_ref(uri)), 64)
+        self.assertEqual(store.get_text(uri), sample)
+        self.assertEqual(store.get_bytes(uri), sample.encode("utf-8"))
+        self.assertTrue(store.verify_integrity(uri))
+
+    def test_cas_corruption_detection(self):
+        """Verify integrity verification catches file tampering on disk."""
+        store = self.compressor.cas_store
+        sample = "Pristine data payload"
+        uri = store.put(sample)
+        file_path = store.get_file_path(uri)
+        store.cache.clear()
+
+        with open(file_path, "r+b") as f:
+            f.seek(0)
+            f.write(b"Z")
+
+        with self.assertRaises(IntegrityError):
+            store.get_bytes(uri, verify=True)
+        self.assertFalse(store.verify_integrity(uri))
+
+    def test_lru_cache_bounds_and_eviction(self):
+        """Verify LRU cache capacity limits and disk fallback."""
+        small_store = FableCASStore(root_dir=self.test_dir / "lru", cache_capacity=2)
+        u1 = small_store.put("entry_1")
+        u2 = small_store.put("entry_2")
+        u3 = small_store.put("entry_3")
+
+        self.assertEqual(len(small_store.cache), 2)
+        self.assertEqual(small_store.get_text(u1), "entry_1")
+
+    def test_adaptive_chunk_accumulator_coalescing(self):
+        """Verify sub-1000 character micro-payload batching into composite frames."""
+        acc = self.compressor.accumulator
+        payloads = [f"Log trace entry #{i:03d} for subagent execution step." for i in range(30)]
+
+        flushed_uris = []
+        for p in payloads:
+            flushed_uris.extend(acc.add(p, metadata={"step": "trace"}))
+        flushed_uris.extend(acc.flush())
+
+        self.assertGreater(len(flushed_uris), 0)
+        extracted = []
+        for uri in flushed_uris:
+            frame_json = self.compressor.cas_store.get_text(uri)
+            frame = CompositeFrame.deserialize_json(frame_json)
+            for idx in range(len(frame.items)):
+                item_text, meta = acc.extract_item(uri, idx)
+                extracted.append(item_text)
+                self.assertEqual(meta.get("step"), "trace")
+
+        self.assertEqual(extracted, payloads)
+
+    def test_grammar333_micro_bytecode_roundtrip(self):
+        """Verify bit-exact roundtrip serialization of tool actions."""
+        payload = {
+            "action_type": "view_file",
+            "path": "C:/Projects/module.py",
+            "start_line": 10,
+            "end_line": 50,
+            "content_ref": "cas://abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+        }
+        encoded = FableGrammar333.serialize(payload)
+        self.assertTrue(encoded.startswith(FableGrammar333.MAGIC_HEADER))
+        decoded = FableGrammar333.deserialize(encoded)
+        self.assertEqual(decoded, payload)
+
+    def test_cas_slice_viewer_zero_copy(self):
+        """Verify windowed line slice extractor with 1-based indexing."""
+        lines = [f"Line {i:03d}: Content description here" for i in range(1, 60)]
+        doc = "\n".join(lines)
+        uri = self.compressor.cas_store.put(doc)
+
+        viewer = self.compressor.slice_viewer
+        self.assertEqual(viewer.get_line_count(uri), 58)
+
+        slice_text = viewer.view_slice(uri, 5, 10)
+        self.assertEqual(slice_text, "\n".join(lines[4:10]))
+
+        numbered = viewer.view_slice(uri, 1, 2, include_line_numbers=True)
+        self.assertIn("     1 | Line 001:", numbered)
+
+    def test_invariant_token_ratio_lte_0_003(self):
+        """Verify <= 0.003 tokens/character invariant on large payloads."""
+        sizes = [10_000, 50_000, 100_000]
+        for size in sizes:
+            raw_text = ("function process_data(chunk: Buffer) -> Result {\n    return validate(chunk);\n}\n" * (size // 60 + 1))[:size]
+            node = self.compressor.compress_payload_to_cas(raw_text, label="trace_dump")
+            repr_str = json.dumps(node, separators=(",", ":"))
+            ratio = self.compressor.calculate_token_ratio(raw_text, repr_str)
+            self.assertLessEqual(ratio, 0.003, f"Failed invariant for size {size}: ratio {ratio}")
+            recovered = self.compressor.decompress_cas_payload(node)
+            self.assertEqual(recovered, raw_text)
+
+
+class TestFableCompressionHandlerDispatch(unittest.TestCase):
+    """Tests dispatcher tool actions for Token Compression Subsystem."""
+
+    def test_compress_and_decompress_payload_dispatch(self):
+        """Verifies compress_payload and decompress_payload actions."""
+        payload = "Structured benchmark probe report for concurrent ring buffer:\n" + ("line output data\n" * 1000)
+        res = handle_fable_session({
+            "action": "compress_payload",
+            "content": payload,
+            "label": "benchmark_probe"
+        })
+        self.assertIn("Fable CAS Payload Compressed", res)
+        self.assertIn("cas://", res)
+        self.assertIn("PASS (<= 0.003 tokens/char)", res)
+
+        import re
+        match = re.search(r"cas://[0-9a-fA-F]{64}", res)
+        self.assertIsNotNone(match)
+        cas_uri = match.group(0)
+
+        res_decomp = handle_fable_session({
+            "action": "decompress_payload",
+            "cas_ref": cas_uri
+        })
+        self.assertIn("Fable CAS Payload Retrieved", res_decomp)
+        self.assertIn("Structured benchmark probe report", res_decomp)
+
+    def test_view_slice_dispatch(self):
+        """Verifies view_slice action."""
+        doc = "\n".join([f"Trace item #{i:02d}" for i in range(1, 30)])
+        res_comp = handle_fable_session({
+            "action": "compress_payload",
+            "content": doc
+        })
+        import re
+        match = re.search(r"cas://[0-9a-fA-F]{64}", res_comp)
+        cas_uri = match.group(0)
+
+        res_slice = handle_fable_session({
+            "action": "view_slice",
+            "cas_ref": cas_uri,
+            "start_line": 5,
+            "end_line": 8
+        })
+        self.assertIn("Fable CAS Slice View", res_slice)
+        self.assertIn("Trace item #05", res_slice)
+        self.assertIn("Trace item #08", res_slice)
+
+    def test_accumulate_and_flush_dispatch(self):
+        """Verifies accumulate_payload and flush_accumulator actions."""
+        res1 = handle_fable_session({
+            "action": "accumulate_payload",
+            "payload": "Micro-log entry 1",
+            "metadata": {"task": "test"}
+        })
+        self.assertIn("Micro-Payload Ingested", res1)
+
+        res_flush = handle_fable_session({
+            "action": "flush_accumulator"
+        })
+        self.assertIn("Micro-Payload Accumulator", res_flush)
+
+    def test_compression_stats_dispatch(self):
+        """Verifies get_compression_stats action."""
+        res = handle_fable_session({
+            "action": "get_compression_stats"
+        })
+        self.assertIn("Fable Token Compression Subsystem Telemetry", res)
+        self.assertIn("Token Compression Invariant", res)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 

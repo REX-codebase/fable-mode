@@ -1,6 +1,6 @@
 {
   "name": "fable_session",
-  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, and internal pacing telemetry.",
+  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, and token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant).",
   "parameters": {
     "properties": {
       "action": {
@@ -18,8 +18,18 @@
           "checkpoint_session",
           "restore_session",
           "list_sessions",
-          "compile_delegation_contract"
+          "compile_delegation_contract",
+          "compress_payload",
+          "decompress_payload",
+          "view_slice",
+          "accumulate_payload",
+          "flush_accumulator",
+          "get_compression_stats"
         ],
+        "type": "string"
+      },
+      "accumulate_payload": {
+        "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"
       },
       "architectural_refinement": {
@@ -30,8 +40,16 @@
         "description": "Absolute filesystem path to blueprint artifact, proof, or benchmark script documenting the refinement.",
         "type": "string"
       },
+      "cas_ref": {
+        "description": "CAS reference URI (cas://<sha256_hex>) or 64-char hash to retrieve, slice, or decompress.",
+        "type": "string"
+      },
       "claim": {
         "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger.",
+        "type": "string"
+      },
+      "content": {
+        "description": "Raw text content or payload to store/compress into Content-Addressed Storage (CAS).",
         "type": "string"
       },
       "critique_or_bottleneck": {
@@ -47,6 +65,10 @@
         ],
         "type": "string"
       },
+      "end_line": {
+        "description": "Ending line number (1-indexed inclusive) for windowed line slice viewing.",
+        "type": "integer"
+      },
       "evidence": {
         "description": "Source file, command output, line number, or URL supporting the claim.",
         "type": "string"
@@ -55,13 +77,29 @@
         "description": "Specific subsystem, component, algorithm, or interface being critically re-evaluated.",
         "type": "string"
       },
+      "force_flush": {
+        "description": "Force flush buffered micro-payloads immediately into a composite frame.",
+        "type": "boolean"
+      },
       "formal_statement": {
         "description": "Mathematical or formal contract specification that must never be violated.",
         "type": "string"
       },
+      "include_line_numbers": {
+        "description": "Whether to format line slice with line numbers.",
+        "type": "boolean"
+      },
       "invariant_name": {
         "description": "Identifier or title of the formal invariant (e.g., 'INV-01: Zero-Deadlock Ring Buffer').",
         "type": "string"
+      },
+      "label": {
+        "description": "Optional label or description for compressed CAS node.",
+        "type": "string"
+      },
+      "metadata": {
+        "description": "Optional metadata dictionary attached to accumulated micro-payload.",
+        "type": "object"
       },
       "next_phase": {
         "description": "Target phase to advance the session into.",
@@ -77,6 +115,10 @@
       },
       "objective": {
         "description": "High-level goal or problem statement for the reasoning session.",
+        "type": "string"
+      },
+      "payload": {
+        "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"
       },
       "phase_summary": {
@@ -98,6 +140,10 @@
       "session_name": {
         "description": "Unique identifier / name for the Fable session.",
         "type": "string"
+      },
+      "start_line": {
+        "description": "Starting line number (1-indexed inclusive) for windowed line slice viewing.",
+        "type": "integer"
       },
       "subagent_prompt": {
         "description": "The delegation prompt or contract text for the subagent to validate.",
