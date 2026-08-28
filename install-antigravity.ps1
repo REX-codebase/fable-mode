@@ -17,10 +17,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# Pin the downloaded source to an immutable commit and verify the archive bytes
-# before any installer code is executed. Update both values together for a release.
-$pinnedCommit = "458a72985e4a31e2794b2a9a0fe967abf16a421f"
-$expectedArchiveSha256 = "92ed89abdc8a66738418ce0f6f74a8a50968e304247afd53ef29a0e9cdf0b0f9"
+# Pin the downloaded source to an immutable reviewed commit and verify the
+# archive bytes before any installer code is executed. Update both values
+# together for a release. The bootstrap itself is pinned separately in README.
+$pinnedCommit = "2c049cb77a5ba5066d7bcbcf2f488c272b6c0195"
+$expectedArchiveSha256 = "8d470ba5854c55cd6b23736e1fb28dfff8a9e8e703db25b2030e197a7b9ad85c"
 $repoArchive = "https://api.github.com/repos/REX-codebase/fable-mode/zipball/$pinnedCommit"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("fable-mode-" + [guid]::NewGuid().ToString("N"))
 $archivePath = Join-Path $tempRoot "fable-mode.zip"
