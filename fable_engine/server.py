@@ -94,11 +94,15 @@ class FableSession:
         objective: str,
         time_budget_minutes: float,
         session_id: Optional[str] = None,
-        start_time: Optional[float] = None
+        start_time: Optional[float] = None,
+        wall_clock: Optional[Any] = None,
+        monotonic_clock: Optional[Any] = None
     ):
         self.session_name = _validate_session_name(session_name)
         self.objective = objective
-        self.start_time = start_time if start_time is not None else time.time()
+        self._wall_clock = wall_clock or time.time
+        self._monotonic_clock = monotonic_clock or time.monotonic
+        self.start_time = start_time if start_time is not None else self._wall_clock()
         self.session_id = session_id or f"fable_{session_name}_{int(self.start_time)}"
         
         # The authority budget is immutable after session creation.  A separate
@@ -106,12 +110,14 @@ class FableSession:
         # execution permission or move this outer deadline earlier.
         self.time_budget_minutes = _validate_time_budget(time_budget_minutes)
         self.time_budget_seconds = self.time_budget_minutes * 60.0
-        self._deadline_time = self.start_time + self.time_budget_seconds
-        self._authority_deadline_monotonic = time.monotonic() + self.time_budget_seconds
+        self._authority_deadline_wall = self.start_time + self.time_budget_seconds
+        self._authority_deadline_monotonic = self._monotonic_clock() + self.time_budget_seconds
 
         self.pacing_budget_minutes = self.time_budget_minutes
         self.pacing_budget_seconds = self.time_budget_seconds
-        self._pacing_deadline_time = self._deadline_time
+        self._pacing_started_wall = self.start_time
+        self._pacing_started_monotonic = self._authority_deadline_monotonic - self.time_budget_seconds
+        self._pacing_deadline_wall = self._authority_deadline_wall
         self._pacing_deadline_monotonic = self._authority_deadline_monotonic
         
         self.active_phase = PHASES[0]
@@ -133,19 +139,12 @@ class FableSession:
     @property
     def pacing_deadline_time(self) -> float:
         """Wall-clock representation of the internal pacing deadline."""
-        return self._pacing_deadline_time
+        return self._pacing_deadline_wall
 
     @property
     def deadline_time(self) -> float:
-        """Wall-clock representation of the immutable authority deadline."""
-        return self._deadline_time
-
-    @deadline_time.setter
-    def deadline_time(self, value: float) -> None:
-        # Retain a setter for deterministic tests and legacy session restore,
-        # while keeping the monotonic clock as the enforcement source.
-        self._deadline_time = float(value)
-        self._authority_deadline_monotonic = time.monotonic() + max(0.0, self._deadline_time - time.time())
+        """Read-only wall-clock representation of the authority deadline."""
+        return self._authority_deadline_wall
 
     def set_timer(self, time_budget_minutes: float) -> Dict[str, Any]:
         """Set an agent pacing timer without changing the authority deadline.
@@ -157,21 +156,26 @@ class FableSession:
         pacing_minutes = _validate_time_budget(time_budget_minutes)
         self.pacing_budget_minutes = pacing_minutes
         self.pacing_budget_seconds = pacing_minutes * 60.0
-        self._pacing_deadline_time = min(
+        now_wall = self._wall_clock()
+        now_monotonic = self._monotonic_clock()
+        self._pacing_started_wall = now_wall
+        self._pacing_started_monotonic = now_monotonic
+        self._pacing_deadline_wall = min(
             self.deadline_time,
-            self.start_time + self.pacing_budget_seconds
+            now_wall + self.pacing_budget_seconds
         )
-        self._pacing_deadline_monotonic = time.monotonic() + max(
-            0.0, self._pacing_deadline_time - time.time()
+        self._pacing_deadline_monotonic = min(
+            self._authority_deadline_monotonic,
+            now_monotonic + self.pacing_budget_seconds
         )
         return self.get_telemetry()
 
     def _authority_remaining_seconds(self) -> float:
         """Use monotonic time while the process is alive to resist clock rollback."""
-        return self._authority_deadline_monotonic - time.monotonic()
+        return self._authority_deadline_monotonic - self._monotonic_clock()
 
     def _pacing_remaining_seconds(self) -> float:
-        return self._pacing_deadline_monotonic - time.monotonic()
+        return self._pacing_deadline_monotonic - self._monotonic_clock()
 
     def _gate_report(self) -> Dict[str, Any]:
         """Return auditable gate state instead of relying on raw item counts."""
@@ -195,11 +199,13 @@ class FableSession:
 
     def get_telemetry(self) -> Dict[str, Any]:
         """Calculates runtime authority, pacing, and cognitive-gate telemetry."""
-        now = time.time()
+        now = self._wall_clock()
+        now_monotonic = self._monotonic_clock()
         elapsed_seconds = max(0.0, now - self.start_time)
+        pacing_elapsed_seconds = max(0.0, now_monotonic - self._pacing_started_monotonic)
         authority_remaining = self._authority_remaining_seconds()
         pacing_remaining = self._pacing_remaining_seconds()
-        pacing_ratio = elapsed_seconds / self.pacing_budget_seconds
+        pacing_ratio = pacing_elapsed_seconds / self.pacing_budget_seconds
 
         proven_count = sum(1 for item in self.epistemic_ledger if item.get("tag") == "PROVEN")
         hypothesis_count = sum(1 for item in self.epistemic_ledger if item.get("tag") == "HYPOTHESIS")
@@ -221,7 +227,8 @@ class FableSession:
             "authority_remaining_seconds": round(authority_remaining, 2),
             "authority_remaining_formatted": self._format_duration(max(0.0, authority_remaining)),
             "pacing_budget_minutes": self.pacing_budget_minutes,
-            "pacing_deadline_time": self._pacing_deadline_time,
+            "pacing_started_time": self._pacing_started_wall,
+            "pacing_deadline_time": self._pacing_deadline_wall,
             "pacing_remaining_seconds": round(pacing_remaining, 2),
             "pacing_remaining_formatted": self._format_duration(max(0.0, pacing_remaining)),
             "pacing_ratio": round(pacing_ratio, 4),
@@ -279,7 +286,7 @@ class FableSession:
                 f"Phase {current_phase_idx} to Phase {current_phase_idx + 1}."
             )
 
-        now = time.time()
+        now = self._wall_clock()
         self.active_phase = matched_phase
         self.phase_history.append({
             "phase": matched_phase,
@@ -305,7 +312,7 @@ class FableSession:
             "tag": tag_upper,
             "claim": claim.strip(),
             "evidence": (evidence or "").strip(),
-            "timestamp": time.time(),
+            "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
         self.epistemic_ledger.append(item)
@@ -337,7 +344,7 @@ class FableSession:
             "domain": dom_clean,
             "formal_statement": formal_statement.strip(),
             "proof_or_rationale": (proof_or_rationale or "").strip(),
-            "timestamp": time.time(),
+            "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
         self.invariants.append(inv)
@@ -371,7 +378,7 @@ class FableSession:
             "architectural_refinement": str(architectural_refinement).strip(),
             "terminal_probe_results": (terminal_probe_results or "").strip() if terminal_probe_results else None,
             "artifact_path": (artifact_path or "").strip() if artifact_path else None,
-            "timestamp": time.time(),
+            "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
         self.refinement_cycles.append(entry)
@@ -405,7 +412,7 @@ class FableSession:
         tool schema. A host application may configure an out-of-band secret
         for direct administrative use, but the model cannot self-authorize it.
         """
-        now = time.time()
+        now = self._wall_clock()
         force_override_used = self._force_override_authorized(force_override_token)
         remaining_sec = self._authority_remaining_seconds()
         if remaining_sec > 0 and not force_override_used:
@@ -463,7 +470,7 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.2.0",
+            "version": "1.1.0",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,
@@ -474,7 +481,8 @@ class FableSession:
             "deadline_time": self.deadline_time,
             "pacing_budget_minutes": self.pacing_budget_minutes,
             "pacing_budget_seconds": self.pacing_budget_seconds,
-            "pacing_deadline_time": self._pacing_deadline_time,
+            "pacing_started_time": self._pacing_started_wall,
+            "pacing_deadline_time": self._pacing_deadline_wall,
             "active_phase": self.active_phase,
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
@@ -496,19 +504,26 @@ class FableSession:
             start_time=data.get("start_time")
         )
         session.time_budget_seconds = session.time_budget_minutes * 60.0
-        session.deadline_time = data.get(
+        session._authority_deadline_wall = float(data.get(
             "authority_deadline_time",
             data.get("deadline_time", session.start_time + session.time_budget_seconds)
+        ))
+        now_wall = session._wall_clock()
+        now_monotonic = session._monotonic_clock()
+        session._authority_deadline_monotonic = now_monotonic + max(
+            0.0, session._authority_deadline_wall - now_wall
         )
         pacing_minutes = data.get("pacing_budget_minutes", session.time_budget_minutes)
         session.pacing_budget_minutes = _validate_time_budget(pacing_minutes, "pacing_budget_minutes")
         session.pacing_budget_seconds = session.pacing_budget_minutes * 60.0
-        session._pacing_deadline_time = min(
+        session._pacing_started_wall = float(data.get("pacing_started_time", session.start_time))
+        session._pacing_started_monotonic = now_monotonic - max(0.0, now_wall - session._pacing_started_wall)
+        session._pacing_deadline_wall = min(
             float(data.get("pacing_deadline_time", session.start_time + session.pacing_budget_seconds)),
             session.deadline_time
         )
-        session._pacing_deadline_monotonic = time.monotonic() + max(
-            0.0, session._pacing_deadline_time - time.time()
+        session._pacing_deadline_monotonic = now_monotonic + max(
+            0.0, session._pacing_deadline_wall - now_wall
         )
         session.active_phase = data.get("active_phase", PHASES[0])
         session.execution_locked = data.get("execution_locked", True)

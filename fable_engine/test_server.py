@@ -24,6 +24,24 @@ import tempfile
 import shutil
 from pathlib import Path
 
+class FakeClock:
+    """Deterministic wall and monotonic clocks for lock tests."""
+
+    def __init__(self):
+        self.wall = time.time()
+        self.mono = time.monotonic()
+
+    def time(self):
+        return self.wall
+
+    def monotonic(self):
+        return self.mono
+
+    def advance(self, seconds):
+        self.wall += seconds
+        self.mono += seconds
+
+
 # Add current directory to path
 CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
@@ -44,11 +62,14 @@ class TestFableSessionCore(unittest.TestCase):
     """Tests core FableSession lifecycle, telemetry, refinement cycles, and anti-rush gates."""
 
     def setUp(self):
+        self.clock = FakeClock()
         self.session_name = f"test_unit_{int(time.time() * 1000)}"
         self.session = FableSession(
             session_name=self.session_name,
             objective="Architect a lock-free multi-producer ring buffer",
-            time_budget_minutes=45.0
+            time_budget_minutes=45.0,
+            wall_clock=self.clock.time,
+            monotonic_clock=self.clock.monotonic
         )
 
     def tearDown(self):
@@ -242,7 +263,9 @@ class TestFableSessionCore(unittest.TestCase):
         new_session = FableSession(
             session_name=f"test_elapsed_{int(time.time() * 1000)}",
             objective="Test elapsed clock",
-            time_budget_minutes=10.0
+            time_budget_minutes=10.0,
+            wall_clock=self.clock.time,
+            monotonic_clock=self.clock.monotonic
         )
         new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", "test_server.py:229")
         new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", "test_server.py:230")
@@ -251,7 +274,7 @@ class TestFableSessionCore(unittest.TestCase):
         new_session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3 ready")
         
         # Simulate time elapsed past deadline
-        new_session.deadline_time = time.time() - 5.0
+        self.clock.advance(601.0)
         res = new_session.unlock_execution("Timer has naturally elapsed")
         self.assertEqual(res["status"], "UNLOCKED")
         self.assertTrue(new_session.can_execute_code)
@@ -266,7 +289,7 @@ class TestFableSessionCore(unittest.TestCase):
         3. Active phase >= Phase 3
         """
         # Simulate an elapsed authority deadline so this test isolates cognitive gates.
-        self.session.deadline_time = time.time() - 1.0
+        self.clock.advance(2701.0)
 
         # Attempt 1: In Phase 1 with 0 proven, 0 invariants -> Must fail cognitive gate
         with self.assertRaises(PermissionError) as ctx:
@@ -319,8 +342,7 @@ class TestFableSessionCore(unittest.TestCase):
     def test_pacing_expiry_cannot_unlock(self):
         """A completed internal timer never satisfies the authority lock."""
         self.session.set_timer(0.1)
-        self.session._pacing_deadline_time = time.time() - 1.0
-        self.session._pacing_deadline_monotonic = time.monotonic() - 1.0
+        self.clock.advance(1.0)
         self.session.log_epistemic_item("PROVEN", "Fact 1", "test_server.py:1")
         self.session.log_epistemic_item("PROVEN", "Fact 2", "test_server.py:2")
         self.session.record_invariant("INV-01", "x == x", "Reflexivity")
@@ -443,7 +465,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "action": "create_session",
             "session_name": self.session_name,
             "objective": "Build zero-copy parser",
-            "time_budget_minutes": 30
+            "time_budget_minutes": 0.1
         })
         self.assertIn("Fable Cognitive Session Initialized", res)
         self.assertIn("Anti-Rush Lockout is ACTIVE", res)
@@ -531,7 +553,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
         self.assertIn("HARD TIME-LOCK VIOLATION", res)
 
         # 9. The immutable authority deadline, not the internal pacing timer, unlocks.
-        ACTIVE_SESSIONS[self.session_name].deadline_time = time.time() - 1.0
+        time.sleep(6.3)
         res = handle_fable_session({
             "action": "unlock_execution",
             "session_name": self.session_name,
@@ -548,7 +570,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
         })
         self.assertIn("Pacing Timer", res)
         self.assertIn("Authority Budget", res)
-        self.assertIn("30.0", res)
+        self.assertIn("0.1", res)
 
         # 11. Checkpoint and restore
         res = handle_fable_session({
