@@ -1,0 +1,176 @@
+"""Portable, host-neutral objects used by the Fable V2 runtime.
+
+The protocol deliberately stores structured facts and tool receipts instead of
+asking a model to self-report that it performed work.  Hosts can bind their
+native tools to these objects through an adapter.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+import hashlib
+import json
+from typing import Any, Mapping
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def canonical_hash(value: Any) -> str:
+    """Return a stable SHA-256 hash for a JSON-compatible value."""
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _required_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()
+
+
+@dataclass(frozen=True)
+class TaskSpec:
+    """The contract that defines what a run must accomplish."""
+
+    task_id: str
+    objective: str
+    constraints: tuple[str, ...] = ()
+    definition_of_done: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
+    required_evidence: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _required_text(self.task_id, "task_id")
+        _required_text(self.objective, "objective")
+        if not self.definition_of_done:
+            raise ValueError("definition_of_done must contain at least one condition")
+        for item in (*self.constraints, *self.definition_of_done,
+                     *self.required_capabilities, *self.required_evidence):
+            _required_text(item, "task contract item")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ToolReceipt:
+    """A host-produced receipt proving that a capability was invoked."""
+
+    receipt_id: str
+    session_id: str
+    capability: str
+    tool_name: str
+    input_hash: str
+    output_hash: str
+    success: bool
+    started_at: str
+    finished_at: str
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("receipt_id", "session_id", "capability", "tool_name",
+                     "input_hash", "output_hash", "started_at", "finished_at"):
+            _required_text(getattr(self, name), name)
+
+    @classmethod
+    def from_result(
+        cls,
+        *,
+        receipt_id: str,
+        session_id: str,
+        capability: str,
+        tool_name: str,
+        tool_input: Any,
+        tool_output: Any,
+        success: bool,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "ToolReceipt":
+        start = started_at or utc_now()
+        finish = finished_at or start
+        return cls(
+            receipt_id=receipt_id,
+            session_id=session_id,
+            capability=capability,
+            tool_name=tool_name,
+            input_hash=canonical_hash(tool_input),
+            output_hash=canonical_hash(tool_output),
+            success=bool(success),
+            started_at=start,
+            finished_at=finish,
+            metadata=metadata or {},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """Evidence attached to a claim and anchored to a successful tool receipt."""
+
+    evidence_id: str
+    session_id: str
+    claim: str
+    kind: str
+    source: str
+    receipt_id: str
+    content_hash: str
+    verified: bool = False
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("evidence_id", "session_id", "claim", "kind", "source",
+                     "receipt_id", "content_hash"):
+            _required_text(getattr(self, name), name)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """One independently generated solution or trajectory."""
+
+    candidate_id: str
+    session_id: str
+    approach: str
+    artifact: Any
+    receipt_ids: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("candidate_id", "session_id", "approach"):
+            _required_text(getattr(self, name), name)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """The result of a deterministic or independent model-based verifier."""
+
+    verification_id: str
+    session_id: str
+    candidate_id: str
+    verifier: str
+    passed: bool
+    reasons: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    score: float | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("verification_id", "session_id", "candidate_id", "verifier"):
+            _required_text(getattr(self, name), name)
+        if self.score is not None and not 0 <= self.score <= 1:
+            raise ValueError("score must be between 0 and 1")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

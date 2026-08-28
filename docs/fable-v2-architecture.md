@@ -1,0 +1,142 @@
+# Fable V2: Portable Verifier-Guided Runtime
+
+## Goal
+
+Build a portable, model-agnostic intelligence runtime that works across
+Antigravity, Claude Code, Codex, Grok Build, Cursor, Zapia, and other agentic
+hosts. Fable V2 should make weak-but-functional models dramatically more
+useful on verifiable task classes and make frontier models more reliable,
+consistent, and efficient.
+
+The ambitious targets are hypotheses to be measured, not guarantees:
+
+- Up to 10x improvement in system-level effectiveness for frontier models
+  (verified success, failure reduction, or successful tasks per cost).
+- Up to 50x relative improvement for weak models on selected tasks where the
+  baseline has non-zero competence.
+
+A model cannot be made universally 10x more intelligent by a prompt. Fable
+scales useful work by coordinating models, tools, evidence, search, repair,
+and verification.
+
+## Design principle
+
+> Do not ask an agent to claim that it did good work. Make the runtime collect
+> receipts, run checks, and accept only a verified artifact.
+
+MCP is a transport/interface layer. Fable V2 is the runtime around it: a
+controller, evidence ledger, model router, candidate manager, verifier broker,
+repair loop, and host adapters.
+
+## Architecture
+
+```text
+User task
+   |
+   v
+Task compiler: objective, constraints, done conditions, required capabilities
+   |
+   v
+Budget + model router ---- host capability probe
+   |
+   v
+Diverse candidate fleet ---- tools / sandbox / retrieval
+   |
+   v
+Evidence receipts and failure classification
+   |
+   v
+Deterministic verifiers -> independent model verifier -> repair/search loop
+   |
+   v
+Finalization gate: only a passing, evidence-backed artifact is accepted
+```
+
+## Portable core and adapters
+
+The core speaks a host-neutral JSON/data contract. Adapters translate native
+host tools into capabilities such as `inspect_files`, `execute_command`,
+`run_tests`, `search_web`, `edit_files`, and `delegate_agents`.
+
+Supported integrations should be implemented as thin adapters, not forks of
+the cognitive engine. MCP is the preferred tool binding, but a CLI or HTTP
+adapter is required for hosts that do not expose MCP.
+
+An adapter must probe and advertise actual capabilities at startup. A host
+must never receive a full-guarantee status merely because it loaded a prompt.
+
+## Enforcement model
+
+A model-facing prompt cannot prove that a tool was used. Each host tool must
+produce a `ToolReceipt` containing:
+
+- session and tool identity;
+- normalized capability;
+- hashes of tool input and output;
+- success/failure status;
+- timestamps and host metadata.
+
+Evidence must reference a successful receipt. A candidate cannot be finalized
+until the task's declared capabilities and evidence kinds have been satisfied
+and at least one independent verifier has passed it.
+
+The runtime enforces required capabilities for the task, not every available
+tool. Requiring irrelevant tools would create waste and tool theatre.
+
+## Runtime objects
+
+The initial portable contract is implemented in `fable_v2/protocol.py`:
+
+- `TaskSpec`: task contract and definition of done;
+- `ToolReceipt`: host-produced invocation receipt;
+- `Evidence`: claim anchored to a successful receipt;
+- `Candidate`: one solution or trajectory;
+- `VerificationResult`: deterministic or independent model verdict.
+
+`fable_v2/runtime.py` implements the evidence-gated run state machine. It is
+intentionally model-agnostic and dependency-free. Hosts can wrap compilers,
+test runners, browsers, citation checkers, symbolic tools, or model judges
+behind the same verifier contract in `fable_v2/verifiers.py`.
+
+## Quality and safety rules
+
+1. No self-attested `[PROVEN]` claims.
+2. Deterministic checks run before model judges.
+3. Generator and verifier should be independent for difficult tasks.
+4. Failed attempts are classified and reused for targeted repair.
+5. Compute is allocated adaptively; a fixed waiting timer is not computation.
+6. Finalization is rejected when receipts, evidence, or verification are missing.
+7. Execution permissions must ultimately be enforced by a sandbox/broker, not
+   only by a model-facing MCP flag.
+8. All host adapters run the same conformance tasks and report unsupported
+   capabilities honestly.
+
+## Implementation sequence
+
+1. Benchmark harness: compare model-alone, current Fable, and Fable V2 on a
+   held-out task set with success, cost, latency, and failure metrics.
+2. Task compiler and typed event log.
+3. Candidate manager with diverse/parallel trajectories.
+4. Verifier broker for tests, citations, schemas, and independent judges.
+5. Failure classification and targeted repair loop.
+6. Host adapters and capability conformance suite.
+7. Persistent experience store, model router, and optional learned verifier.
+8. Publish results only after hidden evaluation; do not claim 10x/50x from
+   plumbing tests.
+
+## Success criteria
+
+For each target domain, publish:
+
+- baseline success rate and confidence interval;
+- Fable V2 success rate and confidence interval;
+- relative success and error reduction;
+- successful tasks per token/dollar;
+- latency and tool-call counts;
+- verifier false-positive rate;
+- performance across at least two hosts and two model sizes.
+
+The weak-model 50x target is meaningful only when the baseline is non-zero
+and the absolute result is useful. The frontier-model 10x target should be
+reported primarily as reliability, failure reduction, or cost efficiency,
+because raw accuracy is bounded by 100%.
