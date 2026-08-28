@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from typing import Any, Iterable
 
 
@@ -100,7 +101,8 @@ class ExecutionBroker:
             raise PermissionError("path escapes the broker workspace") from exc
         return candidate
 
-    def _authorize_write(self, token: str | None) -> None:
+    def unlock_writes(self, token: str) -> None:
+        """Unlock writes through an administrator-only control channel."""
         if self._writes_unlocked:
             return
         digest = self.policy.write_token_digest
@@ -111,8 +113,12 @@ class ExecutionBroker:
             raise PermissionError("invalid write authorization")
         self._writes_unlocked = True
 
-    def write_file(self, relative_path: str, content: str, token: str | None = None) -> dict[str, Any]:
-        self._authorize_write(token)
+    def _authorize_write(self) -> None:
+        if not self._writes_unlocked:
+            raise PermissionError("workspace writes are locked")
+
+    def write_file(self, relative_path: str, content: str) -> dict[str, Any]:
+        self._authorize_write()
         if not isinstance(content, str):
             raise ValueError("file content must be text")
         target = self._safe_path(relative_path)
@@ -220,13 +226,31 @@ class ExecutionBroker:
                 timeout_seconds=float(request.get("timeout_seconds", 120.0)),
             )
         if action == "write_file":
-            # The write token is an administrative input and must never be
-            # exposed through a model-facing tool schema.
-            return self.write_file(request.get("path", ""), request.get("content", ""), request.get("token"))
+            # No authorization token is accepted on the model JSON channel.
+            return self.write_file(request.get("path", ""), request.get("content", ""))
         raise ValueError(f"unsupported broker action: {action}")
 
 
-def serve(broker: ExecutionBroker) -> None:
+def _serve_admin_fd(broker: ExecutionBroker, fd: int) -> None:
+    """Consume admin commands from an inherited, non-model file descriptor."""
+    with os.fdopen(os.dup(fd), "r", encoding="utf-8") as channel:
+        for line in channel:
+            if not line.strip():
+                continue
+            try:
+                request = json.loads(line)
+                if request.get("action") != "unlock_writes":
+                    raise ValueError("unsupported admin action")
+                broker.unlock_writes(request.get("token", ""))
+            except Exception as exc:
+                print(f"admin control error: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
+def serve(broker: ExecutionBroker, admin_fd: int | None = None) -> None:
+    if admin_fd is not None:
+        if os.name == "nt":
+            raise ValueError("--admin-fd currently requires a POSIX inherited pipe")
+        threading.Thread(target=_serve_admin_fd, args=(broker, admin_fd), daemon=True).start()
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -257,6 +281,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Fable V2 execution broker")
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--allow-executable", action="append", default=[])
+    parser.add_argument(
+        "--admin-fd", type=int,
+        help="POSIX inherited one-way admin control FD; never expose to a model",
+    )
     args = parser.parse_args(argv)
     allowed = tuple(args.allow_executable) or BrokerPolicy.allowed_executables
     policy = BrokerPolicy(
@@ -264,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         allowed_executables=allowed,
         write_token_digest=_load_write_token_digest(),
     )
-    serve(ExecutionBroker(policy))
+    serve(ExecutionBroker(policy), admin_fd=args.admin_fd)
     return 0
 
 

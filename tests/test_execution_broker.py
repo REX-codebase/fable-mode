@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class ExecutionBrokerTests(unittest.TestCase):
     def test_command_is_allowlisted_and_runs_after_authorization(self):
         with self.assertRaises(PermissionError):
             self.broker.execute_command(["sh", "-c", "echo escaped"])
-        self.broker.write_file("authorized.txt", "unlock", "admin-token")
+        self.broker.unlock_writes("admin-token")
         result = self.broker.execute_command([
             sys.executable, "-c", "print('broker-ok')"
         ])
@@ -49,19 +50,23 @@ class ExecutionBrokerTests(unittest.TestCase):
             self.broker.execute_command([str(fake), "-c", "print('wrong')"])
 
     def test_paths_cannot_escape_workspace(self):
+        self.broker.unlock_writes("admin-token")
         with self.assertRaises(PermissionError):
-            self.broker.write_file("../outside.txt", "blocked", "admin-token")
+            self.broker.write_file("../outside.txt", "blocked")
 
     def test_writes_are_locked_until_admin_authorization(self):
         with self.assertRaises(PermissionError):
             self.broker.write_file("result.txt", "blocked")
         with self.assertRaises(PermissionError):
-            self.broker.write_file("result.txt", "blocked", "wrong-token")
-        result = self.broker.write_file("result.txt", "accepted", "admin-token")
+            self.broker.unlock_writes("wrong-token")
+        self.broker.unlock_writes("admin-token")
+        result = self.broker.write_file("result.txt", "accepted")
         self.assertTrue(result["writes_enabled"])
         self.assertEqual((self.workspace / "result.txt").read_text(), "accepted")
 
+    @unittest.skipUnless(os.name != "nt", "inherited admin FD test is POSIX-only")
     def test_broker_is_available_as_a_json_lines_child_process(self):
+        admin_read, admin_write = os.pipe()
         env = os.environ.copy()
         env["FABLE_BROKER_WRITE_TOKEN_DIGEST"] = hashlib.sha256(
             b"admin-token"
@@ -69,19 +74,32 @@ class ExecutionBrokerTests(unittest.TestCase):
         process = subprocess.Popen(
             [sys.executable, "-m", "fable_v2.execution_broker",
              "--workspace", str(self.workspace),
-             "--allow-executable", self.executable],
+             "--allow-executable", self.executable,
+             "--admin-fd", str(admin_read)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, env=env,
+            pass_fds=(admin_read,),
         )
+        os.close(admin_read)
         try:
-            process.stdin.write(json.dumps({"action": "probe"}) + "\n")
-            process.stdin.flush()
-            response = json.loads(process.stdout.readline())
+            os.write(admin_write, (json.dumps({
+                "action": "unlock_writes", "token": "admin-token",
+            }) + "\n").encode("utf-8"))
+            os.close(admin_write)
+            response = None
+            for _ in range(50):
+                process.stdin.write(json.dumps({"action": "probe"}) + "\n")
+                process.stdin.flush()
+                response = json.loads(process.stdout.readline())
+                if response["result"].get("writes_enabled"):
+                    break
+                time.sleep(0.01)
             self.assertTrue(response["ok"])
             self.assertIn("execute_command", response["result"]["capabilities"])
+            self.assertTrue(response["result"]["writes_enabled"])
             process.stdin.write(json.dumps({
                 "action": "write_file", "path": "cli.txt",
-                "content": "cli-authorized", "token": "admin-token",
+                "content": "cli-authorized",
             }) + "\n")
             process.stdin.flush()
             write_response = json.loads(process.stdout.readline())

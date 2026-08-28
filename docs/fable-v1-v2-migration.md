@@ -27,6 +27,12 @@ The CLI loads write authorization from an administrator-controlled
 hex digest of the administrative token; it is never returned by the broker's
 probe response and must not be added to a model-facing tool schema.
 
+Unlocking is performed over a separate inherited POSIX admin file descriptor,
+passed with `--admin-fd`; the model-facing JSON-lines stdin channel has no
+unlock action and no token field. A host adapter must keep the admin pipe and
+token outside the model's tool surface. Windows adapters should use an
+equivalent protected named-pipe/control-handle implementation.
+
 Hosts should communicate with the broker over its JSON-lines stdin/stdout
 protocol and route command execution and file writes through it. The broker
 allowlists executables, constrains paths to the workspace, keeps writes locked

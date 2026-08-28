@@ -72,7 +72,9 @@ authorization. General interpreters and shell entry points are also blocked
 while writes are locked, because `shell=False` does not stop a command such as
 `python -c "open(...)"` from writing files. Hosts must route V2 command
 execution and writes through this broker instead of giving the model direct
-filesystem access.
+filesystem access. The administrative unlock is accepted only on a separate
+inherited control handle (`--admin-fd` on POSIX), never through the model's
+JSON-lines request channel.
 
 This is a process and policy boundary, not a complete operating-system sandbox.
 For a hardened deployment, the broker process must run with an OS-enforced
