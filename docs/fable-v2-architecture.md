@@ -191,6 +191,21 @@ The suite is still a runtime-foundation suite. It does not replace real host
 adapters, sandbox tests, hidden task benchmarks, or calibration of model-based
 judges.
 
+## Checkpoint trust boundary
+
+`FableRun.to_dict()` and `from_dict()` provide serialization and restoration,
+not a generally tamper-proof audit artifact. The event hash chain detects
+edited or reordered events, but the experimental checkpoint currently stores
+the HMAC attestation secret in the same payload. Someone who can rewrite that
+payload could rewrite state and recompute the in-process HMAC.
+
+Production checkpoints must keep signing keys outside the serialized state,
+ideally in an external key store or isolated broker. The broker should sign
+the canonical complete checkpoint, verify a monotonic checkpoint sequence,
+and refuse to restore trusted verification state from an unsigned or invalid
+checkpoint. The current round-trip test proves serialization correctness only;
+it is not a security test.
+
 ## Success criteria
 
 For each target domain, publish:
