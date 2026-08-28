@@ -148,12 +148,47 @@ class FableV2RuntimeTests(unittest.TestCase):
                 content=self.tests.output,
             )
 
-    def test_untrusted_verifier_cannot_finalize(self):
+    def test_in_process_verifier_cannot_claim_process_attestation(self):
         verifier = FunctionVerifier(
-            "untrusted", lambda candidate: (True, ("claimed",), 1.0), trusted=False
+            "forged-boundary", lambda candidate: (True, ("claimed",), 1.0),
+            trust_boundary="process_attested",
         )
         with self.assertRaises(PermissionError):
             self.run.execute_verifier(verifier, "candidate-001")
+
+    def test_process_attested_policy_rejects_in_process_results(self):
+        task = TaskSpec(
+            task_id="isolated", objective="x", definition_of_done=("done",),
+            required_capabilities=("inspect_files",),
+            verification_policy=VerificationPolicy(
+                required_verifier_classes=("deterministic",),
+                minimum_passing_verifiers=1,
+                require_independent=False,
+                minimum_trust_boundary="process_attested",
+            ),
+        )
+        run = new_run("session-isolated", task)
+        receipt = ToolReceipt.from_result(
+            receipt_id="r-isolated", session_id="session-isolated",
+            capability="inspect_files", tool_name="grep", tool_input="x",
+            tool_output="y", success=True,
+        )
+        run.record_receipt(receipt)
+        evidence = Evidence.from_receipt(
+            receipt, evidence_id="e-isolated", claim="inspected", kind="inspection",
+            source="grep",
+        )
+        run.attach_evidence(evidence)
+        run.register_candidate(Candidate(
+            "c-isolated", "session-isolated", "approach", "artifact",
+            ("r-isolated",), ("e-isolated",),
+        ))
+        run.execute_verifier(FunctionVerifier(
+            "local", lambda candidate: (True, ("checked",), 1.0),
+            evidence_ids=("e-isolated",),
+        ), "c-isolated")
+        with self.assertRaises(PermissionError):
+            run.finalize("c-isolated")
 
     def test_verifier_function_is_composable(self):
         verifier = FunctionVerifier("always-pass", lambda candidate: (True, ["ok"], 1.0))
@@ -166,7 +201,7 @@ class FableV2RuntimeTests(unittest.TestCase):
             name = "wrong-candidate"
             verifier_class = "deterministic"
             independent = False
-            trusted = True
+            trust_boundary = "in_process"
 
             def verify(self, candidate):
                 return VerificationResult(

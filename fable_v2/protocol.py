@@ -53,8 +53,16 @@ class VerificationPolicy:
     required_verifier_classes: tuple[str, ...] = ("deterministic", "independent")
     minimum_passing_verifiers: int = 2
     require_independent: bool = True
+    # ``in_process`` is an application convention, not a security boundary.
+    # Production deployments should require ``process_attested`` and supply
+    # results from an isolated broker.
+    minimum_trust_boundary: str = "in_process"
+
+    TRUST_BOUNDARY_RANK = {"in_process": 0, "process_attested": 1}
 
     def __post_init__(self) -> None:
+        if self.minimum_trust_boundary not in self.TRUST_BOUNDARY_RANK:
+            raise ValueError("unsupported minimum_trust_boundary")
         if not self.required_verifier_classes:
             raise ValueError("verification policy must require at least one verifier class")
         if self.minimum_passing_verifiers < 1:
@@ -276,7 +284,9 @@ class VerificationResult:
     candidate_hash: str = ""
     inspected_candidate: bool = False
     independent: bool = False
-    trusted: bool = False
+    # ``in_process`` describes where the result came from; it is not proof of
+    # trust. Only an external broker may issue ``process_attested`` results.
+    trust_boundary: str = ""
     runtime_attestation: str = ""
 
     def __post_init__(self) -> None:

@@ -105,14 +105,19 @@ capabilities and evidence kinds have been satisfied and its
 `VerificationPolicy` has passed.
 
 Verification is policy-enforced, not a free-form boolean. A result supplied
-from a model-facing call is rejected. A verifier must be registered by trusted
-runtime code, run against the exact candidate artifact, and be runtime-attested
-with the candidate hash. The task policy can require verifier classes such as
-`deterministic`, `machine-check`, and `independent`, a minimum number of passing
-verifiers, and at least one independently registered verifier. The runtime can
-prove that the registered checker ran on the exact artifact; semantic trust in
-a model judge remains an explicit deployment decision and should be backed by
-calibration and hidden tests.
+from a model-facing call is rejected. The in-process foundation API runs a
+verifier against the exact candidate artifact and runtime-attests that
+invocation with the candidate hash. This blocks forged model results, but it
+is **not** a security boundary against arbitrary Python application code: an
+in-process caller can still construct or alter verifier code. The task policy
+can require verifier classes such as `deterministic`, `machine-check`, and
+`independent`, a minimum number of passing verifiers, and a minimum trust
+boundary. The current foundation supports `in_process`; production-grade
+`process_attested` results must come from a separate broker with process
+isolation and signed/ authenticated registrations.
+
+Semantic trust in a model judge remains an explicit deployment decision and
+should be backed by calibration and hidden tests.
 
 Deterministic verifiers should be executed before independent model judges by
 the host orchestrator. The core records the order and rejects missing policy

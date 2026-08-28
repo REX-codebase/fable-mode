@@ -26,15 +26,18 @@ class FunctionVerifier:
 
     The function returns ``(passed, reasons, score)``.  It is deliberately
     dependency-free so hosts can wrap compilers, tests, schemas, or API calls.
-    Trust is assigned by the application registering the verifier, never by a
-    model-facing result.
+    The default boundary is explicitly ``in_process``. This API prevents a
+    model from forging a result, but it does not isolate arbitrary Python
+    application code; process-attested verifiers require a separate broker.
     """
 
     name: str
     check: Callable[[Candidate], tuple[bool, Iterable[str], float | None]]
     verifier_class: str = "deterministic"
     independent: bool = False
-    trusted: bool = True
+    # This is intentionally not named ``trusted``: in-process registration is
+    # an application convention, not a security boundary.
+    trust_boundary: str = "in_process"
     evidence_ids: tuple[str, ...] = ()
 
     def verify(self, candidate: Candidate) -> VerificationResult:

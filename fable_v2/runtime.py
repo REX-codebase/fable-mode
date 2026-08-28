@@ -29,16 +29,17 @@ from .protocol import (
 
 
 class RegisteredVerifier(Protocol):
-    """A verifier registered by trusted runtime code.
+    """A verifier invoked through the in-process foundation API.
 
     ``verify`` must inspect the supplied candidate and return an un-attested
     result. The runtime stamps its identity and candidate hash afterwards.
+    In-process registration is not a security boundary.
     """
 
     name: str
     verifier_class: str
     independent: bool
-    trusted: bool
+    trust_boundary: str
 
     def verify(self, candidate: Candidate) -> VerificationResult:
         ...
@@ -163,8 +164,10 @@ class FableRun:
         if any(v.candidate_id == result.candidate_id and v.verifier == result.verifier
                for v in self.verifications.values()):
             raise ValueError("verifier already produced a result for this candidate")
-        if not result.trusted or not result.inspected_candidate:
-            raise PermissionError("verification must be produced by a trusted registered verifier")
+        if not result.inspected_candidate:
+            raise PermissionError("verification must be produced by an executed verifier")
+        if result.trust_boundary not in VerificationPolicy.TRUST_BOUNDARY_RANK:
+            raise PermissionError("verification has no recognized trust boundary")
         if result.candidate_hash != canonical_hash(candidate.artifact):
             raise PermissionError("verification was not produced for the current candidate artifact")
         expected = self._attestation(result)
@@ -189,10 +192,11 @@ class FableRun:
                     verifier_class=result.verifier_class, passed=result.passed)
 
     def record_verification(self, result: VerificationResult) -> None:
-        """Reject untrusted/model-supplied results.
+        """Reject model-supplied or otherwise unattested results.
 
         Results must come from ``execute_verifier`` so the runtime can bind the
-        verdict to a registered verifier and the exact candidate artifact.
+        verdict to an in-process verifier invocation and the exact candidate
+        artifact. This is an integrity boundary, not a process trust boundary.
         """
         raise PermissionError(
             "direct verification recording is disabled; execute a registered verifier"
@@ -201,24 +205,33 @@ class FableRun:
     def _attestation(self, result: VerificationResult) -> str:
         payload = "|".join((result.verification_id, result.candidate_id,
                              result.candidate_hash, result.verifier,
-                             result.verifier_class))
+                             result.verifier_class, result.trust_boundary))
         return hmac.new(self._attestation_secret, payload.encode("utf-8"),
                         hashlib.sha256).hexdigest()
 
     def execute_verifier(self, verifier: RegisteredVerifier, candidate_id: str) -> VerificationResult:
-        """Run and attest a registered verifier against one exact candidate.
+        """Run and attest an in-process verifier against one exact candidate.
 
-        Trust and independence are properties of runtime registration, never
-        free-form fields supplied by a model-facing result.
+        The runtime binds the result to the invocation and artifact. The
+        caller's in-process code is still within the same trust domain; a
+        stronger boundary requires an isolated broker result.
         """
         candidate = self.candidates.get(candidate_id)
         if candidate is None:
             raise ValueError(f"unknown candidate: {candidate_id}")
         verifier_name = str(getattr(verifier, "name", "")).strip()
+        if not verifier_name:
+            raise ValueError("registered verifier must declare a name")
         if verifier_name in self.invalidated_verifiers:
             raise PermissionError(f"verifier is invalidated: {verifier_name}")
-        if not getattr(verifier, "trusted", False):
-            raise PermissionError(f"verifier is not trusted: {verifier_name}")
+        # In-process verifier objects are application-level declarations only.
+        # A process-attested result must arrive from an isolated broker path;
+        # this method deliberately refuses to stamp that stronger boundary.
+        trust_boundary = str(getattr(verifier, "trust_boundary", "")).strip()
+        if trust_boundary != "in_process":
+            raise PermissionError(
+                "in-process verifier execution cannot claim a process-attested boundary"
+            )
         verifier_class = str(getattr(verifier, "verifier_class", "")).strip()
         if not verifier_class:
             raise ValueError("registered verifier must declare verifier_class")
@@ -246,7 +259,7 @@ class FableRun:
             candidate_hash=canonical_hash(candidate.artifact),
             inspected_candidate=True,
             independent=bool(getattr(verifier, "independent", False)),
-            trusted=True,
+            trust_boundary=trust_boundary,
         )
         result = replace(result, runtime_attestation=self._attestation(result))
         self._record_attested_verification(result)
@@ -283,8 +296,10 @@ class FableRun:
 
     def passed_verifications(self, candidate_id: str) -> list[VerificationResult]:
         return [v for v in self.verifications.values()
-                if v.candidate_id == candidate_id and v.passed and v.trusted
-                and v.inspected_candidate and v.verifier not in self.invalidated_verifiers]
+                if v.candidate_id == candidate_id and v.passed
+                and v.inspected_candidate
+                and v.trust_boundary in VerificationPolicy.TRUST_BOUNDARY_RANK
+                and v.verifier not in self.invalidated_verifiers]
 
     def verification_requirements(self, candidate_id: str) -> list[str]:
         """Return missing policy requirements for the exact candidate."""
@@ -303,6 +318,13 @@ class FableRun:
             )
         if policy.require_independent and not any(v.independent for v in passed):
             missing.append("requires a passing independently registered verifier")
+        boundary_rank = VerificationPolicy.TRUST_BOUNDARY_RANK[policy.minimum_trust_boundary]
+        if not any(VerificationPolicy.TRUST_BOUNDARY_RANK[v.trust_boundary] >= boundary_rank
+                   for v in passed):
+            missing.append(
+                "requires a passing verifier at trust boundary "
+                + policy.minimum_trust_boundary
+            )
         return missing
 
     def finalize(self, candidate_id: str) -> Candidate:
