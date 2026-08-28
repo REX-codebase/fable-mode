@@ -62,6 +62,35 @@ Supported integrations should be implemented as thin adapters, not forks of
 the cognitive engine. MCP is the preferred tool binding, but a CLI or HTTP
 adapter is required for hosts that do not expose MCP.
 
+## Execution boundary
+
+`fable_v2.execution_broker` provides the first concrete execution boundary for
+V2. `fable-v2-broker` runs as a separate process, allowlists executables,
+executes without a shell, constrains working directories and file writes to a
+configured workspace, and keeps writes locked until administrative
+authorization. General interpreters and shell entry points are also blocked
+while writes are locked, because `shell=False` does not stop a command such as
+`python -c "open(...)"` from writing files. Hosts must route V2 command
+execution and writes through this broker instead of giving the model direct
+filesystem access. The administrative unlock is accepted only on a separate
+inherited control handle (`--admin-fd` on POSIX), never through the model's
+JSON-lines request channel.
+
+This is a process and policy boundary, not a complete operating-system sandbox.
+For a hardened deployment, the broker process must run with an OS-enforced
+read-only workspace before authorization, then receive a separately controlled
+writable layer or remount after authorization.
+Hostile workloads still require container/VM isolation and least-privilege OS
+controls. The broker resolves each allowlisted executable to a trusted absolute path at
+startup and rejects requests whose resolved path differs; a matching basename
+is not sufficient. Command stdout/stderr are drained concurrently into bounded
+buffers; exceeding `max_output_bytes` terminates the process (and its POSIX
+process group) instead of truncating after unbounded `subprocess.run()` capture.
+The broker implements every advertised protocol capability, including bounded
+`inspect_files` and the `probe_capabilities` alias. It is covered by
+child-process, executable-path, output-limit, capability, allowlist,
+path-containment, and locked-write tests.
+
 The checked-in `HOST_PROFILES` are explicitly **expected capability
 profiles**, not attestations. They are useful defaults for planning and
 documentation, but they are not runtime-authoritative. A live adapter must
@@ -107,14 +136,20 @@ capabilities and evidence kinds have been satisfied and its
 Verification is policy-enforced, not a free-form boolean. A result supplied
 from a model-facing call is rejected. The in-process foundation API runs a
 verifier against the exact candidate artifact and runtime-attests that
-invocation with the candidate hash. This blocks forged model results, but it
-is **not** a security boundary against arbitrary Python application code: an
-in-process caller can still construct or alter verifier code. The task policy
-can require verifier classes such as `deterministic`, `machine-check`, and
-`independent`, a minimum number of passing verifiers, and a minimum trust
-boundary. The current foundation supports `in_process`; production-grade
-`process_attested` results must come from a separate broker with process
-isolation and signed/ authenticated registrations.
+invocation with the candidate hash. The attestation also includes a candidate
+dependency-graph commitment: the candidate state and authenticated object
+hashes for every referenced `ToolReceipt` and `Evidence`, including receipt
+capability/success fields and evidence provenance. Restore recomputes this
+commitment before accepting a stored verdict, so changing receipt/evidence
+references or their serialized state invalidates the verdict. This blocks
+forged model results, but it is **not** a security boundary against arbitrary
+Python application code: an in-process caller can still construct or alter
+verifier code. The task policy can require verifier classes such as
+`deterministic`, `machine-check`, and `independent`, a minimum number of
+passing verifiers, and a minimum trust boundary. The current foundation
+supports `in_process`; production-grade `process_attested` results must come
+from a separate broker with process isolation and signed/ authenticated
+registrations.
 
 Semantic trust in a model judge remains an explicit deployment decision and
 should be backed by calibration and hidden tests.
@@ -125,8 +160,10 @@ classes, but it does not pretend that an arbitrary `VerificationResult` proves
 anything.
 
 The runtime enforces required capabilities and verifier classes for the task,
-not every available tool. Requiring irrelevant tools would create waste and
-tool theatre.
+not every available tool. Required capabilities are resolved exclusively from
+the selected candidate's referenced successful receipts; work performed only
+by another candidate cannot satisfy the policy. Requiring irrelevant tools
+would create waste and tool theatre.
 
 ## Runtime objects
 
@@ -181,7 +218,9 @@ receipt ledger into a false correctness oracle:
 - verifier invalidation after a prior pass;
 - malformed and reversed timestamps;
 - mutable metadata and artifact snapshotting;
+- candidate dependency-graph and receipt/evidence state tampering;
 - run serialization round-trips;
+- bounded broker output and capability dispatch;
 - concurrent candidate registration;
 - expected versus probed capability aliases;
 - verifier policy enforcement; and
@@ -194,10 +233,14 @@ judges.
 ## Checkpoint trust boundary
 
 `FableRun.to_dict()` and `from_dict()` provide serialization and restoration,
-not a generally tamper-proof audit artifact. The event hash chain detects
-edited or reordered events, but the experimental checkpoint currently stores
-the HMAC attestation secret in the same payload. Someone who can rewrite that
-payload could rewrite state and recompute the in-process HMAC.
+not a generally tamper-proof audit artifact. Each verification attestation now
+covers a canonical hash of the complete immutable `VerificationResult` (apart
+from the attestation itself), and restoration revalidates every restored
+verdict against its candidate, evidence, and attestation before it can affect
+finalization. The event hash chain detects edited or reordered events, but the
+experimental checkpoint currently stores the HMAC attestation secret in the
+same payload. Someone who can rewrite that payload could rewrite state and
+recompute the in-process HMAC.
 
 Production checkpoints must keep signing keys outside the serialized state,
 ideally in an external key store or isolated broker. The broker should sign

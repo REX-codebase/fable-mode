@@ -544,3 +544,22 @@ criteria.
 The 10x/50x uplift figures are ambitious hypotheses for measured task classes,
 not universal guarantees. Results must be established on held-out benchmarks
 with success, error reduction, cost, latency, and verifier-quality metrics.
+
+### V1 versus V2 entry points
+
+The existing `fable-engine` command and the repository's legacy MCP schema
+launch **V1** (`fable_engine.server`). `fable-v1` is an explicit alias for the
+same legacy server; existing installers remain V1-compatible.
+
+The portable V2 runtime lives in `fable_v2/`. Its execution boundary is
+launched with `fable-v2-broker --workspace <path>`. The broker is a separate
+process that owns allowlisted command execution and workspace writes; hosts
+must route V2 execution through it rather than granting models direct file
+access. `fable-v2-broker` is the V2 broker entry point, not a drop-in alias for
+the legacy `fable_session` MCP server.
+
+The V2 migration path is documented in
+[`docs/fable-v1-v2-migration.md`](docs/fable-v1-v2-migration.md) and
+`docs/fable-v2-architecture.md`: installers that still register `fable-engine`
+deliberately run V1 until a host adapter is configured for the V2 runtime and
+broker.

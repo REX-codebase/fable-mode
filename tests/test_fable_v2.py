@@ -1,3 +1,4 @@
+import copy
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
@@ -68,6 +69,39 @@ class FableV2RuntimeTests(unittest.TestCase):
             self.run.record_verification(forged)
         with self.assertRaises(PermissionError):
             self.run.finalize("candidate-001")
+
+    def test_required_capabilities_are_candidate_scoped(self):
+        task = TaskSpec(
+            task_id="scoped-capabilities", objective="x", definition_of_done=("done",),
+            required_capabilities=("inspect_files", "run_tests"),
+            verification_policy=VerificationPolicy(
+                required_verifier_classes=("deterministic",),
+                minimum_passing_verifiers=1,
+                require_independent=False,
+            ),
+        )
+        run = new_run("session-scoped", task)
+        inspect = ToolReceipt.from_result(
+            receipt_id="r-scope-inspect", session_id="session-scoped",
+            capability="inspect_files", tool_name="grep", tool_input="x",
+            tool_output="inspection", success=True,
+        )
+        tests = ToolReceipt.from_result(
+            receipt_id="r-scope-tests", session_id="session-scoped",
+            capability="run_tests", tool_name="pytest", tool_input="x",
+            tool_output="tests", success=True,
+        )
+        run.record_receipt(inspect)
+        run.record_receipt(tests)
+        run.register_candidate(Candidate(
+            "inspect-only", "session-scoped", "inspection", "a", (inspect.receipt_id,)
+        ))
+        run.register_candidate(Candidate(
+            "tests-only", "session-scoped", "tests", "b", (tests.receipt_id,)
+        ))
+        self.assertEqual(run.successful_capabilities(), {"inspect_files", "run_tests"})
+        self.assertIn("run_tests", " ".join(run.missing_requirements("inspect-only")))
+        self.assertIn("inspect_files", " ".join(run.missing_requirements("tests-only")))
 
     def test_finalization_requires_every_declared_capability(self):
         task = TaskSpec(
@@ -301,6 +335,52 @@ class FableV2RuntimeTests(unittest.TestCase):
             list(pool.map(self.run.register_candidate, candidates))
         self.assertEqual(len(self.run.candidates), 33)
         self.run.validate_event_history()
+
+    def test_restored_verdict_is_checked_against_complete_attestation(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
+        ), "candidate-001")
+        self.run.execute_verifier(FunctionVerifier(
+            "independent-review", lambda candidate: (True, ("review passed",), 1.0),
+            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+        ), "candidate-001")
+        payload = self.run.to_dict()
+        self.assertEqual(FableRun.from_dict(payload).status()["verifications"], 2)
+        mutations = {
+            "passed": False,
+            "reasons": ["tampered"],
+            "evidence_ids": [],
+            "score": 0.0,
+            "independent": True,
+            "inspected_candidate": False,
+        }
+        for field, value in mutations.items():
+            tampered = copy.deepcopy(payload)
+            tampered["verifications"][0][field] = value
+            with self.assertRaises(PermissionError, msg=field):
+                FableRun.from_dict(tampered)
+
+    def test_dependency_graph_tampering_is_rejected_on_restore(self):
+        self.run.execute_verifier(FunctionVerifier(
+            "deterministic-tests", lambda candidate: (True, ("tests pass",), 1.0),
+            evidence_ids=("e-tests",),
+        ), "candidate-001")
+        payload = self.run.to_dict()
+        self.assertTrue(payload["verifications"][0]["candidate_graph_hash"])
+        mutations = []
+        candidate_tamper = copy.deepcopy(payload)
+        candidate_tamper["candidates"][0]["receipt_ids"] = ["r-inspect"]
+        mutations.append(candidate_tamper)
+        receipt_tamper = copy.deepcopy(payload)
+        receipt_tamper["receipts"][0]["capability"] = "run_tests"
+        mutations.append(receipt_tamper)
+        evidence_tamper = copy.deepcopy(payload)
+        evidence_tamper["evidence"][0]["metadata"] = {"tampered": True}
+        mutations.append(evidence_tamper)
+        for tampered in mutations:
+            with self.assertRaises(PermissionError):
+                FableRun.from_dict(tampered)
 
     def test_tampered_event_history_is_rejected_on_restore(self):
         payload = self.run.to_dict()

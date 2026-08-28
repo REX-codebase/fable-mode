@@ -35,7 +35,7 @@ Write-Host @"
 / __/  / ___ | / /_/ // /___ / /___ /_____/ /  / // /_/ // /_/ // /___   
 /_/    /_/  |_|/_____//_____//_____/      /_/  /_/ \____//_____//_____/   
                                                                           
-  Deterministic System 2 Deliberation • Mechanical Time-Lock • 0 Dependencies
+  V1 Legacy MCP Server • Deterministic System 2 Deliberation • 0 Dependencies
 ================================================================================
 "@ -ForegroundColor Magenta
 
@@ -80,11 +80,11 @@ Write-Success "Cognitive skill installed to: $SkillTarget"
 
 # Step 5: Run Automated Invariant & MCP Test Suites
 if (-not $SkipTests) {
-    Write-Step "Executing Fable-Engine verification suite..."
+    Write-Step "Executing Fable-Engine V1 verification suite (legacy MCP server)..."
     $testScript = Join-Path $EngineSource "test_server.py"
     $testOutput = python $testScript 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "Fable-Engine verification suite PASSED."
+        Write-Success "Fable-Engine V1 verification suite PASSED."
     } else {
         Write-Host $testOutput -ForegroundColor Red
         throw "Fable-Engine verification failed; installation aborted."
@@ -144,7 +144,7 @@ if ($RegisterMcp) {
 Write-Host @"
 
 ================================================================================
- [SUCCESS] Fable-Mode installation completed successfully!
+ [SUCCESS] Fable-Mode V1 installation completed successfully!
 ================================================================================
 
  MCP Host Configuration:
@@ -168,4 +168,5 @@ Write-Host @"
  Ready to deliberate! Trigger Fable-Mode in your MCP host or set an authority budget.
 ================================================================================
 "@ -ForegroundColor Green
+
 

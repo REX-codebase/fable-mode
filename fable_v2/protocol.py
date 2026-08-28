@@ -287,6 +287,9 @@ class VerificationResult:
     # ``in_process`` describes where the result came from; it is not proof of
     # trust. Only an external broker may issue ``process_attested`` results.
     trust_boundary: str = ""
+    # Commitment to the candidate plus every referenced receipt/evidence object.
+    # The runtime populates this before computing ``runtime_attestation``.
+    candidate_graph_hash: str = ""
     runtime_attestation: str = ""
 
     def __post_init__(self) -> None:

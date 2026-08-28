@@ -132,9 +132,14 @@ class FableRun:
 
     def attach_evidence(self, evidence: Evidence) -> None:
         with self._lock:
-            self._attach_evidence(evidence)
+            self._validate_evidence(evidence)
+            if evidence.evidence_id in self.evidence:
+                raise ValueError(f"duplicate evidence: {evidence.evidence_id}")
+            self.evidence[evidence.evidence_id] = evidence
+            self._event("evidence_attached", evidence_id=evidence.evidence_id,
+                        receipt_id=evidence.receipt_id)
 
-    def _attach_evidence(self, evidence: Evidence) -> None:
+    def _validate_evidence(self, evidence: Evidence) -> None:
         if evidence.session_id != self.session_id:
             raise ValueError("evidence belongs to a different session")
         receipt = self.receipts.get(evidence.receipt_id)
@@ -146,30 +151,51 @@ class FableRun:
             raise PermissionError("evidence is not bound to the receipt output hash")
         if evidence.content_hash != receipt.output_hash:
             raise PermissionError("evidence content hash does not match receipt output hash")
-        if evidence.evidence_id in self.evidence:
-            raise ValueError(f"duplicate evidence: {evidence.evidence_id}")
-        self.evidence[evidence.evidence_id] = evidence
-        self._event("evidence_attached", evidence_id=evidence.evidence_id,
-                    receipt_id=evidence.receipt_id)
 
-    def _record_attested_verification(self, result: VerificationResult) -> None:
-        """Store a result after ``execute_verifier`` has attested it."""
+    def _candidate_graph_hash(self, candidate: Candidate) -> str:
+        """Commit to a candidate and every receipt/evidence object it references."""
+        receipts = []
+        for receipt_id in candidate.receipt_ids:
+            receipt = self.receipts.get(receipt_id)
+            if receipt is None:
+                raise ValueError("candidate references an unknown receipt")
+            receipts.append({
+                "receipt_id": receipt_id,
+                "object_hash": canonical_hash(receipt.to_dict()),
+            })
+        evidence = []
+        for evidence_id in candidate.evidence_ids:
+            item = self.evidence.get(evidence_id)
+            if item is None:
+                raise ValueError("candidate references unknown evidence")
+            evidence.append({
+                "evidence_id": evidence_id,
+                "object_hash": canonical_hash(item.to_dict()),
+            })
+        return canonical_hash({
+            "candidate": candidate.to_dict(),
+            "receipts": receipts,
+            "evidence": evidence,
+        })
+
+    def _validate_attested_verification(self, result: VerificationResult) -> None:
+        """Validate every immutable verdict field and its candidate binding."""
         if result.session_id != self.session_id:
             raise ValueError("verification belongs to a different session")
         candidate = self.candidates.get(result.candidate_id)
         if candidate is None:
             raise ValueError("verification references an unknown candidate")
-        if result.verification_id in self.verifications:
-            raise ValueError(f"duplicate verification: {result.verification_id}")
-        if any(v.candidate_id == result.candidate_id and v.verifier == result.verifier
-               for v in self.verifications.values()):
-            raise ValueError("verifier already produced a result for this candidate")
         if not result.inspected_candidate:
             raise PermissionError("verification must be produced by an executed verifier")
         if result.trust_boundary not in VerificationPolicy.TRUST_BOUNDARY_RANK:
             raise PermissionError("verification has no recognized trust boundary")
         if result.candidate_hash != canonical_hash(candidate.artifact):
             raise PermissionError("verification was not produced for the current candidate artifact")
+        expected_graph = self._candidate_graph_hash(candidate)
+        if not result.candidate_graph_hash or not hmac.compare_digest(
+            result.candidate_graph_hash, expected_graph
+        ):
+            raise PermissionError("verification is not bound to the current candidate dependency graph")
         expected = self._attestation(result)
         if not hmac.compare_digest(result.runtime_attestation, expected):
             raise PermissionError("verification has no valid runtime attestation")
@@ -185,6 +211,17 @@ class FableRun:
             )
         if result.passed and not result.evidence_ids:
             raise PermissionError("a passing verification must cite candidate evidence")
+
+    def _record_attested_verification(self, result: VerificationResult) -> None:
+        """Store a result after ``execute_verifier`` has attested it."""
+        if result.session_id != self.session_id:
+            raise ValueError("verification belongs to a different session")
+        if result.verification_id in self.verifications:
+            raise ValueError(f"duplicate verification: {result.verification_id}")
+        if any(v.candidate_id == result.candidate_id and v.verifier == result.verifier
+               for v in self.verifications.values()):
+            raise ValueError("verifier already produced a result for this candidate")
+        self._validate_attested_verification(result)
         self.state = RunState.VERIFYING
         self.verifications[result.verification_id] = result
         self._event("verification_recorded", verification_id=result.verification_id,
@@ -203,11 +240,11 @@ class FableRun:
         )
 
     def _attestation(self, result: VerificationResult) -> str:
-        payload = "|".join((result.verification_id, result.candidate_id,
-                             result.candidate_hash, result.verifier,
-                             result.verifier_class, result.trust_boundary))
-        return hmac.new(self._attestation_secret, payload.encode("utf-8"),
-                        hashlib.sha256).hexdigest()
+        """MAC every immutable verdict field, excluding the MAC itself."""
+        payload = result.to_dict()
+        payload.pop("runtime_attestation", None)
+        digest = canonical_hash(payload).encode("utf-8")
+        return hmac.new(self._attestation_secret, digest, hashlib.sha256).hexdigest()
 
     def execute_verifier(self, verifier: RegisteredVerifier, candidate_id: str) -> VerificationResult:
         """Run and attest an in-process verifier against one exact candidate.
@@ -260,6 +297,7 @@ class FableRun:
             inspected_candidate=True,
             independent=bool(getattr(verifier, "independent", False)),
             trust_boundary=trust_boundary,
+            candidate_graph_hash=self._candidate_graph_hash(candidate),
         )
         result = replace(result, runtime_attestation=self._attestation(result))
         self._record_attested_verification(result)
@@ -274,12 +312,20 @@ class FableRun:
             self._event("verifier_invalidated", verifier=verifier.strip(),
                         reason=reason.strip())
 
-    def successful_capabilities(self) -> set[str]:
-        return {r.capability for r in self.receipts.values() if r.success}
+    def successful_capabilities(self, candidate_id: str | None = None) -> set[str]:
+        """Return successful capabilities, scoped to a candidate when given."""
+        if candidate_id is None:
+            receipts = self.receipts.values()
+        else:
+            candidate = self.candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError(f"unknown candidate: {candidate_id}")
+            receipts = (self.receipts[receipt_id] for receipt_id in candidate.receipt_ids)
+        return {receipt.capability for receipt in receipts if receipt.success}
 
     def missing_requirements(self, candidate_id: str | None = None) -> list[str]:
         missing: list[str] = []
-        used = self.successful_capabilities()
+        used = self.successful_capabilities(candidate_id)
         for capability in self.task.required_capabilities:
             if capability not in used:
                 missing.append(f"required capability not completed: {capability}")
@@ -380,24 +426,49 @@ class FableRun:
         secret = data.get("attestation_secret")
         if secret:
             run._attestation_secret = bytes.fromhex(secret)
-        run.receipts = {item["receipt_id"]: ToolReceipt(**item)
-                        for item in data.get("receipts", [])}
-        run.candidates = {
-            item["candidate_id"]: Candidate(
+        run.receipts = {}
+        for item in data.get("receipts", []):
+            receipt = ToolReceipt(**item)
+            if receipt.session_id != run.session_id:
+                raise ValueError("restored tool receipt belongs to a different session")
+            if receipt.receipt_id in run.receipts:
+                raise ValueError("duplicate restored tool receipt")
+            run.receipts[receipt.receipt_id] = receipt
+        run.candidates = {}
+        for item in data.get("candidates", []):
+            candidate = Candidate(
                 **{**item,
                    "receipt_ids": tuple(item.get("receipt_ids", ())),
                    "evidence_ids": tuple(item.get("evidence_ids", ()))})
-            for item in data.get("candidates", [])
-        }
-        run.evidence = {item["evidence_id"]: Evidence(**item)
-                        for item in data.get("evidence", [])}
-        run.verifications = {
-            item["verification_id"]: VerificationResult(
+            if candidate.candidate_id in run.candidates:
+                raise ValueError("duplicate restored candidate")
+            run.candidates[candidate.candidate_id] = candidate
+        for candidate in run.candidates.values():
+            if any(receipt_id not in run.receipts for receipt_id in candidate.receipt_ids):
+                raise ValueError("candidate references an unknown restored receipt")
+        run.evidence = {}
+        for item in data.get("evidence", []):
+            evidence = Evidence(**item)
+            run._validate_evidence(evidence)
+            if evidence.evidence_id in run.evidence:
+                raise ValueError("duplicate restored evidence")
+            run.evidence[evidence.evidence_id] = evidence
+        for candidate in run.candidates.values():
+            if any(evidence_id not in run.evidence for evidence_id in candidate.evidence_ids):
+                raise ValueError("candidate references an unknown restored evidence item")
+        run.verifications = {}
+        seen_verifier_candidates: set[tuple[str, str]] = set()
+        for item in data.get("verifications", []):
+            result = VerificationResult(
                 **{**item,
                    "reasons": tuple(item.get("reasons", ())),
                    "evidence_ids": tuple(item.get("evidence_ids", ()))})
-            for item in data.get("verifications", [])
-        }
+            pair = (result.verifier, result.candidate_id)
+            if pair in seen_verifier_candidates:
+                raise ValueError("duplicate restored verifier verdict")
+            run._validate_attested_verification(result)
+            run.verifications[result.verification_id] = result
+            seen_verifier_candidates.add(pair)
         run.events = copy.deepcopy(data.get("events", []))
         run.final_candidate_id = data.get("final_candidate_id")
         run.invalidated_verifiers = dict(data.get("invalidated_verifiers", {}))
