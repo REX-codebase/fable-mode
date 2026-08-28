@@ -74,7 +74,7 @@ During Phases 1, 2, and 3 (while the immutable authority lock is active), the ho
 
 --------------------------------------------------------------------------------
 
-## The 7 Core Pillars of Fable System 2
+## The 8 Core Pillars of Fable System 2
 
 ```mermaid
 graph TD
@@ -84,6 +84,7 @@ graph TD
     P4 --> P5["5. Anti-Hallucination Epistemic Grounding<br/>([PROVEN], [HYPOTHESIS], [UNKNOWN])"]
     P5 --> P6["6. 8-Pass Recursive <thinking> Chain<br/>(Axioms, TRIZ, Concurrency, Proofs)"]
     P6 --> P7["7. Multi-Hour Persistence & Verification<br/>(WAL, Checkpoints & DoD Quality Gates)"]
+    P7 --> P8["8. Silent-Deliberation Mandate<br/>(Zero-Chat Lockout during Time-Lock)"]
 ```
 
 1. **Strict Cognitive Separation**:
@@ -126,6 +127,10 @@ graph TD
    - Session state is persisted to disk checkpoints (`checkpoint_session`) with WAL logging.
    - Pacing can be adjusted inside the session, while the immutable authority deadline prevents early execution unlocks.
    - Multi-tier verification (Lint -> Unit -> Concurrency Fuzzing -> Integration -> Red-Team) validates completion.
+
+8. **The Silent-Deliberation Mandate (Zero-Chat Lockout)**:
+   - While the immutable authority time-lock is active, the AI is **strictly forbidden from emitting conversational chatter, seeking intermediate approval, or prompting the user**.
+   - The AI operates purely in autonomous background agency (running terminal probes, AST scans, compiling scratch test harnesses, refining invariants, and authoring brain artifacts) until the authority deadline has genuinely elapsed.
 
 --------------------------------------------------------------------------------
 
@@ -198,7 +203,8 @@ PHASE 6: Checkpoint Finalization & Walkthrough Delivery
 For comprehensive deep-dives, mental models, and production blueprints, refer to:
 
 - [Cognitive Protocol & Epistemic Calibration](./references/cognitive-protocol.md) — Dual-process System 1/System 2 architecture, epistemic calibration framework, anti-hallucination rules, continuous refinement loops, and compute scaling.
-- [Deterministic System 2 Session Engine (`fable_session` MCP)](./references/system2-session-engine.md) — Full API reference for `fable_session` actions (`log_refinement_cycle`, `unlock_execution`), Mechanical Time-Lock mechanics, permission matrix, and WAL checkpoints.
+- [Weak-Model Frontier Uplift Reference](./references/weak-model-frontier-uplift.md) — 5 Mechanical Guards, anti-loop circuit breaker, subagent contract compiler, and sub-70B model micro-scaffolds.
+- [Deterministic System 2 Session Engine (`fable_session` MCP)](./references/system2-session-engine.md) — Full API reference for `fable_session` actions (`log_refinement_cycle`, `compile_delegation_contract`, `unlock_execution`), Mechanical Time-Lock mechanics, permission matrix, and WAL checkpoints.
 - [Agentic Execution, Run Telemetry & Time Budgeting](./references/agentic-execution.md) — Autonomous persistence, live cycle counters, time duration pacing (30 min / 40 min / 24 hr), strict subagent coder delegation, and fleet topologies.
 - [DeepThink Mode & 8-Pass Recursive Deliberation](./references/deepthink-mode.md) — 8-pass internal `<thinking>` engine, maximum compute scaling, terminal probing, and epistemic logging.
 - [Architectural Blueprinting & 10D Matrix](./references/architectural-blueprinting.md) — First-principles system design, 10D evaluation matrix, state machines, and blast radius isolation.
@@ -210,10 +216,12 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 
 ## Real-World Case Studies & Examples
 
+- [Deploying Weak / Local Models (Ollama / vLLM)](./examples/weak_model_ollama_setup.md) — Production runbook for open-weights models (Qwen 2.5 Coder, Llama 3.1, Flash-Lite) with Fable-Engine.
 - [Autonomous Multi-Module System Migration](./examples/autonomous-agentic-migration.md) — 50-file codebase migration, subagent orchestration, and self-healing test repair.
 - [DeepThink Algorithmic Proof & Analysis](./examples/deepthink-analysis-proof.md) — Multi-thought sequential thinking proof of a concurrent wait-free ring buffer.
 - [Ultra-Low Latency Distributed Broker](./examples/distributed-system-design.md) — Multi-archetype design of a 10M msg/sec distributed engine.
 - [Lock-Free Concurrent Cache Architecture](./examples/breakthrough-algorithm-synthesis.md) — TRIZ innovation resolving high-contention cache performance.
 - [Repo-Scale SWE-Bench Root-Cause Debugging](./examples/swe-bench-pro-debugging.md) — Systematic isolation and verified remediation of complex race condition.
+
 
 

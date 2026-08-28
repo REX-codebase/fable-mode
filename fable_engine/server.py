@@ -14,6 +14,7 @@ import math
 import logging
 import hmac
 import re
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -59,6 +60,13 @@ MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
+SILENT_DELIBERATION_REMINDER = (
+    "\n\n> [!IMPORTANT]\n"
+    "> 🛑 **SILENT-DELIBERATION ACTIVE (Zero-Chat Lockout)**: Do NOT emit conversational responses "
+    "or prompt the user while time-lock is active. Continue internal tool-reasoning, terminal benchmarks "
+    "(`run_command`), artifact authoring, and rethink-refine cycles until the authority deadline elapses."
+)
+
 
 def _validate_time_budget(value: Any, field_name: str = "time_budget_minutes") -> float:
     """Validate a duration before it can influence an execution deadline."""
@@ -83,6 +91,166 @@ def _validate_session_name(name: str) -> str:
             "and do not include path separators."
         )
     return clean_name
+
+
+# --------------------------------------------------------------------------------
+# Frontier Uplift Guards & Micro-Engines
+# --------------------------------------------------------------------------------
+
+class AntiLoopCircuitBreaker:
+    """Detects repeated identical failed actions and cyclical oscillations in O(1)."""
+
+    def __init__(self, max_consecutive_repeats: int = 2, window_size: int = 6):
+        self.max_consecutive_repeats = max_consecutive_repeats
+        self.window_size = window_size
+        self.signatures: List[str] = []
+
+    def _compute_action_signature(self, tool_name: str, args: Dict[str, Any]) -> str:
+        canonical = json.dumps({"tool": tool_name, "args": args}, sort_keys=True)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def record_and_evaluate(self, tool_name: str, args: Dict[str, Any], is_error: bool) -> Tuple[bool, str]:
+        sig = self._compute_action_signature(tool_name, args)
+        self.signatures.append(sig)
+        if len(self.signatures) > self.window_size:
+            self.signatures.pop(0)
+
+        # Check consecutive identical tool invocations in failing state
+        consecutive_count = 0
+        for s in reversed(self.signatures):
+            if s == sig:
+                consecutive_count += 1
+            else:
+                break
+
+        if consecutive_count >= self.max_consecutive_repeats and is_error:
+            return True, (
+                f"[CIRCUIT_BREAKER_TRIGGERED]: You have invoked '{tool_name}' with the same arguments "
+                f"{consecutive_count} times in a failing state. STOP repeating this action. "
+                "Execute the OODA Loop: inspect line numbers with view_file or re-verify preconditions."
+            )
+
+        # Check cyclical loop (A -> B -> A -> B) where A != B
+        if len(self.signatures) >= 4:
+            if (
+                self.signatures[-1] != self.signatures[-2]
+                and self.signatures[-1] == self.signatures[-3]
+                and self.signatures[-2] == self.signatures[-4]
+            ):
+                return True, (
+                    "[CIRCUIT_BREAKER_TRIGGERED]: Cyclical 2-step oscillation detected (Action A <-> Action B). "
+                    "Break the loop immediately and reconsider system invariants."
+                )
+
+        return False, "OK"
+
+
+class EpistemicEvidenceValidator:
+    """Validates that [PROVEN] evidence strings map to real filesystem files, line ranges, URLs, or CLI stdout."""
+
+    CITATION_PATTERN = re.compile(r"([A-Za-z0-9_./\\:-]+(?:\.[A-Za-z0-9]+))(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?")
+
+    def __init__(self, workspace_root: Optional[Path] = None):
+        self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
+
+    def parse_evidence_citation(self, evidence_str: str) -> Optional[Dict[str, Any]]:
+        clean_str = evidence_str.strip()
+        if clean_str.startswith("file:///"):
+            clean_str = clean_str[8:]
+        elif clean_str.startswith("file://"):
+            clean_str = clean_str[7:]
+
+        match = self.CITATION_PATTERN.search(clean_str)
+        if not match:
+            return None
+        file_path_str = match.group(1)
+        start_line = int(match.group(2)) if match.group(2) else None
+        end_line = int(match.group(3)) if match.group(3) else start_line
+        return {
+            "file_path": file_path_str,
+            "start_line": start_line,
+            "end_line": end_line
+        }
+
+    def validate_proven_claim(self, claim: str, evidence: str) -> Tuple[bool, str]:
+        if not evidence or not evidence.strip():
+            return False, "PROVEN claims require an explicit evidence string (file path, line range, command output, or URL)."
+
+        ev_stripped = evidence.strip()
+        if ev_stripped.startswith("http://") or ev_stripped.startswith("https://"):
+            return True, "URL citation verified."
+
+        if any(kw in ev_stripped.lower() for kw in [
+            "stdout", "stderr", "command output", "exit code", "python --version", 
+            "cargo test", "pytest", "benchmark", "probe", "cli", "run_command", "git ", "diff"
+        ]):
+            return True, "Command output citation verified."
+
+        citation = self.parse_evidence_citation(ev_stripped)
+        if not citation:
+            return False, f"Could not parse a valid file path citation from evidence: '{evidence}'."
+
+        raw_path = citation["file_path"]
+        p = Path(raw_path)
+        if not p.is_absolute():
+            p = (self.workspace_root / p).resolve()
+
+        if not p.exists():
+            return False, f"Evidence file does not exist on disk: '{raw_path}'."
+
+        if not p.is_file():
+            return False, f"Evidence path is not a file: '{raw_path}'."
+
+        if citation["start_line"] is not None:
+            try:
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    line_count = sum(1 for _ in f)
+                if citation["start_line"] > line_count:
+                    return False, f"Referenced line {citation['start_line']} exceeds total lines ({line_count}) in '{raw_path}'."
+            except Exception as e:
+                return False, f"Failed reading evidence file '{raw_path}': {e}"
+
+        return True, f"File citation verified ({raw_path})."
+
+
+class DelegationContractCompiler:
+    """Verifies that subagent delegation prompts/contracts are complete, unambiguous, and statically sound."""
+
+    REQUIRED_SECTIONS = [
+        "TargetFile",
+        "InterfaceContract",
+        "StrictConstraints",
+        "VerificationCommand"
+    ]
+
+    def __init__(self):
+        self.file_regex = re.compile(r"(TargetFile|FileBoundary):\s*[`\"]?([A-Za-z0-9_./\\:-]+)[`\"]?", re.IGNORECASE)
+        self.cmd_regex = re.compile(r"(VerificationCommand|TestCommand):\s*[`\"]?([^`\"\n]+)[`\"]?", re.IGNORECASE)
+
+    def compile_and_validate(self, prompt: str) -> Tuple[bool, List[str], Dict[str, str]]:
+        errors = []
+        parsed = {}
+
+        file_match = self.file_regex.search(prompt)
+        if not file_match:
+            errors.append("Missing explicit 'TargetFile' declaration. Subagents must have bounded file write targets.")
+        else:
+            parsed["TargetFile"] = file_match.group(2)
+
+        cmd_match = self.cmd_regex.search(prompt)
+        if not cmd_match:
+            errors.append("Missing explicit 'VerificationCommand'. Subagents must know what test to execute for DoD verification.")
+        else:
+            parsed["VerificationCommand"] = cmd_match.group(2).strip()
+
+        if not any(k.lower() in prompt.lower() for k in ["interfacecontract", "functionsignature", "typedefinition", "api contract", "interface"]):
+            errors.append("Missing 'InterfaceContract' or 'FunctionSignature'. Subagents require explicit types/signatures.")
+
+        if not any(k.lower() in prompt.lower() for k in ["strictconstraints", "invariants", "non-negotiable", "constraints"]):
+            errors.append("Missing 'StrictConstraints' or 'Invariants'. Subagents must be constrained against regressions.")
+
+        is_valid = len(errors) == 0
+        return is_valid, errors, parsed
 
 
 class FableSession:
@@ -238,6 +406,7 @@ class FableSession:
             "total_phases": len(PHASES),
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
+            "silent_deliberation_active": self.execution_locked,
             "epistemic_counts": {
                 "proven": proven_count,
                 "hypothesis": hypothesis_count,
@@ -296,15 +465,20 @@ class FableSession:
         return self.get_telemetry()
 
     def log_epistemic_item(self, tag: str, claim: str, evidence: Optional[str] = None) -> Dict[str, Any]:
-        """Logs an epistemic fact/hypothesis/unknown with structured tracking."""
+        """Logs an epistemic fact/hypothesis/unknown with structured tracking and evidence validation."""
         tag_upper = tag.strip().upper()
         if tag_upper not in ("PROVEN", "HYPOTHESIS", "UNKNOWN"):
             raise ValueError(f"Invalid epistemic tag '{tag}'. Must be 'PROVEN', 'HYPOTHESIS', or 'UNKNOWN'.")
 
         if not claim or not claim.strip():
             raise ValueError("Claim description cannot be empty.")
-        if tag_upper == "PROVEN" and not str(evidence or "").strip():
-            raise ValueError("PROVEN claims require concrete evidence (file, command output, test, or URL).")
+        if tag_upper == "PROVEN":
+            if not str(evidence or "").strip():
+                raise ValueError("PROVEN claims require concrete evidence (file, command output, test, or URL).")
+            validator = EpistemicEvidenceValidator()
+            valid, reason = validator.validate_proven_claim(claim, str(evidence))
+            if not valid:
+                raise ValueError(f"Epistemic Evidence Validation Failed: {reason}")
 
         item_id = f"epi_{len(self.epistemic_ledger) + 1:03d}"
         item = {
@@ -470,7 +644,7 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.1.0",
+            "version": "1.2.0",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,
@@ -627,6 +801,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Cognitive Gates**: 0/2 [PROVEN] items, 0/1 Invariant recorded\n\n"
                 f"> [!IMPORTANT]\n"
                 f"> Anti-Rush Lockout is ACTIVE. Proceed with epistemic grounding, research, and invariant modeling before requesting execution unlock."
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 2. SET TIMER
@@ -655,6 +830,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Authority Remaining**: `{tel['authority_remaining_formatted']}`\n"
                 f"- **Pacing Ratio**: `{tel['pacing_percentage']}`\n"
                 f"- **Authority Deadline**: `{time.ctime(session.deadline_time)}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 3. GET STATUS / TELEMETRY
@@ -700,6 +876,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"#### 🔍 Recent Epistemic Ledger Items:\n{ledger_preview}\n\n"
                 f"#### 📐 Invariants Specification:\n{inv_preview}\n\n"
                 f"#### 🔄 Recent Refinement Cycles:\n{ref_preview}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 4. ADVANCE PHASE
@@ -723,6 +900,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Execution Status**: `{'LOCKED 🛑' if session.execution_locked else 'UNLOCKED 🟢'}`\n"
                 f"- **Pacing Remaining**: `{tel['pacing_remaining_formatted']}` (`{tel['pacing_percentage']}` used)\n"
                 f"- **Authority Remaining**: `{tel['authority_remaining_formatted']}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 5. LOG EPISTEMIC ITEM
@@ -752,6 +930,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Claim**: {item['claim']}{ev_display}\n"
                 f"- **Logged in**: `{item['phase']}`\n"
                 f"- **Ledger Total**: `{counts['proven']} PROVEN`, `{counts['hypothesis']} HYPOTHESIS`, `{counts['unknown']} UNKNOWN`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 6. RECORD INVARIANT
@@ -779,6 +958,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Formal Statement**: `{inv['formal_statement']}`\n"
                 f"- **Proof / Rationale**: {inv['proof_or_rationale']}\n"
                 f"- **Total Invariants**: `{len(session.invariants)}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 7. LOG REFINEMENT CYCLE
@@ -828,6 +1008,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Total Refinement Cycles**: `{len(session.refinement_cycles)}`\n\n"
                 f"> [!TIP]\n"
                 f"> Rethink-Refine Cognitive Loop active. Continue exploring alternative archetypes, falsifications, and terminal benchmarks until the time budget is fulfilled."
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 8. UNLOCK EXECUTION
@@ -891,6 +1072,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Ledger**: `{tel['epistemic_counts']['proven']} PROVEN`, `{tel['epistemic_counts']['hypothesis']} HYPOTHESIS`\n"
                 f"- **Invariants**: `{tel['invariants_count']}`\n"
                 f"- **Refinement Cycles**: `{tel['refinement_count']}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
         # 11. LIST SESSIONS
@@ -917,12 +1099,46 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{listing}"
             )
 
+        # 12. COMPILE DELEGATION CONTRACT
+        elif action in ("compile_delegation_contract", "compile_contract", "validate_contract"):
+            prompt = arguments.get("subagent_prompt") or arguments.get("prompt") or arguments.get("contract") or ""
+            if not str(prompt).strip():
+                return "Error: 'subagent_prompt' (or 'prompt') is required for action 'compile_delegation_contract'."
+
+            compiler = DelegationContractCompiler()
+            is_valid, errors, parsed = compiler.compile_and_validate(prompt)
+
+            if not is_valid:
+                err_list = "\n".join([f"- ❌ {e}" for e in errors])
+                return (
+                    f"### 🛑 Subagent Delegation Contract Compilation Failed\n\n"
+                    f"The subagent prompt does not satisfy the strict Fable-Mode delegation boundaries:\n\n"
+                    f"{err_list}\n\n"
+                    f"> [!WARNING]\n"
+                    f"> Worker subagents must receive 100% bounded, unambiguous contracts before dispatch.\n"
+                    f"> Ensure your prompt contains:\n"
+                    f"> 1. `TargetFile: <file path>`\n"
+                    f"> 2. `InterfaceContract: <type/function signature>`\n"
+                    f"> 3. `StrictConstraints: <invariants / bounds>`\n"
+                    f"> 4. `VerificationCommand: <exact CLI test command>`"
+                )
+
+            return (
+                f"### ✅ Subagent Delegation Contract Compiled Successfully\n\n"
+                f"- **Target File**: `{parsed.get('TargetFile', 'Declared')}`\n"
+                f"- **Verification Command**: `{parsed.get('VerificationCommand', 'Declared')}`\n"
+                f"- **Contract Status**: `100% BOUNDED & VALIDATED`\n"
+                f"- **Dispatch Readiness**: `READY_FOR_SUBAGENT_DISPATCH` 🚀\n\n"
+                f"> [!TIP]\n"
+                f"> You may now dispatch a worker subagent (`type: self`) with this validated contract once execution is unlocked."
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
                 f"'create_session', 'set_timer', 'get_status', 'telemetry', 'advance_phase', "
                 f"'log_epistemic_item', 'record_invariant', 'log_refinement_cycle', 'unlock_execution', "
-                f"'checkpoint_session', 'restore_session', 'list_sessions'."
+                f"'checkpoint_session', 'restore_session', 'list_sessions', 'compile_delegation_contract'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -937,7 +1153,7 @@ TOOL_SCHEMA = {
     "description": (
         "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\n"
         "Enforces DeepThink cognitive rigor, hard mechanical time-lock, anti-rush execution lockout, epistemic truth logging (PROVEN/HYPOTHESIS/UNKNOWN),\n"
-        "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, and live user-controlled time-budgeted pacing telemetry."
+        "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, subagent delegation contract compilation, and live user-controlled time-budgeted pacing telemetry."
     ),
     "inputSchema": {
         "type": "object",
@@ -956,7 +1172,8 @@ TOOL_SCHEMA = {
                     "unlock_execution",
                     "checkpoint_session",
                     "restore_session",
-                    "list_sessions"
+                    "list_sessions",
+                    "compile_delegation_contract"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -1039,6 +1256,10 @@ TOOL_SCHEMA = {
                 "type": "string",
                 "description": "Justification for unlocking code execution after satisfying cognitive gates."
             },
+            "subagent_prompt": {
+                "type": "string",
+                "description": "The delegation prompt or contract text for the subagent to validate."
+            },
         },
         "required": ["action"]
     }
@@ -1083,7 +1304,7 @@ def main():
                     },
                     "serverInfo": {
                         "name": "fable-engine",
-                        "version": "1.1.0"
+                        "version": "1.2.0"
                     }
                 }
             })

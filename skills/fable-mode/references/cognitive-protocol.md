@@ -179,5 +179,47 @@ Pass 8: Blueprint Synthesis, Subagent Delegation Contracts & Quality Gate
 | **Symptom Patching** | Fixing an error message without understanding the underlying state corruption. | Execute root-cause isolation: identify invariant breach, not just stack trace line. |
 | **Optimistic Bias** | Assuming networks are instant, disks never corrupt, and concurrent writes never interleave. | Mandatory Red-Team Pass injecting Byzantine faults, thread preemption, and memory barriers. |
 | **Framework Cargo-Culting** | Adding complex third-party dependencies when simple first-principles primitives suffice. | Axiomatic deconstruction: build on primitives unless library offers verified net win. |
+| **Conversational Chatter during Thinking** | Emitting chat messages, asking user questions, or seeking intermediate approval while time-lock is active. | **Silent-Deliberation Mandate**: Zero-chat lockout during active time-lock. Agent operates purely via autonomous background tool loops until authority deadline elapses. |
+
+--------------------------------------------------------------------------------
+
+## 8. The Silent-Deliberation Protocol & Anti-Conversational Discipline
+
+A critical failure mode in long-horizon autonomous tasks is **Conversational Leakage**—the tendency of language models to pause in the middle of a time-locked reasoning budget to ask intermediate questions, emit conversational status reports, or seek user confirmation before completing the allocated thinking passes.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      TIME-LOCK ACTIVE (execution_locked: True)              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ⛔ CONVERSATIONAL CHATTER: STRICTLY FORBIDDEN                              │
+│     - No intermediate chit-chat                                             │
+│     - No premature user prompts / questions                                 │
+│     - No partial status announcements                                       │
+│                                                                             │
+│  ✅ AUTONOMOUS BACKGROUND AGENCY: MANDATORY                                 │
+│     - Live terminal benchmarks & scratch probes (run_command)               │
+│     - AST parsing, file inspection (view_file, grep_search)                 │
+│     - Invariant proofs & epistemic logging (fable_session)                  │
+│     - Rich architectural blueprints in brain/<id>/                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The 4 Mandates of Silent Deliberation:
+
+1. **Zero-Chat Lockout during Time-Lock**:
+   - While the immutable authority time-lock is active (`execution_locked: True`), the AI is **strictly forbidden from emitting visible conversational text to the user**.
+   - The AI must not ask clarification questions, request permission, or output "I am working on this..." status updates.
+
+2. **Continuous Autonomous Agency**:
+   - Every agentic turn during the time-lock window must be an actionable tool invocation: running terminal probes (`run_command`), searching repository symbols (`grep_search`), inspecting files (`view_file`), creating brain blueprints, or logging refinement cycles (`log_refinement_cycle`).
+
+3. **Self-Contained Clarification & Assumption Branching**:
+   - If requirements are underspecified, the AI must NOT interrupt the thinking phase to ask the user.
+   - Instead, the AI records the ambiguity as `[UNKNOWN]`, branches into 2–3 architectural archetypes covering each interpretation, and resolves the optimal approach via TRIZ and 10D trade-off scoring.
+
+4. **Monotonic Clock Discipline**:
+   - The AI remains in silent deliberation until the monotonic clock confirms that the authority deadline has fully elapsed.
+   - Only after `unlock_execution` succeeds and subagent implementation is verified does the AI present the final comprehensive report and walkthrough artifact to the user.
+
 
 

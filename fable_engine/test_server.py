@@ -115,10 +115,10 @@ class TestFableSessionCore(unittest.TestCase):
 
     def test_epistemic_ledger_logging(self):
         """Verifies logging fact, hypothesis, and unknown items."""
-        item1 = self.session.log_epistemic_item("PROVEN", "Ring buffer power of 2 size allows bitwise mask", "lib.rs:42")
+        item1 = self.session.log_epistemic_item("PROVEN", "Ring buffer power of 2 size allows bitwise mask", f"{__file__}:L42")
         self.assertEqual(item1["id"], "epi_001")
         self.assertEqual(item1["tag"], "PROVEN")
-        self.assertEqual(item1["evidence"], "lib.rs:42")
+        self.assertEqual(item1["evidence"], f"{__file__}:L42")
 
         item2 = self.session.log_epistemic_item("HYPOTHESIS", "Acquire-Release fences suffice for x86 TSO")
         self.assertEqual(item2["id"], "epi_002")
@@ -225,8 +225,8 @@ class TestFableSessionCore(unittest.TestCase):
         4. Succeeds normally when the authority deadline has elapsed.
         """
         # Set up satisfying cognitive gates
-        self.session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", "test_server.py:201")
-        self.session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", "test_server.py:202")
+        self.session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", f"{__file__}:L201")
+        self.session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", f"{__file__}:L202")
         self.session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
         self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Advanced to Phase 2")
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Advanced to Phase 3")
@@ -267,8 +267,8 @@ class TestFableSessionCore(unittest.TestCase):
             wall_clock=self.clock.time,
             monotonic_clock=self.clock.monotonic
         )
-        new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", "test_server.py:229")
-        new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", "test_server.py:230")
+        new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", f"{__file__}:L229")
+        new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", f"{__file__}:L230")
         new_session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
         new_session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2 ready")
         new_session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3 ready")
@@ -298,13 +298,13 @@ class TestFableSessionCore(unittest.TestCase):
         self.assertIn("at least 2 [PROVEN]", str(ctx.exception))
 
         # Attempt 2: Add 1 PROVEN item -> Must still fail
-        self.session.log_epistemic_item("PROVEN", "Fact 1: Single producer queue is wait-free", "test_server.py:259")
+        self.session.log_epistemic_item("PROVEN", "Fact 1: Single producer queue is wait-free", f"{__file__}:L259")
         with self.assertRaises(PermissionError) as ctx:
             self.session.unlock_execution("Let me code")
         self.assertIn("at least 2 [PROVEN]", str(ctx.exception))
 
         # Attempt 3: Add 2nd PROVEN item, but 0 invariants -> Must still fail
-        self.session.log_epistemic_item("PROVEN", "Fact 2: Atomic CAS is supported on target CPU", "test_server.py:265")
+        self.session.log_epistemic_item("PROVEN", "Fact 2: Atomic CAS is supported on target CPU", f"{__file__}:L265")
         with self.assertRaises(PermissionError) as ctx:
             self.session.unlock_execution("Let me code")
         self.assertIn("at least 1 formal Invariant", str(ctx.exception))
@@ -343,8 +343,8 @@ class TestFableSessionCore(unittest.TestCase):
         """A completed internal timer never satisfies the authority lock."""
         self.session.set_timer(0.1)
         self.clock.advance(1.0)
-        self.session.log_epistemic_item("PROVEN", "Fact 1", "test_server.py:1")
-        self.session.log_epistemic_item("PROVEN", "Fact 2", "test_server.py:2")
+        self.session.log_epistemic_item("PROVEN", "Fact 1", f"{__file__}:L1")
+        self.session.log_epistemic_item("PROVEN", "Fact 2", f"{__file__}:L2")
         self.session.record_invariant("INV-01", "x == x", "Reflexivity")
         self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2")
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3")
@@ -357,7 +357,7 @@ class TestFableSessionCore(unittest.TestCase):
             self.session.log_epistemic_item("PROVEN", "An unreferenced assertion")
 
         item = self.session.log_epistemic_item(
-            "PROVEN", "A referenced assertion", "tests/test_server.py:1"
+            "PROVEN", "A referenced assertion", f"{__file__}:L1"
         )
         self.assertEqual(item["tag"], "PROVEN")
 
@@ -371,7 +371,7 @@ class TestFableSessionCore(unittest.TestCase):
 
     def test_serialization_and_atomic_save(self):
         """Verifies session dictionary serialization, deserialization, and disk saving including refinement cycles."""
-        self.session.log_epistemic_item("PROVEN", "Proven item 1", "test_server.py:303")
+        self.session.log_epistemic_item("PROVEN", "Proven item 1", f"{__file__}:L303")
         self.session.record_invariant("INV-01", "Statement", "Rationale")
         self.session.log_refinement_cycle(
             refinement_type="archetype_exploration",
@@ -484,7 +484,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "session_name": self.session_name,
             "tag": "PROVEN",
             "claim": "Zero-copy slices borrow from underlying buffer without allocation",
-            "evidence": "specs.md#L10"
+            "evidence": f"{__file__}:L10"
         })
         self.assertIn("Epistemic Item Logged", res)
         self.assertIn("[PROVEN]", res)
@@ -494,7 +494,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "session_name": self.session_name,
             "tag": "PROVEN",
             "claim": "Lifetime bounds prevent use-after-free",
-            "evidence": "rustc verification"
+            "evidence": "cargo test stdout: rustc verification passed"
         })
         self.assertIn("2 PROVEN", res)
 
