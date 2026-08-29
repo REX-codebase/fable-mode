@@ -101,7 +101,8 @@ class PackagingSecurityTests(unittest.TestCase):
     def test_frozen_like_mcp_smoke(self):
         result = Installer(self.root / "i").install(); result.transaction.commit()
         self.assertEqual(result.executable_argv[-1], "serve")
-        self.assertEqual(_smoke(result.executable_argv, self.root / "data")[0], True)
+        smoke_ok, smoke_detail = _smoke(result.executable_argv, self.root / "data")
+        self.assertTrue(smoke_ok, smoke_detail)
 
 
 if __name__ == "__main__":
