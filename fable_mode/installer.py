@@ -284,14 +284,17 @@ class Installer:
 
     def install(self, *, frozen_executable: Path | None = None, dry_run: bool = False) -> InstallResult:
         """Publish an installation transactionally; caller may rollback registration."""
-        original_identity = self._assert_install_target()
         mode = "frozen" if frozen_executable is not None else "source"
+        # Dry-run must not inspect or reject an existing application/data
+        # directory: platform runtimes may already have created the parent.
+        # It performs no filesystem or host operation beyond computing paths.
         if dry_run:
             if frozen_executable:
                 argv = [str(frozen_executable), "serve"]
             else:
                 argv = [sys.executable, str(self.install_dir / "runtime" / "fable_mode_entry.py"), "serve"]
             return InstallResult(self.install_dir, argv, mode, None)
+        original_identity = self._assert_install_target()
         parent = self.install_dir.parent
         _reject_path(parent)
         parent.mkdir(parents=True, exist_ok=True)

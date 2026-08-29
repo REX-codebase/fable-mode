@@ -418,6 +418,14 @@ class ExecutionBroker:
             if not directory.is_dir():
                 raise ValueError("cwd must be a directory inside the workspace")
             cwd_display = "." if cwd is None else str(Path(cwd))
+        elif sys.platform == "darwin":
+            # macOS has /dev/fd, but its descriptors are not consistently
+            # usable as subprocess cwd paths. Keep the validated path fallback
+            # for native compatibility; inspect/write remain descriptor-relative.
+            directory = self.policy.workspace if cwd is None else self._safe_path(cwd)
+            if not directory.is_dir():
+                raise ValueError("cwd must be a directory inside the workspace")
+            cwd_display = "." if cwd is None else str(Path(cwd))
         else:
             if cwd is None:
                 cwd_fd = os.dup(self._workspace_fd)
@@ -426,8 +434,7 @@ class ExecutionBroker:
                 cwd_parts = _path_parts(cwd)
                 cwd_fd = _open_child_dirs(self._workspace_fd, cwd_parts)
                 cwd_display = "/".join(cwd_parts)
-            fd_namespace = "/dev/fd" if sys.platform == "darwin" else "/proc/self/fd"
-            directory = f"{fd_namespace}/{cwd_fd}"
+            directory = f"/proc/self/fd/{cwd_fd}"
             if not os.path.isdir(directory):
                 os.close(cwd_fd)
                 cwd_fd = None
