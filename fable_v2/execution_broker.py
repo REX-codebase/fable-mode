@@ -426,7 +426,8 @@ class ExecutionBroker:
                 cwd_parts = _path_parts(cwd)
                 cwd_fd = _open_child_dirs(self._workspace_fd, cwd_parts)
                 cwd_display = "/".join(cwd_parts)
-            directory = f"/proc/self/fd/{cwd_fd}"
+            fd_namespace = "/dev/fd" if sys.platform == "darwin" else "/proc/self/fd"
+            directory = f"{fd_namespace}/{cwd_fd}"
             if not os.path.isdir(directory):
                 os.close(cwd_fd)
                 cwd_fd = None
