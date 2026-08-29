@@ -131,6 +131,7 @@ class RedTeamRemediationTests(unittest.TestCase):
             run_argv([sys.executable, "-c", ""], env={"_FABLE_PROBE_HOME": str(victim)})
             self.assertTrue((victim / "keep").exists())
 
+    @unittest.skipIf(os.name == "nt", "POSIX shebang validation is not a Windows execution model")
     def test_probe_rejects_untrusted_absolute_shebang(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "host"

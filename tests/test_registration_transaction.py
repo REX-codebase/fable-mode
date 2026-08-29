@@ -1,6 +1,7 @@
 import json
 import os
 import stat
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -47,8 +48,15 @@ if sys.argv[1:3] == ['mcp', 'add']:
     p.write_text(json.dumps(s)); raise SystemExit(0)
 raise SystemExit(4)
 """
-        script.write_text("#!/usr/bin/env python3\n" + "HUMAN = " + repr(human) + "\nFAIL_ADD = " + repr(fail_add) + "\n" + textwrap.dedent(code))
-        script.chmod(stat.S_IRWXU)
+        script_body = "#!/usr/bin/env python3\n" + "HUMAN = " + repr(human) + "\nFAIL_ADD = " + repr(fail_add) + "\n" + textwrap.dedent(code)
+        if os.name == "nt":
+            py_script = script.with_suffix(".py")
+            py_script.write_text(script_body)
+            script = script.with_suffix(".cmd")
+            script.write_text(f'@echo off\n"{os.fspath(Path(sys.executable))}" "{os.fspath(py_script)}" %*\n')
+        else:
+            script.write_text(script_body)
+            script.chmod(stat.S_IRWXU)
         return Host(name, script, "cli", True), state
 
     def test_existing_canonical_and_legacy_are_restored_on_uninstall(self):
@@ -137,16 +145,19 @@ raise SystemExit(4)
         host = Host("agy", exe, "cli", True)
         first = []
         register_hosts({"agy": host}, ["runtime-v1", "serve"], home=home, records=first)
-        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
         second = []
         register_hosts({"agy": host}, ["runtime-v2", "serve"], home=home,
                        records=second, owned_records=first)
         self.assertEqual(second[0]["previous_entries"], original["mcpServers"])
         self.assertEqual(second[0]["previous_mode"], 0o644)
-        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
         self.assertEqual(cleanup_recorded_registrations(second, home=home), [])
         self.assertEqual(json.loads(config.read_text()), original)
-        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
 
     def test_cli_mutation_uses_real_home_state_and_persists(self):
         """Discovery may be sandboxed, but add/remove must use the target HOME."""
@@ -155,7 +166,7 @@ raise SystemExit(4)
         script = self.root / "home-only-codex"
         state = home / "codex-mcp.json"
         state.write_text(json.dumps({"user": {"command": "keep", "args": []}}))
-        script.write_text("#!/usr/bin/env python3\n" + textwrap.dedent("""
+        script_body = "#!/usr/bin/env python3\n" + textwrap.dedent("""
             import json, os, pathlib, sys
             p = pathlib.Path(os.environ["HOME"]) / "codex-mcp.json"
             s = json.loads(p.read_text())
@@ -173,8 +184,15 @@ raise SystemExit(4)
                 s[name] = {"command": sys.argv[marker + 1], "args": sys.argv[marker + 2:]}
                 p.write_text(json.dumps(s)); raise SystemExit(0)
             raise SystemExit(4)
-        """))
-        script.chmod(stat.S_IRWXU)
+        """)
+        if os.name == "nt":
+            py_script = script.with_suffix(".py")
+            py_script.write_text(script_body)
+            script = script.with_suffix(".cmd")
+            script.write_text(f'@echo off\n"{os.fspath(Path(sys.executable))}" "{os.fspath(py_script)}" %*\n')
+        else:
+            script.write_text(script_body)
+            script.chmod(stat.S_IRWXU)
         records = []
         register_hosts({"codex": Host("codex", script, "cli", True)},
                        ["new-runtime", "serve"], home=home, records=records)
