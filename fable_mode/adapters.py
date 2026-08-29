@@ -55,7 +55,11 @@ def _safe_path(path: Path, *, allow_missing: bool = True) -> None:
             raise RegistrationError(f"missing path: {part}")
         reparse = bool(getattr(st, "st_file_attributes", 0) & 0x400)
         junction = bool(getattr(part, "is_junction", lambda: False)())
-        if reparse or junction or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+        trusted_macos_alias = (
+            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
+            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+        )
+        if ((reparse or junction or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
             raise RegistrationError(f"unsafe special/link path: {part}")
         if part == p and stat.S_ISREG(st.st_mode) and st.st_nlink != 1:
             raise RegistrationError(f"hardlinked file is unsafe: {part}")
