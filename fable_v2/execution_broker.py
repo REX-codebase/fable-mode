@@ -439,7 +439,13 @@ class ExecutionBroker:
                 os.close(cwd_fd)
                 cwd_fd = None
                 raise PermissionError("workspace cwd cannot be pinned safely")
-        env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
+        # Keep only execution essentials. Windows child processes need
+        # SystemRoot/PATHEXT and temp roots; do not pass arbitrary user
+        # credentials or configuration variables through the broker.
+        env = {key: os.environ[key] for key in
+               ("PATH", "PATHEXT", "SystemRoot", "WINDIR", "SYSTEMDRIVE", "TEMP", "TMP")
+               if os.environ.get(key)}
+        env["PYTHONUNBUFFERED"] = "1"
         process: subprocess.Popen[bytes] | None = None
         output_limit = self.policy.max_output_bytes
         captured = {"stdout": bytearray(), "stderr": bytearray()}
