@@ -325,8 +325,12 @@ def _open_directory_nofollow(path: Path, *, create: bool = True) -> int:
     fd = os.open("/", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW)
     try:
         for component in absolute.parts[1:]:
+            component_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+            if (sys.platform == "darwin" and component in {"var", "tmp"}
+                    and str(Path("/", component).resolve()) in {"/private/var", "/private/tmp"}):
+                component_flags &= ~os.O_NOFOLLOW
             try:
-                child = os.open(component, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW, dir_fd=fd)
+                child = os.open(component, component_flags, dir_fd=fd)
             except FileNotFoundError:
                 if not create:
                     raise RegistrationError(f"missing config directory: {absolute}")
