@@ -371,7 +371,10 @@ def _atomic_write(path: Path, content: bytes, mode: int | None = 0o600) -> None:
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.tmp-", dir=str(path.parent))
     temp = Path(temp_name)
     try:
-        os.fchmod(fd, 0o600 if mode is None else mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600 if mode is None else mode)
+        else:
+            os.chmod(temp_name, 0o600 if mode is None else mode)
         with os.fdopen(fd, "wb") as handle:
             handle.write(content)
             handle.flush()

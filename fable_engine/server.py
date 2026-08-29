@@ -203,7 +203,7 @@ def _safe_cas_node(path: Path, *, allow_missing: bool = True) -> None:
         if attrs & 0x400 or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
             raise FableCASError(f"unsafe CAS path: {part}")
         if part == Path(path) and stat.S_ISREG(st.st_mode):
-            if st.st_nlink != 1 or stat.S_IMODE(st.st_mode) & 0o077:
+            if st.st_nlink != 1 or (os.name != "nt" and stat.S_IMODE(st.st_mode) & 0o077):
                 raise FableCASError(f"CAS object is not private: {part}")
 
 
@@ -1668,7 +1668,10 @@ class FableSession:
             fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(parent))
             temp_path = Path(temporary)
             try:
-                os.fchmod(fd, 0o600)
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+                else:
+                    os.chmod(temporary, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     json.dump(self.to_dict(), handle, indent=2)
                     handle.flush()
@@ -1693,7 +1696,7 @@ def _safe_session_file(path: Path) -> None:
         raise ValueError(f"session file does not exist: {path.name}")
     attrs = int(getattr(st, "st_file_attributes", 0))
     if (attrs & 0x400 or stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
-            or st.st_nlink != 1 or stat.S_IMODE(st.st_mode) & 0o077):
+            or st.st_nlink != 1 or (os.name != "nt" and stat.S_IMODE(st.st_mode) & 0o077)):
         raise ValueError("session file must be a private regular non-hardlinked file")
 
 

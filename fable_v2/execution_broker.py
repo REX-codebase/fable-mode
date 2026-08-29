@@ -286,6 +286,22 @@ class ExecutionBroker:
         if limit < 1:
             raise ValueError("max_bytes must be positive")
         limit = min(limit, self.policy.max_output_bytes)
+        if self._workspace_fd is None:
+            # Windows fallback: use the checked path-based implementation and
+            # fail closed on unsafe nodes. Native Windows handle-relative
+            # validation is a release-runner responsibility.
+            target = self._safe_path(relative_path)
+            target_st = target.lstat()
+            if (not stat.S_ISREG(target_st.st_mode) or target_st.st_nlink != 1
+                    or stat.S_IMODE(target_st.st_mode) & 0o022):
+                raise PermissionError("inspect path must be a private, non-hardlinked file")
+            with target.open("rb") as handle:
+                raw = handle.read(limit + 1)
+            parts = _path_parts(relative_path)
+            truncated = len(raw) > limit
+            raw = raw[:limit]
+            return {"path": "/".join(parts), "content": raw.decode("utf-8", errors="replace"),
+                    "content_hash": hashlib.sha256(raw).hexdigest(), "truncated": truncated}
         parent_fd, name, parts = self._pinned_parent(relative_path)
         try:
             fd = os.open(name, _no_follow_flags(), dir_fd=parent_fd)
@@ -314,6 +330,23 @@ class ExecutionBroker:
         self._authorize_write()
         if not isinstance(content, str):
             raise ValueError("file content must be text")
+        if self._workspace_fd is None:
+            target = self._safe_path(relative_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".fable-", dir=str(target.parent), text=True)
+            temp = Path(temporary)
+            try:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(content); handle.flush(); os.fsync(handle.fileno())
+                self._safe_path(relative_path)
+                os.replace(temp, target)
+            finally:
+                if temp.exists():
+                    temp.unlink()
+            return {"path": relative_path, "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    "writes_enabled": True}
         parent_fd, name, parts = self._pinned_parent(relative_path, create=True)
         temporary_name = f".fable-{os.getpid()}-{threading.get_ident()}-{os.urandom(8).hex()}"
         temp_fd = None
@@ -380,20 +413,24 @@ class ExecutionBroker:
         if not math.isfinite(timeout_seconds) or not (0 < timeout_seconds <= MAX_TIMEOUT_SECONDS):
             raise ValueError(f"timeout_seconds must be finite and between 0 and {MAX_TIMEOUT_SECONDS}")
         cwd_fd: int | None = None
-        if os.name != "posix" or self._workspace_fd is None:
-            raise PermissionError("descriptor-relative command cwd is unavailable on this platform")
-        if cwd is None:
-            cwd_fd = os.dup(self._workspace_fd)
-            cwd_display = "."
+        if self._workspace_fd is None:
+            directory = self.policy.workspace if cwd is None else self._safe_path(cwd)
+            if not directory.is_dir():
+                raise ValueError("cwd must be a directory inside the workspace")
+            cwd_display = "." if cwd is None else str(Path(cwd))
         else:
-            cwd_parts = _path_parts(cwd)
-            cwd_fd = _open_child_dirs(self._workspace_fd, cwd_parts)
-            cwd_display = "/".join(cwd_parts)
-        directory = f"/proc/self/fd/{cwd_fd}"
-        if not os.path.isdir(directory):
-            os.close(cwd_fd)
-            cwd_fd = None
-            raise PermissionError("workspace cwd cannot be pinned safely")
+            if cwd is None:
+                cwd_fd = os.dup(self._workspace_fd)
+                cwd_display = "."
+            else:
+                cwd_parts = _path_parts(cwd)
+                cwd_fd = _open_child_dirs(self._workspace_fd, cwd_parts)
+                cwd_display = "/".join(cwd_parts)
+            directory = f"/proc/self/fd/{cwd_fd}"
+            if not os.path.isdir(directory):
+                os.close(cwd_fd)
+                cwd_fd = None
+                raise PermissionError("workspace cwd cannot be pinned safely")
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
         process: subprocess.Popen[bytes] | None = None
         output_limit = self.policy.max_output_bytes
