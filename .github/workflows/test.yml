@@ -26,6 +26,7 @@ jobs:
       - name: Install and import check
         run: |
           python -m pip install --upgrade pip
+          python -m pip install setuptools==75.8.0 wheel==0.45.1
           python -m pip install -e .
           python -m compileall -q fable_mode fable_engine fable_v2
           python -c "import fable_mode, fable_v2; from fable_engine import server; print(fable_mode.__version__)"
