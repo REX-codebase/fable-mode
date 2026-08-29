@@ -171,7 +171,10 @@ class RemediationRegressionTests(unittest.TestCase):
             shutil.copy2(checkout / name, source / name)
         dist, site, outside = self.root / "dist", self.root / "site", self.root / "outside"
         dist.mkdir(); site.mkdir(); outside.mkdir()
-        subprocess.run([sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "--no-build-isolation", "-w", str(dist)], cwd=source, check=True, capture_output=True)
+        wheel_build = subprocess.run([sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "--no-build-isolation", "-w", str(dist)], cwd=source, capture_output=True, text=True)
+        self.assertEqual(wheel_build.returncode, 0,
+                         "wheel build failed\nstdout:\n%s\nstderr:\n%s" %
+                         (wheel_build.stdout, wheel_build.stderr))
         env = os.environ.copy(); env["PIP_USER"] = "0"
         subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(site), *map(str, dist.glob("*.whl"))], env=env, check=True, capture_output=True)
         env["PYTHONPATH"] = str(site); env["FABLE_INSTALL_DIR"] = str(self.root / "install")
