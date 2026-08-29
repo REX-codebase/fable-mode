@@ -57,6 +57,10 @@ class CASNotFoundError(FableCASError):
     pass
 
 
+MAX_CAS_OBJECT_BYTES = 16 * 1024 * 1024
+MAX_SLICE_RESPONSE_BYTES = 1 * 1024 * 1024
+
+
 class ThreadSafeLRUCache:
     """Thread-safe Least-Recently-Used (LRU) memory cache."""
 
@@ -177,7 +181,11 @@ class FableCASStore:
 
         # Check if already present
         if dest_path.is_file():
-            self.cache.put(content_hash, content)
+            with open(dest_path, "rb") as existing:
+                existing_bytes = existing.read(MAX_CAS_OBJECT_BYTES + 1)
+            if len(existing_bytes) > MAX_CAS_OBJECT_BYTES or hashlib.sha256(existing_bytes).hexdigest() != content_hash:
+                raise IntegrityError("existing CAS object is corrupt")
+            self.cache.put(content_hash, existing_bytes)
             return self.to_uri(content_hash)
 
         # Ensure destination shard directory exists
@@ -206,7 +214,7 @@ class FableCASStore:
                     pass
             raise
 
-        self.cache.put(content_hash, content)
+        self.cache.put(content_hash, raw_bytes)
         return self.to_uri(content_hash)
 
     def get_bytes(self, ref_or_hash: str, verify: Optional[bool] = None) -> bytes:
@@ -214,27 +222,27 @@ class FableCASStore:
         content_hash = self.normalize_ref(ref_or_hash)
         should_verify = self.auto_verify if verify is None else verify
 
-        # Check cache
-        cached = self.cache.get(content_hash)
-        if cached is not None:
-            if isinstance(cached, bytes):
-                return cached
-            return cached.encode("utf-8")
-
         dest_path = self._get_object_path(content_hash)
         if not dest_path.is_file():
             raise CASNotFoundError(f"CAS object not found: {ref_or_hash}")
-
-        with open(dest_path, "rb") as f:
-            data = f.read()
-
-        if should_verify:
-            actual_hash = hashlib.sha256(data).hexdigest()
-            if actual_hash != content_hash:
-                raise IntegrityError(
-                    f"Integrity check failed for {content_hash}! Actual SHA-256: {actual_hash}"
-                )
-
+        cached = self.cache.get(content_hash)
+        if cached is not None and not isinstance(cached, (bytes, str)):
+            raise IntegrityError("CAS cache contains an unsupported value type")
+        # Verified reads always consult disk so a warm cache cannot conceal
+        # object tampering.  Even unverified reads are bounded.
+        if cached is not None and not should_verify:
+            data = cached if isinstance(cached, bytes) else cached.encode("utf-8")
+        else:
+            with open(dest_path, "rb") as f:
+                data = f.read(MAX_CAS_OBJECT_BYTES + 1)
+            if cached is not None:
+                cached_bytes = cached if isinstance(cached, bytes) else cached.encode("utf-8")
+                if cached_bytes != data:
+                    raise IntegrityError("CAS cache does not match the on-disk object")
+        if len(data) > MAX_CAS_OBJECT_BYTES:
+            raise FableCASError("CAS object exceeds maximum size")
+        if should_verify and hashlib.sha256(data).hexdigest() != content_hash:
+            raise IntegrityError(f"Integrity check failed for {content_hash}")
         self.cache.put(content_hash, data)
         return data
 
@@ -242,7 +250,9 @@ class FableCASStore:
         """Retrieve UTF-8 decoded text for a CAS reference."""
         content_hash = self.normalize_ref(ref_or_hash)
         cached = self.cache.get(content_hash)
-        if cached is not None and isinstance(cached, str):
+        if cached is not None and not isinstance(cached, (bytes, str)):
+            raise IntegrityError("CAS cache contains an unsupported value type")
+        if cached is not None and isinstance(cached, str) and verify is not True:
             return cached
 
         data = self.get_bytes(content_hash, verify=verify)
@@ -269,6 +279,7 @@ class FableCASStore:
         path = self._get_object_path(content_hash)
         if not path.is_file():
             raise CASNotFoundError(f"CAS object not found on disk: {ref_or_hash}")
+        self.get_bytes(content_hash, verify=True)
         return path
 
 
@@ -644,17 +655,17 @@ class CASSliceViewer:
         Extract lines from start_line to end_line (1-indexed, inclusive).
         Zero-copy streaming extraction with strict UTF-8 decoding.
         """
-        file_path = self.cas_store.get_file_path(ref_or_hash)
-        
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         if start_line < 1:
             start_line = 1
         if end_line < start_line:
             return ""
 
         output_lines: List[str] = []
+        output_bytes = 0
         current_line_num = 0
 
-        with open(file_path, "r", encoding="utf-8", errors="strict") as f:
+        with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8", errors="strict") as f:
             for line in f:
                 current_line_num += 1
                 if current_line_num > end_line:
@@ -662,10 +673,11 @@ class CASSliceViewer:
                 if current_line_num >= start_line:
                     # Strip trailing newline for consistent representation
                     content = line.rstrip("\r\n")
-                    if include_line_numbers:
-                        output_lines.append(f"{current_line_num:6d} | {content}")
-                    else:
-                        output_lines.append(content)
+                    rendered = f"{current_line_num:6d} | {content}" if include_line_numbers else content
+                    output_bytes += len(rendered.encode("utf-8")) + 1
+                    if output_bytes > MAX_SLICE_RESPONSE_BYTES:
+                        raise ValueError("slice response exceeds maximum size")
+                    output_lines.append(rendered)
 
         return "\n".join(output_lines)
 
@@ -675,26 +687,33 @@ class CASSliceViewer:
         start_line: int,
         end_line: int,
     ) -> Iterator[str]:
-        """Generator yielding lines one-by-one without buffering in memory."""
-        file_path = self.cas_store.get_file_path(ref_or_hash)
+        """Verify the object before returning a bounded streaming iterator."""
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         if start_line < 1:
             start_line = 1
 
-        current_line_num = 0
-        with open(file_path, "r", encoding="utf-8", errors="strict") as f:
-            for line in f:
-                current_line_num += 1
-                if current_line_num > end_line:
-                    break
-                if current_line_num >= start_line:
-                    yield line.rstrip("\r\n")
+        def _lines() -> Iterator[str]:
+            current_line_num = 0
+            output_bytes = 0
+            with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8", errors="strict") as f:
+                for line in f:
+                    current_line_num += 1
+                    if current_line_num > end_line:
+                        break
+                    if current_line_num >= start_line:
+                        rendered = line.rstrip("\r\n")
+                        output_bytes += len(rendered.encode("utf-8")) + 1
+                        if output_bytes > MAX_SLICE_RESPONSE_BYTES:
+                            raise ValueError("slice response exceeds maximum size")
+                        yield rendered
+        return _lines()
 
     def get_line_count(self, ref_or_hash: str) -> int:
         """Count total lines in a CAS object using fast chunked buffer scanning."""
-        file_path = self.cas_store.get_file_path(ref_or_hash)
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         count = 0
         buffer_size = 65536
-        with open(file_path, "rb") as f:
+        with io.BytesIO(data) as f:
             while True:
                 buf = f.read(buffer_size)
                 if not buf:

@@ -1,0 +1,4 @@
+# Reproducible release tooling (the application itself is stdlib-only).
+setuptools==75.8.0
+wheel==0.45.1
+pyinstaller==6.11.1

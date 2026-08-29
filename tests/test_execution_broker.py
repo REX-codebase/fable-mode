@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -7,8 +8,10 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fable_v2 import BrokerPolicy, ExecutionBroker
+from fable_v2.execution_broker import MAX_ERROR_TEXT, MAX_FRAME_BYTES, serve
 
 
 class ExecutionBrokerTests(unittest.TestCase):
@@ -77,6 +80,32 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.broker.unlock_writes("admin-token")
         with self.assertRaises(PermissionError):
             self.broker.write_file("../outside.txt", "blocked")
+
+    def test_json_lines_frames_are_bounded_and_continue_after_oversize(self):
+        """The model pipe can stay open; one bad frame cannot desynchronize it."""
+        output = io.StringIO()
+        import fable_v2.execution_broker as module
+        with patch.object(module.sys, "stdin", io.StringIO(
+                "x" * (MAX_FRAME_BYTES + 1) + "\n"
+                + json.dumps({"action": "probe"}) + "\n")), \
+             patch.object(module.sys, "stdout", output):
+            serve(self.broker)
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(len(responses), 2)
+        self.assertFalse(responses[0]["ok"])
+        self.assertLessEqual(len(responses[0]["message"].encode()), MAX_ERROR_TEXT)
+        self.assertTrue(responses[1]["ok"])
+        self.assertIn("execute_command", responses[1]["result"]["capabilities"])
+
+    def test_malformed_json_is_a_bounded_controlled_error(self):
+        output = io.StringIO()
+        import fable_v2.execution_broker as module
+        with patch.object(module.sys, "stdin", io.StringIO("{" + "x" * 20000 + "\n")), \
+             patch.object(module.sys, "stdout", output):
+            serve(self.broker)
+        response = json.loads(output.getvalue())
+        self.assertFalse(response["ok"])
+        self.assertLessEqual(len(response["message"].encode()), MAX_ERROR_TEXT + 20)
 
     def test_writes_are_locked_until_admin_authorization(self):
         with self.assertRaises(PermissionError):

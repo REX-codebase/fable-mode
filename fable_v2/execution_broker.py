@@ -12,13 +12,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import argparse
+import errno
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -64,8 +67,116 @@ class BrokerPolicy:
         object.__setattr__(self, "resolved_executables", resolved)
 
 
+MAX_TIMEOUT_SECONDS = 3600.0
+# JSON-lines is an interactive protocol: a peer may keep stdin open while
+# waiting for a response.  Keep both the raw frame and protocol diagnostics
+# bounded independently of the peer's eventual EOF.
+MAX_FRAME_BYTES = 1 * 1024 * 1024
+MAX_ERROR_TEXT = 8 * 1024
+
+
+def _bounded_text(value: object, limit: int = MAX_ERROR_TEXT) -> str:
+    """Convert protocol diagnostics to bounded, valid UTF-8 text."""
+    text = str(value)
+    encoded = text.encode("utf-8", "replace")
+    if len(encoded) <= limit:
+        return text
+    suffix = b" [truncated]"
+    prefix_limit = max(0, limit - len(suffix))
+    return encoded[:prefix_limit].decode("utf-8", "ignore") + suffix.decode()
+
+
+def _bounded_lines(stream: Any, limit: int = MAX_FRAME_BYTES):
+    """Yield newline-delimited raw frames without waiting for EOF.
+
+    ``readline`` and large ``read(n)`` calls are unsuitable for an interactive
+    pipe: depending on the buffering layer they can wait for more input even
+    after a complete frame has arrived.  Reading one raw byte at a time gives
+    prompt framing while retaining only ``limit`` bytes; oversized content is
+    consumed through its newline so the next frame remains synchronized.
+    """
+    raw_stream = getattr(stream, "buffer", None)
+    if raw_stream is None or not hasattr(raw_stream, "read"):
+        raw_stream = stream
+    pending = bytearray()
+    oversized = False
+    while True:
+        unit = raw_stream.read(1)
+        if not unit:
+            if pending or oversized:
+                yield bytes(pending), oversized
+            return
+        if isinstance(unit, str):
+            encoded = unit.encode("utf-8", "replace")
+        else:
+            encoded = bytes(unit)
+        for byte in encoded:
+            if byte == 0x0A:
+                yield bytes(pending), oversized
+                pending.clear()
+                oversized = False
+            elif not oversized:
+                pending.append(byte)
+                if len(pending) > limit:
+                    oversized = True
+                    del pending[limit:]
+
+
+def _protocol_error(error: object, message: object) -> dict[str, object]:
+    return {"ok": False, "error": _bounded_text(error),
+            "message": _bounded_text(message)}
+
+
+def _path_parts(relative_path: str) -> tuple[str, ...]:
+    """Return safe lexical components without resolving attacker-controlled paths."""
+    if not isinstance(relative_path, str) or not relative_path.strip():
+        raise ValueError("path must be a non-empty relative path")
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
+        raise PermissionError("path must be a normalized relative path")
+    if any("\\" in part or "\x00" in part for part in candidate.parts):
+        raise PermissionError("path contains an unsafe component")
+    return tuple(candidate.parts)
+
+
+def _no_follow_flags(directory: bool = False) -> int:
+    flags = os.O_RDONLY
+    if directory:
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    return flags
+
+
+def _open_child_dirs(root_fd: int, parts: tuple[str, ...], *, create: bool = False) -> int:
+    """Open a directory chain relative to a pinned root, never following links."""
+    current = os.dup(root_fd)
+    try:
+        for part in parts:
+            try:
+                child = os.open(part, _no_follow_flags(directory=True), dir_fd=current)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                os.mkdir(part, 0o700, dir_fd=current)
+                child = os.open(part, _no_follow_flags(directory=True), dir_fd=current)
+            st = os.fstat(child)
+            if not stat.S_ISDIR(st.st_mode):
+                os.close(child)
+                raise NotADirectoryError(part)
+            os.close(current)
+            current = child
+        return current
+    except Exception:
+        os.close(current)
+        raise
+
+
 class ExecutionBroker:
     """Allowlisted command and write broker intended to run in a child process.
+
+    Timeout cleanup kills the POSIX process group; Windows uses direct-child
+    termination because portable stdlib Job Objects are unavailable. This is
+    a bounded policy boundary, not a descriptor-perfect OS sandbox.
 
     General interpreters and shell entry points are blocked while writes are
     locked. ``shell=False`` alone is not a filesystem sandbox: an invocation
@@ -80,6 +191,28 @@ class ExecutionBroker:
     def __init__(self, policy: BrokerPolicy):
         self.policy = policy
         self._writes_unlocked = False
+        self._workspace_fd: int | None = None
+        if os.name == "posix":
+            try:
+                self._workspace_fd = os.open(
+                    str(policy.workspace), _no_follow_flags(directory=True)
+                )
+                st = os.fstat(self._workspace_fd)
+                if not stat.S_ISDIR(st.st_mode):
+                    raise NotADirectoryError(str(policy.workspace))
+            except OSError as exc:
+                if self._workspace_fd is not None:
+                    os.close(self._workspace_fd)
+                    self._workspace_fd = None
+                raise PermissionError("workspace cannot be pinned safely") from exc
+
+    def __del__(self) -> None:
+        fd = getattr(self, "_workspace_fd", None)
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     def probe(self) -> dict[str, Any]:
         available = list(self.policy.resolved_executables)
@@ -97,7 +230,27 @@ class ExecutionBroker:
     def _safe_path(self, relative_path: str) -> Path:
         if not isinstance(relative_path, str) or not relative_path.strip():
             raise ValueError("path must be a non-empty relative path")
-        candidate = (self.policy.workspace / relative_path).resolve()
+        raw_candidate = self.policy.workspace / relative_path
+        # Resolve only after rejecting links/reparse points in the lexical
+        # path; otherwise a symlink could turn strict workspace containment
+        # into a pathname illusion.
+        cur = raw_candidate
+        parts: list[Path] = []
+        while True:
+            parts.append(cur)
+            if cur == self.policy.workspace or cur.parent == cur:
+                break
+            cur = cur.parent
+        for part in reversed(parts):
+            try:
+                st = part.lstat()
+            except FileNotFoundError:
+                continue
+            attrs = int(getattr(st, "st_file_attributes", 0))
+            if (attrs & 0x400 or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode)
+                    or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode)):
+                raise PermissionError("workspace path contains an unsafe link or special file")
+        candidate = raw_candidate.resolve()
         try:
             candidate.relative_to(self.policy.workspace)
         except ValueError as exc:
@@ -120,21 +273,38 @@ class ExecutionBroker:
         if not self._writes_unlocked:
             raise PermissionError("workspace writes are locked")
 
+    def _pinned_parent(self, relative_path: str, *, create: bool = False) -> tuple[int, str, tuple[str, ...]]:
+        parts = _path_parts(relative_path)
+        if self._workspace_fd is None:
+            raise PermissionError("descriptor-relative workspace operations require POSIX")
+        parent_fd = _open_child_dirs(self._workspace_fd, parts[:-1], create=create)
+        return parent_fd, parts[-1], parts
+
     def inspect_files(self, relative_path: str, max_bytes: int | None = None) -> dict[str, Any]:
-        """Read one workspace file with a bounded response."""
-        target = self._safe_path(relative_path)
-        if not target.is_file():
-            raise ValueError("inspect path must be a file inside the workspace")
+        """Read one workspace file through a pinned directory descriptor."""
         limit = self.policy.max_output_bytes if max_bytes is None else int(max_bytes)
         if limit < 1:
             raise ValueError("max_bytes must be positive")
         limit = min(limit, self.policy.max_output_bytes)
-        with target.open("rb") as handle:
-            raw = handle.read(limit + 1)
+        parent_fd, name, parts = self._pinned_parent(relative_path)
+        try:
+            fd = os.open(name, _no_follow_flags(), dir_fd=parent_fd)
+            try:
+                target_st = os.fstat(fd)
+                if (not stat.S_ISREG(target_st.st_mode) or target_st.st_nlink != 1
+                        or stat.S_IMODE(target_st.st_mode) & 0o022):
+                    raise PermissionError("inspect path must be a private, non-hardlinked file")
+                raw = os.read(fd, limit + 1)
+            finally:
+                os.close(fd)
+        except FileNotFoundError as exc:
+            raise ValueError("inspect path must be a file inside the workspace") from exc
+        finally:
+            os.close(parent_fd)
         truncated = len(raw) > limit
         raw = raw[:limit]
         return {
-            "path": str(target.relative_to(self.policy.workspace)),
+            "path": "/".join(parts),
             "content": raw.decode("utf-8", errors="replace"),
             "content_hash": hashlib.sha256(raw).hexdigest(),
             "truncated": truncated,
@@ -144,20 +314,31 @@ class ExecutionBroker:
         self._authorize_write()
         if not isinstance(content, str):
             raise ValueError("file content must be text")
-        target = self._safe_path(relative_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=".fable-", dir=str(target.parent), text=True)
+        parent_fd, name, parts = self._pinned_parent(relative_path, create=True)
+        temporary_name = f".fable-{os.getpid()}-{threading.get_ident()}-{os.urandom(8).hex()}"
+        temp_fd = None
         try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, target)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            temp_fd = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)
+            raw = content.encode("utf-8")
+            view = memoryview(raw)
+            while view:
+                written = os.write(temp_fd, view)
+                view = view[written:]
+            os.fsync(temp_fd)
+            os.close(temp_fd)
+            temp_fd = None
+            os.replace(temporary_name, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+            if temp_fd is not None:
+                os.close(temp_fd)
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except (FileNotFoundError, OSError):
+                pass
+            os.close(parent_fd)
         return {
-            "path": str(target.relative_to(self.policy.workspace)),
+            "path": "/".join(parts),
             "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "writes_enabled": True,
         }
@@ -192,11 +373,27 @@ class ExecutionBroker:
             raise PermissionError(
                 "general interpreters and shells are blocked while workspace writes are locked"
             )
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
-        directory = self.policy.workspace if cwd is None else self._safe_path(cwd)
-        if not directory.is_dir():
-            raise ValueError("cwd must be a directory inside the workspace")
+        try:
+            timeout_seconds = float(timeout_seconds)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("timeout_seconds must be a finite positive number") from exc
+        if not math.isfinite(timeout_seconds) or not (0 < timeout_seconds <= MAX_TIMEOUT_SECONDS):
+            raise ValueError(f"timeout_seconds must be finite and between 0 and {MAX_TIMEOUT_SECONDS}")
+        cwd_fd: int | None = None
+        if os.name != "posix" or self._workspace_fd is None:
+            raise PermissionError("descriptor-relative command cwd is unavailable on this platform")
+        if cwd is None:
+            cwd_fd = os.dup(self._workspace_fd)
+            cwd_display = "."
+        else:
+            cwd_parts = _path_parts(cwd)
+            cwd_fd = _open_child_dirs(self._workspace_fd, cwd_parts)
+            cwd_display = "/".join(cwd_parts)
+        directory = f"/proc/self/fd/{cwd_fd}"
+        if not os.path.isdir(directory):
+            os.close(cwd_fd)
+            cwd_fd = None
+            raise PermissionError("workspace cwd cannot be pinned safely")
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
         process: subprocess.Popen[bytes] | None = None
         output_limit = self.policy.max_output_bytes
@@ -275,6 +472,11 @@ class ExecutionBroker:
                     process.stdout.close()
                 if process.stderr is not None:
                     process.stderr.close()
+            if cwd_fd is not None:
+                try:
+                    os.close(cwd_fd)
+                except OSError:
+                    pass
 
         stdout = bytes(captured["stdout"]).decode("utf-8", errors="replace")
         stderr = bytes(captured["stderr"]).decode("utf-8", errors="replace")
@@ -289,7 +491,7 @@ class ExecutionBroker:
 
         return {
             "command": list(executed_argv),
-            "cwd": str(directory.relative_to(self.policy.workspace)),
+            "cwd": cwd_display,
             "exit_code": exit_code,
             "timed_out": timed_out,
             "output_limited": output_limited.is_set(),
@@ -322,16 +524,20 @@ class ExecutionBroker:
 def _serve_admin_fd(broker: ExecutionBroker, fd: int) -> None:
     """Consume admin commands from an inherited, non-model file descriptor."""
     with os.fdopen(os.dup(fd), "r", encoding="utf-8") as channel:
-        for line in channel:
-            if not line.strip():
+        for raw_line, oversized in _bounded_lines(channel, MAX_FRAME_BYTES):
+            if oversized:
+                print("admin control error: oversized frame", file=sys.stderr)
+                continue
+            if not raw_line.strip():
                 continue
             try:
-                request = json.loads(line)
-                if request.get("action") != "unlock_writes":
+                request = json.loads(raw_line.decode("utf-8", "replace"))
+                if not isinstance(request, dict) or request.get("action") != "unlock_writes":
                     raise ValueError("unsupported admin action")
                 broker.unlock_writes(request.get("token", ""))
             except Exception as exc:
-                print(f"admin control error: {type(exc).__name__}: {exc}", file=sys.stderr)
+                print(f"admin control error: {_bounded_text(type(exc).__name__)}: "
+                      f"{_bounded_text(exc)}", file=sys.stderr)
 
 
 def serve(broker: ExecutionBroker, admin_fd: int | None = None) -> None:
@@ -339,13 +545,21 @@ def serve(broker: ExecutionBroker, admin_fd: int | None = None) -> None:
         if os.name == "nt":
             raise ValueError("--admin-fd currently requires a POSIX inherited pipe")
         threading.Thread(target=_serve_admin_fd, args=(broker, admin_fd), daemon=True).start()
-    for line in sys.stdin:
-        if not line.strip():
+    # Do not use ``for line in sys.stdin``: TextIOWrapper iteration calls an
+    # unbounded readline and can wait for EOF on an otherwise healthy client.
+    for raw_line, oversized in _bounded_lines(sys.stdin, MAX_FRAME_BYTES):
+        if oversized:
+            response = _protocol_error("InvalidFrame", "request frame exceeds maximum size")
+        elif not raw_line.strip():
             continue
-        try:
-            response = {"ok": True, "result": broker.handle(json.loads(line))}
-        except Exception as exc:  # protocol boundary: never crash the broker loop
-            response = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
+        else:
+            try:
+                request = json.loads(raw_line.decode("utf-8", "replace"))
+                if not isinstance(request, dict):
+                    raise ValueError("request must be a JSON object")
+                response = {"ok": True, "result": broker.handle(request)}
+            except Exception as exc:  # protocol boundary: never crash the broker loop
+                response = _protocol_error(type(exc).__name__, exc)
         sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
         sys.stdout.flush()
 
