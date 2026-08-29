@@ -442,9 +442,25 @@ class ExecutionBroker:
         # Keep only execution essentials. Windows child processes need
         # SystemRoot/PATHEXT and temp roots; do not pass arbitrary user
         # credentials or configuration variables through the broker.
-        env = {key: os.environ[key] for key in
-               ("PATH", "PATHEXT", "SystemRoot", "WINDIR", "SYSTEMDRIVE", "TEMP", "TMP")
-               if os.environ.get(key)}
+        env: dict[str, str] = {
+            key: os.environ[key]
+            for key in ("PATH", "PATHEXT")
+            if os.environ.get(key)
+        }
+        if os.name == "nt":
+            for win_key in (
+                "SYSTEMROOT", "SystemRoot", "WINDIR", "windir",
+                "TEMP", "TMP", "temp", "tmp", "SYSTEMDRIVE", "COMSPEC", "ComSpec",
+            ):
+                val = os.environ.get(win_key)
+                if val:
+                    env[win_key] = val
+                    env[win_key.upper()] = val
+        else:
+            for posix_key in ("TEMP", "TMP", "TMPDIR"):
+                val = os.environ.get(posix_key)
+                if val:
+                    env[posix_key] = val
         env["PYTHONUNBUFFERED"] = "1"
         process: subprocess.Popen[bytes] | None = None
         output_limit = self.policy.max_output_bytes
@@ -476,11 +492,16 @@ class ExecutionBroker:
                 if remaining <= 0:
                     output_limited.set()
                     stop_process()
-                    continue
+                    while stream.read(64 * 1024):
+                        pass
+                    return
                 if len(chunk) > remaining:
                     bucket.extend(chunk[:remaining])
                     output_limited.set()
                     stop_process()
+                    while stream.read(64 * 1024):
+                        pass
+                    return
                 else:
                     bucket.extend(chunk)
 

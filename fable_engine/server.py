@@ -109,7 +109,7 @@ MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 MAX_CAS_OBJECT_BYTES = 16 * 1024 * 1024
-MAX_SLICE_RESPONSE_BYTES = 1 * 1024 * 1024
+MAX_SLICE_RESPONSE_BYTES = 1_000_000
 MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
 MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
 
@@ -751,7 +751,7 @@ class FableGrammar333:
                 break
             shift += 7
             if shift > 63:
-                raise ValueError("varint exceeds supported size")
+                raise ValueError("varint exceeds supported 64-bit integer limit")
         return res
 
     @classmethod
@@ -2436,14 +2436,31 @@ TOOL_SCHEMA = {
 
 
 def send_response(response_dict: Dict[str, Any]):
-    """Writes a bounded JSON-RPC response to stdout."""
-    encoded = json.dumps(response_dict)
-    if len(encoded.encode("utf-8")) > MAX_RPC_RESPONSE_BYTES:
-        response_dict = {"jsonrpc": "2.0", "id": response_dict.get("id"),
-                         "error": {"code": -32000, "message": "Response exceeds maximum size"}}
-        encoded = json.dumps(response_dict)
-    sys.stdout.write(encoded + "\n")
-    sys.stdout.flush()
+    """Writes a bounded JSON-RPC response to stdout with UTF-8 safety."""
+    encoded = json.dumps(response_dict, ensure_ascii=False)
+    encoded_bytes = encoded.encode("utf-8")
+    if len(encoded_bytes) > MAX_RPC_RESPONSE_BYTES:
+        response_dict = {
+            "jsonrpc": "2.0",
+            "id": response_dict.get("id") if isinstance(response_dict, dict) else None,
+            "error": {"code": -32000, "message": "Response exceeds maximum size"}
+        }
+        encoded = json.dumps(response_dict, ensure_ascii=False)
+        encoded_bytes = encoded.encode("utf-8")
+    payload = encoded_bytes + b"\n"
+    if hasattr(sys.stdout, "buffer") and sys.stdout.buffer is not None:
+        try:
+            sys.stdout.buffer.write(payload)
+            sys.stdout.buffer.flush()
+            return
+        except Exception:
+            pass
+    try:
+        sys.stdout.write(encoded + "\n")
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        sys.stdout.write(payload.decode("utf-8", errors="replace"))
+        sys.stdout.flush()
 
 
 def _bounded_lines(stream, limit: int):
@@ -2511,9 +2528,11 @@ def main():
             continue
         # JSON-RPC requests are objects; arrays and scalar values must not
         # reach req.get() and crash the stdio server.
-        if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
-            send_response({"jsonrpc": "2.0", "id": req.get("id") if isinstance(req, dict) else None,
-                           "error": {"code": -32600, "message": "Invalid Request"}})
+        if not isinstance(req, dict):
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
+        if req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+            send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})
             continue
         if "params" in req and not isinstance(req["params"], dict):
             send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})

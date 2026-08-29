@@ -58,7 +58,7 @@ class CASNotFoundError(FableCASError):
 
 
 MAX_CAS_OBJECT_BYTES = 16 * 1024 * 1024
-MAX_SLICE_RESPONSE_BYTES = 1 * 1024 * 1024
+MAX_SLICE_RESPONSE_BYTES = 1_000_000
 
 
 class ThreadSafeLRUCache:
@@ -493,6 +493,8 @@ class FableGrammar333:
             if not (byte & 0x80):
                 break
             shift += 7
+            if shift > 63:
+                raise ValueError("varint exceeds supported 64-bit integer limit")
         return res
 
     @classmethod

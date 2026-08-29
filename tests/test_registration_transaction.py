@@ -151,7 +151,8 @@ raise SystemExit(4)
         register_hosts({"agy": host}, ["runtime-v2", "serve"], home=home,
                        records=second, owned_records=first)
         self.assertEqual(second[0]["previous_entries"], original["mcpServers"])
-        self.assertEqual(second[0]["previous_mode"], 0o644)
+        if os.name != "nt":
+            self.assertEqual(second[0]["previous_mode"], 0o644)
         if os.name != "nt":
             self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
         self.assertEqual(cleanup_recorded_registrations(second, home=home), [])

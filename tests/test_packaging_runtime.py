@@ -45,7 +45,12 @@ class PackagingSecurityTests(unittest.TestCase):
         source.mkdir()
         # An explicit source override cannot smuggle a symlinked canonical file.
         (source / "fable_mode").mkdir()
-        os.symlink("/etc/passwd", source / "fable_mode" / "__init__.py")
+        try:
+            os.symlink("/etc/passwd", source / "fable_mode" / "__init__.py")
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
+                self.skipTest("Symlink creation requires elevated privilege on Windows")
+            raise
         with self.assertRaises(InstallError):
             Installer(self.root / "i", source=source).install()
 
@@ -78,7 +83,13 @@ class PackagingSecurityTests(unittest.TestCase):
         self.assertEqual(value["keep"], {"x": 1})
         self.assertNotIn("fable-mode", value["mcpServers"])
         self.assertEqual(value["mcpServers"]["fable-engine"]["args"], ["serve"])
-        config.unlink(); os.symlink(config.parent / "elsewhere", config)
+        config.unlink()
+        try:
+            os.symlink(config.parent / "elsewhere", config)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
+                self.skipTest("Symlink creation requires elevated privilege on Windows")
+            raise
         with self.assertRaises(RegistrationError):
             register_hosts({"antigravity": host}, [str(exe), "serve"], home=home)
 
@@ -88,7 +99,7 @@ class PackagingSecurityTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in which.call_args_list], ["claude", "agy", "codex"])
 
     def test_output_is_bounded_and_timeout_is_reported(self):
-        code, out, err, timed = run_argv([os.environ.get("PYTHON", "python"), "-c", "print('x'*1000000)"], timeout=2)
+        code, out, err, timed = run_argv([os.environ.get("PYTHON", sys.executable), "-c", "print('x'*1000000)"], timeout=2)
         self.assertLessEqual(len(out.encode()), 8192)
         self.assertFalse(timed)
 
@@ -127,7 +138,13 @@ class RemediationRegressionTests(unittest.TestCase):
         # A fresh valid installation still refuses a symlink substitution.
         result = Installer(self.root / "fresh-install").install(); result.transaction.commit()
         runtime = result.install_dir / "runtime" / "fable_engine" / "server.py"
-        moved = runtime.with_suffix(".real"); runtime.rename(moved); runtime.symlink_to(moved)
+        moved = runtime.with_suffix(".real"); runtime.rename(moved)
+        try:
+            runtime.symlink_to(moved)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
+                self.skipTest("Symlink creation requires elevated privilege on Windows")
+            raise
         self.assertFalse(verify_installation(target)[0])
 
     def test_cli_registration_cleanup_requires_exact_match(self):

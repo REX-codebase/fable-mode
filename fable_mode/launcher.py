@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from .adapters import RegistrationError, detect_hosts, register_hosts
@@ -98,13 +99,17 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
         shutil.rmtree(probe_home, ignore_errors=True)
         return value
     env = {
-        "PATH": os.defpath,
+        "PATH": os.pathsep.join(dict.fromkeys([str(Path(sys.executable).parent), os.defpath])),
         "HOME": str(probe_home),
         "USERPROFILE": str(probe_home),
         "XDG_CONFIG_HOME": str(probe_home / ".config"),
         "FABLE_DATA_DIR": str(data_dir),
         "PYTHONIOENCODING": "utf-8",
     }
+    if os.name == "nt":
+        for var in ("SystemRoot", "SYSTEMROOT", "windir", "PATHEXT", "TEMP", "TMP"):
+            if var in os.environ:
+                env[var] = os.environ[var]
     kwargs: dict = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "env": env, "cwd": str(data_dir)}
     if os.name == "posix":
         kwargs["start_new_session"] = True
@@ -129,12 +134,39 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
                    json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n").encode()
         assert proc.stdin is not None
         proc.stdin.write(request)
+        proc.stdin.flush()
         proc.stdin.close()
         readers = [threading.Thread(target=drain, args=(proc.stdout, "out"), daemon=True),
                    threading.Thread(target=drain, args=(proc.stderr, "err"), daemon=True)]
         for reader in readers:
             reader.start()
-        proc.wait(timeout=8)
+
+        def _has_responses() -> bool:
+            lines = bytes(captured["out"]).splitlines()[:8]
+            seen_ids = set()
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                    if isinstance(item, dict) and "id" in item:
+                        seen_ids.add(item["id"])
+                except Exception:
+                    pass
+            return {1, 2}.issubset(seen_ids)
+
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            if _has_responses() or proc.poll() is not None:
+                break
+            time.sleep(0.05)
+
+        if proc.poll() is None:
+            _kill_process(proc)
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
         for reader in readers:
             reader.join(timeout=2)
     except (OSError, subprocess.TimeoutExpired) as exc:
