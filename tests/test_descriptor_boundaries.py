@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from unittest import mock
 
 
 class DescriptorBoundaryTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Windows handle-relative race probe requires native CI implementation")
     def test_broker_parent_swap_cannot_redirect_read_write_or_cwd(self):
         import fable_v2.execution_broker as broker
 

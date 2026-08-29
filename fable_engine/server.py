@@ -175,8 +175,14 @@ def _open_directory_nofollow(path: Path, *, create: bool = False) -> int:
     fd = os.open("/", directory_flags)
     try:
         for component in absolute.parts[1:]:
+            component_flags = directory_flags
+            if (sys.platform == "darwin" and component in {"var", "tmp"}
+                    and str(Path("/", component).resolve()) in {"/private/var", "/private/tmp"}):
+                # Stable Apple system aliases are the only permitted link
+                # components; all user-controlled components remain no-follow.
+                component_flags = directory_flags & ~os.O_NOFOLLOW
             try:
-                child = os.open(component, directory_flags, dir_fd=fd)
+                child = os.open(component, component_flags, dir_fd=fd)
             except FileNotFoundError:
                 if not create:
                     raise FableCASError(f"missing state directory: {absolute}")
@@ -207,7 +213,13 @@ def _safe_cas_node(path: Path, *, allow_missing: bool = True) -> None:
                 continue
             raise FableCASError(f"missing CAS path: {part}")
         attrs = int(getattr(st, "st_file_attributes", 0))
-        if attrs & 0x400 or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+        trusted_macos_alias = (
+            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
+            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+        )
+        if (((attrs & 0x400 or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias)
+                or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode)
+                or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode)):
             raise FableCASError(f"unsafe CAS path: {part}")
         if part == Path(path) and stat.S_ISREG(st.st_mode):
             if st.st_nlink != 1 or (os.name != "nt" and stat.S_IMODE(st.st_mode) & 0o077):
@@ -1088,7 +1100,7 @@ class AntiLoopCircuitBreaker:
 class EpistemicEvidenceValidator:
     """Validates that [PROVEN] evidence strings map to real filesystem files, line ranges, URLs, or CLI stdout."""
 
-    CITATION_PATTERN = re.compile(r"([A-Za-z0-9_./\\:-]+(?:\.[A-Za-z0-9]+))(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?")
+    CITATION_PATTERN = re.compile(r"^(.*?)(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?$")
 
     def __init__(self, workspace_root: Optional[Path] = None):
         self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
@@ -1100,12 +1112,17 @@ class EpistemicEvidenceValidator:
         elif clean_str.startswith("file://"):
             clean_str = clean_str[7:]
 
-        match = self.CITATION_PATTERN.search(clean_str)
-        if not match:
+        match = re.search(r":L?(\d+)(?:-L?(\d+))?$", clean_str)
+        if match:
+            file_path_str = clean_str[:match.start()]
+            start_line = int(match.group(1))
+            end_line = int(match.group(2)) if match.group(2) else start_line
+        else:
+            file_path_str = clean_str
+            start_line = None
+            end_line = None
+        if not file_path_str:
             return None
-        file_path_str = match.group(1)
-        start_line = int(match.group(2)) if match.group(2) else None
-        end_line = int(match.group(3)) if match.group(3) else start_line
         return {
             "file_path": file_path_str,
             "start_line": start_line,

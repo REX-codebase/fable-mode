@@ -293,7 +293,7 @@ class ExecutionBroker:
             target = self._safe_path(relative_path)
             target_st = target.lstat()
             if (not stat.S_ISREG(target_st.st_mode) or target_st.st_nlink != 1
-                    or stat.S_IMODE(target_st.st_mode) & 0o022):
+                    or (os.name != "nt" and stat.S_IMODE(target_st.st_mode) & 0o022)):
                 raise PermissionError("inspect path must be a private, non-hardlinked file")
             with target.open("rb") as handle:
                 raw = handle.read(limit + 1)
@@ -308,7 +308,7 @@ class ExecutionBroker:
             try:
                 target_st = os.fstat(fd)
                 if (not stat.S_ISREG(target_st.st_mode) or target_st.st_nlink != 1
-                        or stat.S_IMODE(target_st.st_mode) & 0o022):
+                        or (os.name != "nt" and stat.S_IMODE(target_st.st_mode) & 0o022)):
                     raise PermissionError("inspect path must be a private, non-hardlinked file")
                 raw = os.read(fd, limit + 1)
             finally:
