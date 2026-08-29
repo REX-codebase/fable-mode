@@ -34,7 +34,13 @@ def _assert_private_path(path: Path) -> None:
         except FileNotFoundError:
             continue
         attrs = int(getattr(st, "st_file_attributes", 0))
-        if attrs & 0x400 or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+        reparse = bool(attrs & 0x400)
+        junction = bool(getattr(part, "is_junction", lambda: False)())
+        trusted_macos_alias = (
+            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
+            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+        )
+        if ((reparse or junction or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
             raise RuntimeError("state path contains a symlink, reparse point, or special file")
 
 
