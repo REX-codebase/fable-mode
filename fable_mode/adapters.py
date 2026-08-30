@@ -864,7 +864,7 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                         skipped.append(str(path)); continue
                     # New records always publish private configs.  Refuse to
                     # mutate a file whose mode changed unexpectedly.
-                    if ("post_mode" in record
+                    if (os.name != "nt" and "post_mode" in record
                             and stat.S_IMODE(path.stat().st_mode) != record["post_mode"]):
                         skipped.append(str(path)); continue
                 data = json.loads(path.read_text(encoding="utf-8"))
