@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 _VERSION_RE = re.compile(r"^version\s*=\s*[\"']([^\"']+)[\"']", re.MULTILINE)
 _SETUP_VERSION_RE = re.compile(r"version\s*=\s*[\"']([^\"']+)[\"']")
+_SERVER_VERSION_RE = re.compile(r"\"version\"\s*:\s*\"([^\"]+)\"")
 
 
 def _machine() -> str:
@@ -30,18 +31,24 @@ def _machine() -> str:
 def _package_version() -> str:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     setup = (ROOT / "setup.py").read_text(encoding="utf-8")
+    server = (ROOT / "fable_engine" / "server.py").read_text(encoding="utf-8")
     match = _VERSION_RE.search(pyproject)
     setup_match = _SETUP_VERSION_RE.search(setup)
-    if not match or not setup_match:
-        raise ValueError("could not determine package version from pyproject.toml/setup.py")
+    server_versions = _SERVER_VERSION_RE.findall(server)
+    if not match or not setup_match or not server_versions:
+        raise ValueError("could not determine package/runtime version from project metadata")
     pyproject_version = match.group(1)
     setup_version = setup_match.group(1)
     try:
         from fable_mode import __version__
     except ImportError as exc:
         raise ValueError("could not determine fable_mode.__version__") from exc
-    if len({pyproject_version, setup_version, __version__}) != 1:
-        raise ValueError("package version mismatch between pyproject.toml, setup.py, and fable_mode.__version__")
+    versions = {pyproject_version, setup_version, __version__, *server_versions}
+    if len(versions) != 1:
+        raise ValueError(
+            "package/runtime version mismatch between pyproject.toml, setup.py, "
+            "fable_mode.__version__, and fable_engine.server"
+        )
     return pyproject_version
 
 

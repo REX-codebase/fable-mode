@@ -339,6 +339,12 @@ are explicit GitHub-hosted download URLs and download files only.
 
 ### Release artifacts and trust status
 
+**Corrective release 1.2.1:** This patch release carries the corrected Windows
+smoke-test and macOS runner workflow fixes from `main`, together with aligned
+package and server version metadata. The existing `v1.2.0` tag remains unchanged
+and points to the failed pre-fix build; do not use or retag it. The `v1.2.1`
+artifacts become trusted only after its tagged workflow completes successfully.
+
 Artifacts are **not available until a version tag build succeeds**. When a tagged
 workflow completes successfully, it publishes these architecture-specific names
 (the exact version is inserted in the GitHub Release):

@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fable_mode import __version__
 from fable_mode.adapters import Host, RegistrationError, detect_hosts, register_hosts, run_argv
 from fable_mode.installer import InstallError, Installer, verify_installation
 from fable_mode.launcher import _smoke
@@ -25,7 +26,7 @@ class PackagingSecurityTests(unittest.TestCase):
     def test_top_level_wrapper_is_package_aware(self):
         wrapper = Path(__file__).resolve().parents[1] / "fable_mode_entry.py"
         result = subprocess.run([sys.executable, str(wrapper), "--version"], capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.strip(), "1.2.0")
+        self.assertEqual(result.stdout.strip(), __version__)
 
     def test_unattended_install_requires_confirmation(self):
         wrapper = Path(__file__).resolve().parents[1] / "fable_mode_entry.py"

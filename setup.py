@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="fable-engine",
-    version="1.2.0",
+    version="1.2.1",
     description="Deterministic System 2 Cognitive Engine & Mechanical Time-Lock MCP Server for Antigravity",
     license="MIT",
     packages=find_packages(),

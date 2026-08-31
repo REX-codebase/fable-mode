@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fable-engine"
-version = "1.2.0"
+version = "1.2.1"
 description = "Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server"
 readme = "README.md"
 authors = [{ name = "REX-codebase" }]
