@@ -31,6 +31,14 @@ class ReleaseDownloaderStaticTests(unittest.TestCase):
         self.assertIn("SHA256SUMS", self.windows)
         self.assertNotRegex(self.windows, r"Invoke-Expression|\bIEX\b")
 
+    def test_publish_checks_out_tag_for_generated_release_notes(self):
+        publish = self.workflow[self.workflow.index("  publish:"):]
+        checkout = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
+        self.assertIn(checkout, publish)
+        self.assertIn("ref: ${{ github.ref }}", publish)
+        self.assertIn("fetch-depth: 0", publish)
+        self.assertLess(publish.index(checkout), publish.index("actions/download-artifact@"))
+
     def test_workflow_and_readme_list_the_same_release_targets(self):
         for artifact in (
             "windows-x86_64",
