@@ -19,6 +19,8 @@ jobs:
             artifact: linux-x86_64
           - os: macos-13
             artifact: macos-x86_64
+          - os: macos-14
+            artifact: macos-arm64
           - os: windows-latest
             artifact: windows-x86_64
     steps:
@@ -209,3 +211,4 @@ jobs:
           set -eu
           test -n "${GITHUB_REF_NAME}"
           gh release create "${GITHUB_REF_NAME}" upload/* --title "Fable Mode ${GITHUB_REF_NAME}" --generate-notes
+

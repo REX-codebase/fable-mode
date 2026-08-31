@@ -319,14 +319,84 @@ Fable-Mode is distributed as a self-contained console runtime. It installs Fable
 
 ### Release artifacts and trust status
 
-Artifacts are **not available until a version tag build succeeds**. The tagged workflow currently produces these architecture-specific names (the exact version is inserted in the GitHub Release):
+Artifacts are **not available until a version tag build succeeds**. When a tagged
+workflow completes successfully, it publishes these architecture-specific names
+(the exact version is inserted in the GitHub Release):
 
 - `fable-mode-vX.Y.Z-windows-x86_64.zip` (contains `fable-mode.exe`)
-- `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`; macOS builds are not universal2)
+- `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`)
+- `fable-mode-vX.Y.Z-macos-arm64.zip` (contains `fable-mode`)
 - `fable-mode-vX.Y.Z-linux-x86_64.tar.gz` (contains `fable-mode`)
-- `SHA256SUMS` is published with each release.
+- `SHA256SUMS` (one SHA-256 line for each archive)
 
-For a tag `$TAG` (for example `v1.2.0`), download the matching `fable-mode-$TAG-<platform>-<arch>.*` asset and `SHA256SUMS` from that GitHub Release. The tagged workflow is the source of truth for availability; this README does not promise that an artifact or Release exists before that workflow has completed. Verify the archive's SHA-256 against `SHA256SUMS`, then extract it. Run `fable-mode install --yes` (or `fable-mode.exe install --yes` on Windows). `verify` performs a resource-manifest check and bounded MCP `initialize`/`tools/list` handshake. These artifacts are unsigned and macOS artifacts are not notarized; no signing or notarization claim is made.
+The macOS x86_64 job uses `macos-13` and the macOS arm64 job uses the
+repository workflow's `macos-14` runner. These are separate archives, not a
+universal2 binary. The Windows and macOS downloaders below select only the
+matching architecture and exact expected asset name.
+
+The release workflow is the source of truth: this README does not promise that
+an artifact or Release exists before a tagged build has completed successfully.
+Both downloaders query the latest GitHub Release. A repository with no Release
+(or a Release missing the matching archive or `SHA256SUMS`) fails clearly rather
+than falling back to a source checkout.
+
+#### Windows x86_64 downloader
+
+From a checkout of this repository, run PowerShell on a 64-bit Windows machine:
+
+```powershell
+.\download-windows.ps1
+# Or choose an install directory explicitly:
+.\download-windows.ps1 -InstallDir "$HOME\.local\fable-mode"
+```
+
+The default destination is `$HOME\fable-mode`; the script prints the full path
+to `fable-mode.exe` and a suggested next command. It downloads the exact
+`fable-mode-vX.Y.Z-windows-x86_64.zip` and `SHA256SUMS` assets, checks the
+archive's SHA-256 before extraction, and does not execute the downloaded file.
+It fails on unsupported Windows architectures, missing assets, no Release, an
+invalid checksum, or an invalid archive layout. Install and verify the runtime
+with the printed path, for example:
+
+```powershell
+& "$HOME\fable-mode\fable-mode.exe" install --yes
+& "$HOME\fable-mode\fable-mode.exe" verify
+```
+
+#### macOS downloader
+
+From a checkout of this repository, run the script in a macOS Terminal:
+
+```sh
+chmod +x ./download-macos.sh
+./download-macos.sh
+# Or choose an install directory explicitly:
+./download-macos.sh "$HOME/.local/bin/fable-mode-release"
+```
+
+The default destination is `$HOME/.local/bin`. The script detects `x86_64` or
+`arm64`, selects `fable-mode-vX.Y.Z-macos-x86_64.zip` or
+`fable-mode-vX.Y.Z-macos-arm64.zip`, and requires the standard macOS
+`curl`, `unzip`, `shasum`, `plutil`, and related built-ins. It verifies the
+archive against `SHA256SUMS` with `shasum` **before** extraction, sets the
+installed file executable, and prints the installed path plus the next command.
+It does not require Python and never evaluates GitHub response data as shell
+code. Unsupported architectures, missing commands/assets, no Release, bad
+checksums, and unexpected ZIP layouts fail without installing a partial file.
+
+Install and verify with the path printed by the script (the default path is
+shown here):
+
+```sh
+"$HOME/.local/bin/fable-mode" install --yes
+"$HOME/.local/bin/fable-mode" verify
+```
+
+These downloaders fetch **unsigned binaries**. The workflow publishes
+SHA-256 checksums for transport/integrity verification, but signing,
+certificate validation, and macOS notarization are not included. Review the
+release and its checksums before use; checksum verification is not a
+cryptographic publisher signature.
 
 ### Source-mode prerequisites and support boundary
 
