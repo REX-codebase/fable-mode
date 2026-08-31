@@ -383,7 +383,11 @@ python3 fable_mode_entry.py install --yes --register-hosts
 
 The installer probes only `claude`, `agy`, and `codex` by default; `cc` and `antigravity` require the explicit `--aliases` flag. Existing config keys are preserved. Registration requires a machine-readable `mcp list` response from CLI hosts so prior canonical and legacy entries can be restored safely; human-readable-only hosts are skipped before any host is changed. Use `--dry-run` to preview without probing or changing hosts.
 
-Registration is transactional and ownership-aware.  A pre-existing
+Registration is transactional and ownership-aware.  Automatic host CLI
+probes and mutations run with a least-privilege environment (the selected
+profile paths, trusted system PATH, locale, and temporary/configuration
+locations); arbitrary inherited environment variables and credentials are not
+forwarded.  A pre-existing
 `fable-engine` or legacy `fable-mode` entry is recorded as user state on the
 first install.  On reinstall, an entry that exactly matches the immediately
 prior Fable registration is treated as Fable-owned rather than as new user
@@ -711,3 +715,4 @@ probed automatically. Installer cleanup retains an ownership/inode capability an
 revalidates it immediately before deletion, but Python has no portable
 descriptor-relative recursive-delete primitive, so a replacement race cannot be
 eliminated completely.
+

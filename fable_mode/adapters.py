@@ -32,7 +32,7 @@ class Host:
     healthy: bool = False
     detail: str = ""
     # Internal override used by tests/explicit transactions.  Discovery hosts
-    # leave this unset so real mutations inherit the user's environment.
+    # leave this unset so mutations use the least-privilege target profile env.
     registration_home: Path | None = None
 
 
@@ -246,19 +246,57 @@ def _run_probe(argv: list[str], executable: Path) -> tuple[int, str, str, bool]:
 
 
 def _registration_environment(home: Path | None = None) -> dict[str, str]:
-    """Return the intended user environment for real CLI mutations.
+    """Return a least-privilege environment for one host mutation.
 
-    Unlike health probes, registration must see the user's config location and
-    credentials.  ``home`` is an explicit transaction override (used by the
-    launcher tests and by callers targeting another profile); it is never used
-    for discovery probes.
+    Host executables are discovered from the user's PATH and therefore are
+    arbitrary programs from an untrusted boundary.  They must not receive the
+    launcher's complete environment: API keys, cloud credentials, proxy
+    tokens, and unrelated application secrets are not needed to add/remove an
+    MCP entry.  Keep only paths and process settings required for a normal CLI
+    invocation.  Credential forwarding, if ever needed by a host, must be an
+    explicit future feature rather than an accidental inheritance side effect.
     """
-    env = dict(os.environ)
-    env.pop("_FABLE_PROBE_HOME", None)
-    if home is not None:
-        value = str(Path(home).expanduser())
-        env["HOME"] = value
-        env["USERPROFILE"] = value
+    target_home = Path(home).expanduser() if home is not None else Path.home()
+    value = str(target_home)
+    # The executable itself has already been selected and checked.  A system
+    # PATH is enough for /usr/bin/env shebangs and for normal host subprocesses,
+    # while avoiding user PATH entries that can select another interpreter.
+    trusted_path = os.pathsep.join(dict.fromkeys([str(Path(sys.executable).parent), os.defpath]))
+    def config_path(name: str, fallback: Path) -> str:
+        # Preserve an explicitly configured profile location for normal
+        # registration.  An explicit ``home`` is a transaction override and
+        # intentionally makes all profile paths follow that home.
+        if home is None and os.environ.get(name):
+            return os.environ[name]
+        return str(fallback)
+
+    env = {
+        "PATH": trusted_path,
+        "HOME": value,
+        "USERPROFILE": value,
+        "XDG_CONFIG_HOME": config_path("XDG_CONFIG_HOME", target_home / ".config"),
+        "XDG_DATA_HOME": config_path("XDG_DATA_HOME", target_home / ".local" / "share"),
+        "XDG_CACHE_HOME": config_path("XDG_CACHE_HOME", target_home / ".cache"),
+        "XDG_STATE_HOME": config_path("XDG_STATE_HOME", target_home / ".local" / "state"),
+        "LC_ALL": "C",
+        "LANG": "C",
+        "LANGUAGE": "C",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    # Temporary directories are operational rather than credential-bearing.
+    # Preserve explicit caller choices because host CLIs may rely on them, but
+    # never copy any other environment variable by default.
+    for name in ("TMPDIR", "TMP", "TEMP"):
+        if name in os.environ:
+            env[name] = os.environ[name]
+    if os.name == "nt":
+        # These are required by cmd.exe-backed host launchers and Windows
+        # configuration lookup.  They contain system paths, not credentials.
+        env["APPDATA"] = config_path("APPDATA", target_home / "AppData" / "Roaming")
+        env["LOCALAPPDATA"] = config_path("LOCALAPPDATA", target_home / "AppData" / "Local")
+        for name in ("SystemRoot", "SYSTEMROOT", "windir", "PATHEXT", "COMSPEC"):
+            if name in os.environ:
+                env[name] = os.environ[name]
     return env
 
 
@@ -775,7 +813,8 @@ def _canonical_registration_path(record: dict, home: Path) -> Path | None:
     return None
 
 
-def _validate_strict_record(record: object, install_dir: Path, home: Path) -> bool:
+def _validate_strict_record(record: object, install_dir: Path, home: Path,
+                            *, transaction: bool = False) -> bool:
     """Validate marker records before they can influence any user config."""
     if not isinstance(record, dict) or record.get("install_dir") != str(install_dir):
         return False
@@ -826,14 +865,34 @@ def _validate_strict_record(record: object, install_dir: Path, home: Path) -> bo
         if host not in {"claude", "agy", "codex", "cc", "antigravity"} or not isinstance(executable, str):
             return False
         p = Path(executable)
-        if not p.is_absolute() or p.name.casefold().split(".")[0] != host.casefold():
+        # A persisted marker must bind the executable basename to its
+        # allowlisted host.  During the same-process install transaction,
+        # tests/embedders may intentionally use a shim with another filename;
+        # inode identity and all other record checks still apply.
+        if not p.is_absolute() or (not transaction and
+                                   p.name.casefold().split(".")[0] != host.casefold()):
             return False
         return (isinstance(ident, list) and len(ident) == 2 and all(isinstance(x, int) and x >= 0 for x in ident))
     return False
 
 
+def validate_registration_record(record: object, install_dir: Path, home: Path,
+                                 *, transaction: bool = False) -> bool:
+    """Validate a persisted registration record without touching host state.
+
+    The launcher uses this after a host mutation but before persisting recovery
+    metadata.  ``transaction`` is deliberately an explicit, narrow escape
+    hatch for same-process test/transaction shims whose executable basename is
+    not the discovered host name; normal uninstall validation never enables it.
+    """
+    return _validate_strict_record(record, Path(install_dir), Path(home),
+                                   transaction=transaction)
+
+
 def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
-                                   install_dir: Path | None = None, home: Path | None = None) -> list[str]:
+                                   install_dir: Path | None = None, home: Path | None = None,
+                                   _preflight: bool = False,
+                                   _transaction: bool = False) -> list[str]:
     """Remove this install's entries, restoring exact pre-install state.
 
     Strict mode is used for uninstall marker data.  It accepts only records
@@ -848,8 +907,18 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
     home = Path(home or Path.home())
     if strict and (install_dir is None or not isinstance(records, list)):
         return ["invalid registration marker"]
+    if strict and not _preflight:
+        # Validate every host/config before mutating any of them.  In
+        # particular, an unavailable later host must not leave earlier records
+        # restored while their marker still claims the installation is active.
+        unresolved = cleanup_recorded_registrations(
+            records, strict=True, install_dir=install_dir, home=home,
+            _preflight=True, _transaction=_transaction)
+        if unresolved:
+            return unresolved
     for record in records or []:
-        if strict and not _validate_strict_record(record, Path(install_dir), home):
+        if strict and not _validate_strict_record(
+                record, Path(install_dir), home, transaction=_transaction):
             skipped.append(str(record.get("path", record.get("host", "invalid record"))) if isinstance(record, dict) else "invalid record")
             continue
         state = _record_state(record)
@@ -857,20 +926,26 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
             path = Path(record.get("path", ""))
             try:
                 _safe_path(path, allow_missing=False)
+                # Check identity, content integrity, and mode before parsing
+                # any bytes from the config.  Besides being cheaper on a
+                # tampered path, this keeps untrusted config contents from
+                # influencing cleanup decisions until the path is bound to the
+                # exact file published by this install.
                 if strict:
                     if _file_identity(path) != tuple(record["post_identity"]):
                         skipped.append(str(path)); continue
-                    if _hash_bytes(path.read_bytes()) != record["post_content_hash"]:
-                        skipped.append(str(path)); continue
-                    # New records always publish private configs.  Refuse to
-                    # mutate a file whose mode changed unexpectedly.
                     if (os.name != "nt" and "post_mode" in record
                             and stat.S_IMODE(path.stat().st_mode) != record["post_mode"]):
                         skipped.append(str(path)); continue
-                data = json.loads(path.read_text(encoding="utf-8"))
+                raw = path.read_bytes()
+                if strict and _hash_bytes(raw) != record["post_content_hash"]:
+                    skipped.append(str(path)); continue
+                data = json.loads(raw.decode("utf-8"))
                 servers = data.get("mcpServers", {})
+                if not isinstance(servers, dict):
+                    skipped.append(str(path)); continue
                 expected = {"command": record.get("command"), "args": record.get("args", [])}
-                if not isinstance(servers, dict) or servers.get("fable-engine") != expected:
+                if servers.get("fable-engine") != expected:
                     skipped.append(str(path)); continue
                 if state is not None:
                     _previous, post = state
@@ -894,6 +969,8 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                 restore_mode = record.get("previous_mode", stat.S_IMODE(path.stat().st_mode))
                 if not isinstance(restore_mode, int) or not 0 <= restore_mode <= 0o777:
                     skipped.append(str(path)); continue
+                if _preflight:
+                    continue
                 _atomic_write(path, restored_bytes, restore_mode)
                 # A newly-created Antigravity config is installer-owned.  Once
                 # its exact post-install contents have been verified/restored,
@@ -922,7 +999,9 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                         skipped.append(str(record.get("host", "cli"))); continue
                 host = Host(str(record.get("host", "cli")), executable, "cli", True,
                              registration_home=home)
-                _restore_cli(host, previous)
+                if not _preflight:
+                    _restore_cli(host, previous)
             except (OSError, ValueError, TypeError, RegistrationError):
                 skipped.append(str(record.get("host", "cli")))
     return skipped
+
