@@ -339,12 +339,12 @@ are explicit GitHub-hosted download URLs and download files only.
 
 ### Release artifacts and trust status
 
-**Corrective release 1.2.2:** This patch release carries the Windows frozen
+**Corrective release 1.2.3:** This patch release carries the Windows frozen
 uninstall fix and aligned package and server version metadata from `main`,
 together with the corrected downloader/stable-alias and macOS runner workflow
-logic. The immutable `v1.2.1` tag remains unchanged and points to the failed
-build; do not use or retag it. The `v1.2.2` artifacts become trusted only after
-its tagged workflow completes successfully.
+logic. The immutable `v1.2.2` tag and its passed build artifacts remain
+unchanged; do not use or retag that tag. The `v1.2.3` artifacts become trusted
+only after its tagged workflow completes successfully.
 
 Artifacts are **not available until a version tag build succeeds**. When a tagged
 workflow completes successfully, it publishes these architecture-specific names
