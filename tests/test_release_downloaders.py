@@ -53,6 +53,16 @@ class ReleaseDownloaderStaticTests(unittest.TestCase):
         self.assertIn('"$archive_url"', self.macos)
         self.assertIn('"$sums_url"', self.macos)
 
+    def test_windows_smoke_test_avoids_powershell_automatic_home_variable(self):
+        # PowerShell variable names are case-insensitive; assigning $home
+        # attempts to overwrite the runner's read-only $HOME automatic variable.
+        start = self.workflow.index("Frozen executable smoke test (Windows)")
+        end = self.workflow.index("Publish per-artifact archive", start)
+        windows = self.workflow[start:end]
+        self.assertNotRegex(windows, r"(?im)^\s*\$home\s*=")
+        self.assertRegex(windows, r"(?im)^\s*\$smokeHome\s*=")
+        self.assertNotIn("$home", windows)
+
     def test_quick_download_links_are_explicit_and_match_workflow_aliases(self):
         # Read the links as plain text only: this test deliberately performs no
         # HTTP requests and must remain safe to run offline.

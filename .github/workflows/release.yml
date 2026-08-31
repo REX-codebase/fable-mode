@@ -114,8 +114,8 @@ jobs:
         if: "${{ runner.os == 'Windows' }}"
         shell: pwsh
         run: |
-          $home = Join-Path $PWD 'smoke-home'; New-Item -ItemType Directory -Force $home | Out-Null
-          $bin = Join-Path $home 'bin'; New-Item -ItemType Directory -Force $bin | Out-Null
+          $smokeHome = Join-Path $PWD 'smoke-home'; New-Item -ItemType Directory -Force $smokeHome | Out-Null
+          $bin = Join-Path $smokeHome 'bin'; New-Item -ItemType Directory -Force $bin | Out-Null
           $fake = @'
           import json, os, pathlib, sys
           host = sys.argv[1]; args = sys.argv[2:]
@@ -140,41 +140,41 @@ jobs:
               state.write_text(json.dumps(data)); raise SystemExit(0)
           raise SystemExit(4)
           '@
-          Set-Content -Path (Join-Path $home 'fake-mcp.py') -Value $fake
+          Set-Content -Path (Join-Path $smokeHome 'fake-mcp.py') -Value $fake
           $py = (Get-Command python).Source
           foreach ($name in @('claude', 'codex')) {
-            '{}' | Set-Content (Join-Path $home "$name.json")
-            Set-Content -Path (Join-Path $bin "$name.cmd") -Value "@echo off`r`n`"$py`" `"$home\\fake-mcp.py`" $name %*"
+            '{}' | Set-Content (Join-Path $smokeHome "$name.json")
+            Set-Content -Path (Join-Path $bin "$name.cmd") -Value "@echo off`r`n`"$py`" `"$smokeHome\\fake-mcp.py`" $name %*"
           }
-          Set-Content -Path (Join-Path $bin 'agy.cmd') -Value "@echo off`r`n`"$py`" `"$home\\fake-mcp.py`" agy %*"
-          $env:HOME = $home; $env:USERPROFILE = $home; $env:XDG_CONFIG_HOME = (Join-Path $home '.config')
-          $env:FABLE_DATA_DIR = (Join-Path $home 'data'); $env:Path = "$bin;$env:Path"
-          $exe = Join-Path $PWD 'dist\fable-mode.exe'; $install = Join-Path $home 'install'
+          Set-Content -Path (Join-Path $bin 'agy.cmd') -Value "@echo off`r`n`"$py`" `"$smokeHome\\fake-mcp.py`" agy %*"
+          $env:HOME = $smokeHome; $env:USERPROFILE = $smokeHome; $env:XDG_CONFIG_HOME = (Join-Path $smokeHome '.config')
+          $env:FABLE_DATA_DIR = (Join-Path $smokeHome 'data'); $env:Path = "$bin;$env:Path"
+          $exe = Join-Path $PWD 'dist\fable-mode.exe'; $install = Join-Path $smokeHome 'install'
           & $exe install --yes --register-hosts --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if (-not $state.'fable-engine') { exit 1 }
           }
-          $agyConfig = Join-Path $home '.gemini\config\mcp_config.json'
+          $agyConfig = Join-Path $smokeHome '.gemini\config\mcp_config.json'
           if (-not (Test-Path $agyConfig)) { exit 1 }
           $agyState = Get-Content $agyConfig | ConvertFrom-Json
           if (-not $agyState.mcpServers.'fable-engine') { exit 1 }
           & $exe verify --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | & $exe serve --state-dir (Join-Path $home 'data') | Select-String '"id": 1' | Out-Null
+          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | & $exe serve --state-dir (Join-Path $smokeHome 'data') | Select-String '"id": 1' | Out-Null
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Replacement without registration must retain ownership metadata.
           & $exe install --yes --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path $agyConfig)) { exit 1 }
           & $exe install --yes --register-hosts --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if (-not $state.'fable-engine') { exit 1 }
           }
           $agyState = Get-Content $agyConfig | ConvertFrom-Json
           if (-not $agyState.mcpServers.'fable-engine') { exit 1 }
           & $exe uninstall --yes --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if ($state.'fable-engine' -or $state.'fable-mode') { exit 1 }
           }
           if (Test-Path $agyConfig) { exit 1 }
