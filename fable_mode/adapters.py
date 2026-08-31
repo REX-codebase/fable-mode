@@ -966,18 +966,25 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                     # Compatibility with markers written by older releases.
                     data["mcpServers"].pop(record.get("name", "fable-engine"), None)
                 restored_bytes = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode()
-                restore_mode = record.get("previous_mode", stat.S_IMODE(path.stat().st_mode))
-                if not isinstance(restore_mode, int) or not 0 <= restore_mode <= 0o777:
-                    skipped.append(str(path)); continue
                 if _preflight:
                     continue
-                _atomic_write(path, restored_bytes, restore_mode)
-                # A newly-created Antigravity config is installer-owned.  Once
-                # its exact post-install contents have been verified/restored,
-                # remove the file rather than leaving an empty artifact.
+                # A config created by this install has no prior mode to
+                # restore.  On POSIX, mode 0 is harmless for unlinking; on
+                # Windows, chmod(0) sets the read-only attribute and the
+                # subsequent unlink fails with access denied.  We have
+                # already verified the exact post-install inode and bytes
+                # above, so remove the installer-owned file directly instead
+                # of publishing a transient mode-0 replacement.  This also
+                # preserves the fail-closed identity/hash checks for the
+                # deletion itself.
                 if strict and record.get("existed") is False:
                     _safe_path(path, allow_missing=False)
                     path.unlink()
+                    continue
+                restore_mode = record.get("previous_mode", stat.S_IMODE(path.stat().st_mode))
+                if not isinstance(restore_mode, int) or not 0 <= restore_mode <= 0o777:
+                    skipped.append(str(path)); continue
+                _atomic_write(path, restored_bytes, restore_mode)
             except (OSError, ValueError, TypeError, RegistrationError, json.JSONDecodeError):
                 skipped.append(str(path))
         elif record.get("kind") == "cli":

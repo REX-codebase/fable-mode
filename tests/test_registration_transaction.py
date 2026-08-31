@@ -161,6 +161,36 @@ raise SystemExit(4)
         if os.name != "nt":
             self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
 
+    def test_windows_created_antigravity_config_is_unlinked_without_mode_zero(self):
+        """A frozen Windows install must remove an initially absent config.
+
+        ``previous_mode`` is zero when the Antigravity config did not exist.
+        Restoring that mode before unlinking maps to Windows' read-only
+        attribute and makes cleanup fail, even though the post-install file is
+        still the exact inode and byte sequence Fable published.
+        """
+        home = self.root / "home"
+        exe = self.root / "agy"
+        exe.write_text("")
+        exe.chmod(0o700)
+        target = self.root / "install"
+        target.mkdir()
+        host = Host("agy", exe, "cli", True)
+        records = []
+        register_hosts({"agy": host}, [str(target / "fable-mode.exe"), "serve"],
+                       home=home, records=records)
+        install_st = target.lstat()
+        for record in records:
+            record["install_dir"] = str(target)
+            record["install_identity"] = [install_st.st_dev, install_st.st_ino]
+        self.assertFalse(records[0]["existed"])
+        self.assertEqual(records[0]["previous_mode"], 0)
+        with patch("fable_mode.adapters._atomic_write",
+                   side_effect=AssertionError("must not restore mode 0")):
+            self.assertEqual(cleanup_recorded_registrations(
+                records, strict=True, install_dir=target, home=home), [])
+        self.assertFalse(home.joinpath(".gemini", "config", "mcp_config.json").exists())
+
     def test_cli_mutation_environment_does_not_forward_secrets(self):
         """Automatic host mutations receive only the documented safe env."""
         script = self.root / "observing-codex"
