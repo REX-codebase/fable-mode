@@ -201,9 +201,42 @@ jobs:
         shell: bash
         run: |
           set -eu
+          tag="${GITHUB_REF_NAME:?GITHUB_REF_NAME must be set}"
           mkdir -p upload
-          find release -type f \( -name '*.zip' -o -name '*.tar.gz' \) -exec cp {} upload/ \;
-          cat release/*/SHA256SUMS > upload/SHA256SUMS
+
+          # Each build artifact must contribute exactly one expected,
+          # versioned archive.  Keep those names unchanged, then copy the
+          # same bytes to a stable alias for the /releases/latest/download
+          # links documented in README.md.
+          for descriptor in \
+            "windows-x86_64|fable-mode-${tag}-windows-x86_64.zip|fable-mode-windows-x86_64.zip" \
+            "macos-x86_64|fable-mode-${tag}-macos-x86_64.zip|fable-mode-macos-x86_64.zip" \
+            "macos-arm64|fable-mode-${tag}-macos-arm64.zip|fable-mode-macos-arm64.zip" \
+            "linux-x86_64|fable-mode-${tag}-linux-x86_64.tar.gz|fable-mode-linux-x86_64.tar.gz"; do
+            IFS='|' read -r artifact archive alias <<< "$descriptor"
+            source_dir="release/fable-mode-${artifact}"
+            source_file="${source_dir}/${archive}"
+            test -d "$source_dir"
+            test -f "$source_file"
+            archive_count=$(find "$source_dir" -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)
+            test "$archive_count" -eq 1
+            test "$archive" != "$alias"
+            test ! -e "upload/$archive"
+            test ! -e "upload/$alias"
+            cp -- "$source_file" "upload/$archive"
+            cp -- "$source_file" "upload/$alias"
+          done
+
+          # There must be four versioned archives plus four aliases.  The
+          # generated checksum file below therefore covers every uploaded
+          # ZIP/TAR asset, including each stable alias.
+          test "$(find upload -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)" -eq 8
+          test ! -e upload/SHA256SUMS
+          (
+            cd upload
+            sha256sum -- *.zip *.tar.gz > SHA256SUMS
+          )
+          test -s upload/SHA256SUMS
       - name: Create GitHub Release (unsigned artifacts, checksums attached)
         env:
           GH_TOKEN: ${{ github.token }}

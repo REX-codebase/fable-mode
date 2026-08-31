@@ -317,6 +317,26 @@ stateDiagram-v2
 
 Fable-Mode is distributed as a self-contained console runtime. It installs Fable first, then can register the installed executable with detected host CLIs. The runtime needs no Python, Git, pip, Node, network service, or GUI.
 
+### Quick downloads
+
+The downloader scripts are available from the `main` branch now. The release
+links become available only after a tagged release has completed successfully;
+until then, GitHub will return no release asset for those URLs. All links below
+are explicit GitHub-hosted download URLs and download files only.
+
+**Downloaders (available now):**
+
+- [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
+- [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
+
+**Latest release artifacts (after a successful tagged release):**
+
+- [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
+- [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
+- [macOS arm64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip)
+- [Linux x86_64 tar.gz](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz)
+- [SHA256SUMS](https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS)
+
 ### Release artifacts and trust status
 
 Artifacts are **not available until a version tag build succeeds**. When a tagged

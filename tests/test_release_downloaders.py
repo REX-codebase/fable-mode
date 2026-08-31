@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -51,6 +52,37 @@ class ReleaseDownloaderStaticTests(unittest.TestCase):
         self.assertNotRegex(self.macos, r"curl[^\n]*\$asset_url[^\n]*[^\"]\$asset_url")
         self.assertIn('"$archive_url"', self.macos)
         self.assertIn('"$sums_url"', self.macos)
+
+    def test_quick_download_links_are_explicit_and_match_workflow_aliases(self):
+        # Read the links as plain text only: this test deliberately performs no
+        # HTTP requests and must remain safe to run offline.
+        links = set(re.findall(r"https://[^)\s]+", self.readme))
+        script_urls = {
+            "https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1",
+            "https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh",
+        }
+        release_urls = {
+            "https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip",
+            "https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip",
+            "https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip",
+            "https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz",
+            "https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS",
+        }
+        self.assertTrue(script_urls <= links)
+        self.assertTrue(release_urls <= links)
+        self.assertIn("available from the `main` branch now", self.readme)
+        self.assertIn("only after a tagged release has completed successfully", self.readme)
+
+        aliases = (
+            "fable-mode-windows-x86_64.zip",
+            "fable-mode-macos-x86_64.zip",
+            "fable-mode-macos-arm64.zip",
+            "fable-mode-linux-x86_64.tar.gz",
+        )
+        for alias in aliases:
+            self.assertIn(f"|{alias}", self.workflow)
+        self.assertIn("sha256sum -- *.zip *.tar.gz > SHA256SUMS", self.workflow)
+        self.assertNotIn("cat release/*/SHA256SUMS", self.workflow)
 
 
 if __name__ == "__main__":
