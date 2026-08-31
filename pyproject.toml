@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools==75.8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "1.2.0"
 description = "Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server"
 readme = "README.md"
 authors = [{ name = "REX-codebase" }]
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = []
 classifiers = [
@@ -21,10 +21,17 @@ classifiers = [
 ]
 
 [project.scripts]
-# Legacy V1 MCP entry point. Existing installations continue to use this.
+# Package-aware portable installer/runtime. The legacy entries remain stable.
+fable-mode = "fable_mode.launcher:main"
 fable-engine = "fable_engine.server:main"
 fable-v1 = "fable_engine.server:main"
-# V2 execution boundary. The portable runtime is imported from fable_v2.
 fable-v2-broker = "fable_v2.execution_broker:main"
+
+[tool.setuptools.package-data]
+fable_mode = ["resources.json", "LICENSE"]
+fable_engine = ["fable_session.json"]
+
+[tool.setuptools]
+py-modules = ["fable_mode_entry"]
 
 

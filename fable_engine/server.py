@@ -22,6 +22,7 @@ import io
 import struct
 import tempfile
 import threading
+import stat
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union, Iterator
 
@@ -45,10 +46,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fable-engine")
 
-# Base and sessions directories
+# Mutable state is always in a user-writable private data directory.  Never
+# resolve an attacker-controlled env path before checking its components: doing
+# so could silently redirect writes through a symlink/reparse point.
+def _assert_private_path(path: Path) -> None:
+    cur = path
+    parts: list[Path] = []
+    while True:
+        parts.append(cur)
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    for part in reversed(parts):
+        try:
+            st = part.lstat()
+        except FileNotFoundError:
+            continue
+        attrs = int(getattr(st, "st_file_attributes", 0))
+        # macOS exposes /var and /tmp as stable system aliases into /private.
+        # They are not user-controlled state-directory links and must remain
+        # usable for temporary CAS/session fixtures and normal system paths.
+        trusted_macos_alias = (
+            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
+            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+        )
+        if ((attrs & 0x400 or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+            raise RuntimeError("state path contains a symlink, reparse point, or special file")
+
+
 BASE_DIR = Path(__file__).resolve().parent
-SESSIONS_DIR = BASE_DIR / "sessions"
+_DATA_ENV = os.environ.get("FABLE_DATA_DIR")
+if _DATA_ENV:
+    DATA_DIR = Path(_DATA_ENV).expanduser().absolute()
+elif os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+    DATA_DIR = Path(os.environ["LOCALAPPDATA"]) / "FableMode" / "data"
+else:
+    DATA_DIR = Path.home() / ".local" / "share" / "fable-engine" / "data"
+_assert_private_path(DATA_DIR)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+_assert_private_path(DATA_DIR)
+if DATA_DIR.is_symlink() or not DATA_DIR.is_dir():
+    raise RuntimeError("FABLE_DATA_DIR must be a real directory")
+os.chmod(DATA_DIR, 0o700)
+SESSIONS_DIR = DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+os.chmod(SESSIONS_DIR, 0o700)
 
 # Standard Fable Phases
 PHASES = [
@@ -66,6 +108,10 @@ MIN_TIME_BUDGET_MINUTES = 0.1
 MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+MAX_CAS_OBJECT_BYTES = 16 * 1024 * 1024
+MAX_SLICE_RESPONSE_BYTES = 1_000_000
+MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
+MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
 
 SILENT_DELIBERATION_REMINDER = (
     "\n\n> [!IMPORTANT]\n"
@@ -117,6 +163,67 @@ class IntegrityError(FableCASError):
 class CASNotFoundError(FableCASError):
     """Raised when a requested CAS object does not exist."""
     pass
+
+
+def _open_directory_nofollow(path: Path, *, create: bool = False) -> int:
+    """Open a directory chain without following links, retaining its identity."""
+    if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
+        raise FableCASError("descriptor-relative state access is unavailable")
+    absolute = Path(path).absolute()
+    directory_flags = (getattr(os, "O_PATH", os.O_RDONLY)
+                        | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW)
+    fd = os.open("/", directory_flags)
+    try:
+        for component in absolute.parts[1:]:
+            component_flags = directory_flags
+            if (sys.platform == "darwin" and component in {"var", "tmp"}
+                    and str(Path("/", component).resolve()) in {"/private/var", "/private/tmp"}):
+                # Stable Apple system aliases are the only permitted link
+                # components; all user-controlled components remain no-follow.
+                component_flags = directory_flags & ~os.O_NOFOLLOW
+            try:
+                child = os.open(component, component_flags, dir_fd=fd)
+            except FileNotFoundError:
+                if not create:
+                    raise FableCASError(f"missing state directory: {absolute}")
+                os.mkdir(component, 0o700, dir_fd=fd)
+                child = os.open(component, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _safe_cas_node(path: Path, *, allow_missing: bool = True) -> None:
+    """Reject links/reparse points/special files before any CAS file access."""
+    cur = Path(path)
+    parts: list[Path] = []
+    while True:
+        parts.append(cur)
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    for part in reversed(parts):
+        try:
+            st = part.lstat()
+        except FileNotFoundError:
+            if allow_missing:
+                continue
+            raise FableCASError(f"missing CAS path: {part}")
+        attrs = int(getattr(st, "st_file_attributes", 0))
+        trusted_macos_alias = (
+            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
+            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+        )
+        if (((attrs & 0x400 or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias)
+                or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode)
+                or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode)):
+            raise FableCASError(f"unsafe CAS path: {part}")
+        if part == Path(path) and stat.S_ISREG(st.st_mode):
+            if st.st_nlink != 1 or (os.name != "nt" and stat.S_IMODE(st.st_mode) & 0o077):
+                raise FableCASError(f"CAS object is not private: {part}")
 
 
 class ThreadSafeLRUCache:
@@ -171,16 +278,21 @@ class FableCASStore:
         cache_capacity: int = 256,
         auto_verify: bool = True,
     ):
-        if root_dir is None:
-            self.root_dir = Path.home() / ".fable_cas"
-        else:
-            self.root_dir = Path(root_dir).resolve()
-
+        self.root_dir = Path(root_dir).expanduser().absolute() if root_dir is not None else DATA_DIR / "cas"
+        _assert_private_path(self.root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        _assert_private_path(self.root_dir)
+        if self.root_dir.is_symlink() or not self.root_dir.is_dir():
+            raise FableCASError("CAS root must be a real directory")
+        os.chmod(self.root_dir, 0o700)
         self.objects_dir = self.root_dir / "objects"
         self.tmp_dir = self.root_dir / ".tmp"
         self.objects_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        for directory in (self.objects_dir, self.tmp_dir):
+            if directory.is_symlink() or not directory.is_dir():
+                raise FableCASError("CAS directory must be a real directory")
+            os.chmod(directory, 0o700)
 
         self.cache = ThreadSafeLRUCache(capacity=cache_capacity)
         self.auto_verify = auto_verify
@@ -221,13 +333,71 @@ class FableCASStore:
         rest = content_hash[2:]
         return self.objects_dir / shard / rest
 
+    def _open_object(self, content_hash: str, flags: int, *, create_parent: bool = False) -> tuple[int, int, str]:
+        """Open a CAS object relative to a no-follow shard directory."""
+        object_path = self._get_object_path(content_hash)
+        shard_fd = _open_directory_nofollow(object_path.parent, create=create_parent)
+        try:
+            object_fd = os.open(object_path.name, flags | getattr(os, "O_NOFOLLOW", 0), dir_fd=shard_fd)
+        except Exception:
+            os.close(shard_fd)
+            raise
+        return shard_fd, object_fd, object_path.name
+
     def exists(self, ref_or_hash: str) -> bool:
         """Check if content hash exists in memory cache or on disk."""
         content_hash = self.normalize_ref(ref_or_hash)
-        if self.cache.contains(content_hash):
-            return True
         path = self._get_object_path(content_hash)
+        try:
+            _safe_cas_node(path)
+        except FableCASError:
+            return False
         return path.is_file()
+
+    def _put_posix(self, content_hash: str, raw_bytes: bytes) -> str:
+        """Publish an object through pinned directory descriptors."""
+        dest_path = self._get_object_path(content_hash)
+        shard_fd = _open_directory_nofollow(dest_path.parent, create=True)
+        tmp_fd_dir = _open_directory_nofollow(self.tmp_dir, create=False)
+        temp_name = f"cas_tmp_{content_hash[:8]}_{os.getpid()}_{os.urandom(8).hex()}.tmp"
+        object_fd = None
+        data_fd = None
+        try:
+            try:
+                object_fd = os.open(dest_path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=shard_fd)
+                existing = os.read(object_fd, MAX_CAS_OBJECT_BYTES + 1)
+                if len(existing) > MAX_CAS_OBJECT_BYTES or hashlib.sha256(existing).hexdigest() != content_hash:
+                    raise IntegrityError("existing CAS object is corrupt")
+                self.cache.put(content_hash, existing)
+                return self.to_uri(content_hash)
+            except FileNotFoundError:
+                pass
+            finally:
+                if object_fd is not None:
+                    os.close(object_fd)
+                    object_fd = None
+            data_fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=tmp_fd_dir)
+            view = memoryview(raw_bytes)
+            while view:
+                written = os.write(data_fd, view)
+                view = view[written:]
+            os.fsync(data_fd)
+            os.close(data_fd)
+            data_fd = None
+            os.replace(temp_name, dest_path.name, src_dir_fd=tmp_fd_dir, dst_dir_fd=shard_fd)
+            self.cache.put(content_hash, raw_bytes)
+            return self.to_uri(content_hash)
+        finally:
+            if object_fd is not None:
+                os.close(object_fd)
+            if data_fd is not None:
+                os.close(data_fd)
+            try:
+                os.unlink(temp_name, dir_fd=tmp_fd_dir)
+            except OSError:
+                pass
+            os.close(tmp_fd_dir)
+            os.close(shard_fd)
 
     def put(self, content: Union[str, bytes]) -> str:
         """
@@ -236,14 +406,31 @@ class FableCASStore:
         """
         content_hash, raw_bytes = self.compute_sha256(content)
         dest_path = self._get_object_path(content_hash)
+        _safe_cas_node(dest_path)
 
-        # Check if already present
+        if len(raw_bytes) > MAX_CAS_OBJECT_BYTES:
+            raise FableCASError("CAS object exceeds maximum size")
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            return self._put_posix(content_hash, raw_bytes)
+        # Check if already present, but never follow a replaced node.
+        _safe_cas_node(dest_path)
         if dest_path.is_file():
-            self.cache.put(content_hash, content)
+            # Existing objects are untrusted: never let the fast path bless a
+            # corrupt object or cache a bytearray under a bytes contract.
+            try:
+                with dest_path.open("rb") as existing:
+                    existing_bytes = existing.read(MAX_CAS_OBJECT_BYTES + 1)
+            except OSError as exc:
+                raise FableCASError("could not verify existing CAS object") from exc
+            if len(existing_bytes) > MAX_CAS_OBJECT_BYTES or hashlib.sha256(existing_bytes).hexdigest() != content_hash:
+                raise IntegrityError("existing CAS object is corrupt")
+            self.cache.put(content_hash, existing_bytes)
             return self.to_uri(content_hash)
 
-        # Ensure destination shard directory exists
+        # Ensure destination shard directory exists, then revalidate every
+        # component (including a shard created or replaced concurrently).
         dest_path.parent.mkdir(parents=True, exist_ok=True)
+        _safe_cas_node(dest_path.parent)
 
         # Atomic lock-free write: write to unique tmp file on the same filesystem, then atomic replace
         tmp_fd, tmp_file_path = tempfile.mkstemp(
@@ -268,46 +455,65 @@ class FableCASStore:
                     pass
             raise
 
-        self.cache.put(content_hash, content)
+        # Cache canonical bytes regardless of whether the caller supplied
+        # str, bytes, or bytearray.
+        self.cache.put(content_hash, raw_bytes)
         return self.to_uri(content_hash)
 
     def get_bytes(self, ref_or_hash: str, verify: Optional[bool] = None) -> bytes:
-        """Retrieve raw bytes for a CAS reference with optional integrity verification."""
+        """Retrieve bytes, verifying SHA-256 unless explicitly opted out.
+
+        ``verify=False`` is an intentionally low-level escape hatch for trusted
+        local maintenance/diagnostics only.  It may return cached bytes without
+        re-reading the object and must never be used for model/server-facing
+        content.  All V1 decompression, slicing, composite-frame, and file-path
+        APIs request ``verify=True`` explicitly.
+        """
         content_hash = self.normalize_ref(ref_or_hash)
         should_verify = self.auto_verify if verify is None else verify
 
-        # Check cache
-        cached = self.cache.get(content_hash)
-        if cached is not None:
-            if isinstance(cached, bytes):
-                return cached
-            return cached.encode("utf-8")
-
         dest_path = self._get_object_path(content_hash)
+        _safe_cas_node(dest_path)
         if not dest_path.is_file():
             raise CASNotFoundError(f"CAS object not found: {ref_or_hash}")
-
-        with open(dest_path, "rb") as f:
-            data = f.read()
-
+        # An explicit/automatic verified read must consult disk again: a
+        # cached value must not hide tampering or replacement of the CAS file.
+        cached = self.cache.get(content_hash)
+        if cached is not None and not isinstance(cached, (bytes, str)):
+            raise IntegrityError("CAS cache contains an unsupported value type")
+        if cached is not None and not should_verify:
+            data = cached if isinstance(cached, bytes) else cached.encode("utf-8")
+        else:
+            with open(dest_path, "rb") as f:
+                data = f.read(MAX_CAS_OBJECT_BYTES + 1)
+            if cached is not None:
+                cached_bytes = cached if isinstance(cached, bytes) else cached.encode("utf-8")
+                if cached_bytes != data:
+                    raise IntegrityError("CAS cache does not match the on-disk object")
+        if len(data) > MAX_CAS_OBJECT_BYTES:
+            raise FableCASError("CAS object exceeds maximum size")
         if should_verify:
             actual_hash = hashlib.sha256(data).hexdigest()
             if actual_hash != content_hash:
                 raise IntegrityError(
                     f"Integrity check failed for {content_hash}! Actual SHA-256: {actual_hash}"
                 )
-
         self.cache.put(content_hash, data)
         return data
 
     def get_text(self, ref_or_hash: str, verify: Optional[bool] = None) -> str:
-        """Retrieve UTF-8 decoded text for a CAS reference."""
+        """Retrieve UTF-8 text; ``verify=False`` is maintenance-only opt-out.
+
+        Model/server-facing callers must leave verification enabled (and the
+        canonical server paths pass ``verify=True`` explicitly).
+        """
         content_hash = self.normalize_ref(ref_or_hash)
+        should_verify = self.auto_verify if verify is None else verify
         cached = self.cache.get(content_hash)
-        if cached is not None and isinstance(cached, str):
+        if cached is not None and isinstance(cached, str) and not should_verify:
             return cached
 
-        data = self.get_bytes(content_hash, verify=verify)
+        data = self.get_bytes(content_hash, verify=should_verify)
         text = data.decode("utf-8", errors="strict")
         self.cache.put(content_hash, text)
         return text
@@ -317,20 +523,28 @@ class FableCASStore:
         try:
             content_hash = self.normalize_ref(ref_or_hash)
             dest_path = self._get_object_path(content_hash)
+            _safe_cas_node(dest_path)
             if not dest_path.is_file():
                 return False
             with open(dest_path, "rb") as f:
-                actual_hash = hashlib.sha256(f.read()).hexdigest()
+                data = f.read(MAX_CAS_OBJECT_BYTES + 1)
+            if len(data) > MAX_CAS_OBJECT_BYTES:
+                return False
+            actual_hash = hashlib.sha256(data).hexdigest()
             return actual_hash == content_hash
         except Exception:
             return False
 
     def get_file_path(self, ref_or_hash: str) -> Path:
-        """Return the physical on-disk path for a CAS object."""
+        """Return a path only after a bounded content-address verification."""
         content_hash = self.normalize_ref(ref_or_hash)
         path = self._get_object_path(content_hash)
+        _safe_cas_node(path)
         if not path.is_file():
             raise CASNotFoundError(f"CAS object not found on disk: {ref_or_hash}")
+        # A pathname is not a capability: callers can read it after this
+        # method returns, so validate the current object before exposing it.
+        self.get_bytes(content_hash, verify=True)
         return path
 
 
@@ -453,7 +667,7 @@ class AdaptiveChunkAccumulator:
 
     def extract_item(self, frame_uri: str, item_index: int) -> Tuple[str, Dict[str, Any]]:
         """Extract a specific micro-payload by index from a flushed composite frame."""
-        frame_json = self.cas_store.get_text(frame_uri)
+        frame_json = self.cas_store.get_text(frame_uri, verify=True)
         frame = CompositeFrame.deserialize_json(frame_json)
         if 0 <= item_index < len(frame.items):
             item = frame.items[item_index]
@@ -536,6 +750,8 @@ class FableGrammar333:
             if not (byte & 0x80):
                 break
             shift += 7
+            if shift > 63:
+                raise ValueError("varint exceeds supported 64-bit integer limit")
         return res
 
     @classmethod
@@ -549,6 +765,8 @@ class FableGrammar333:
     def read_string(cls, stream: io.BytesIO) -> str:
         """Read string with length-prefixed varint."""
         length = cls.decode_varint(stream)
+        if length > MAX_CAS_OBJECT_BYTES:
+            raise ValueError("encoded string exceeds maximum size")
         raw = stream.read(length)
         if len(raw) != length:
             raise EOFError(f"Expected {length} bytes, got {len(raw)}")
@@ -694,27 +912,32 @@ class CASSliceViewer:
         Extract lines from start_line to end_line (1-indexed, inclusive).
         Zero-copy streaming extraction with strict UTF-8 decoding.
         """
-        file_path = self.cas_store.get_file_path(ref_or_hash)
-        
+        # Read through the verified CAS API rather than trusting a pathname
+        # returned by get_file_path (which can be replaced between calls).
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         if start_line < 1:
             start_line = 1
         if end_line < start_line:
             return ""
+        if end_line - start_line > 100000:
+            raise ValueError("slice request is too large")
 
         output_lines: List[str] = []
+        output_bytes = 0
         current_line_num = 0
 
-        with open(file_path, "r", encoding="utf-8", errors="strict") as f:
+        with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8", errors="strict") as f:
             for line in f:
                 current_line_num += 1
                 if current_line_num > end_line:
                     break
                 if current_line_num >= start_line:
                     content = line.rstrip("\r\n")
-                    if include_line_numbers:
-                        output_lines.append(f"{current_line_num:6d} | {content}")
-                    else:
-                        output_lines.append(content)
+                    rendered = f"{current_line_num:6d} | {content}" if include_line_numbers else content
+                    output_bytes += len(rendered.encode("utf-8")) + 1
+                    if output_bytes > MAX_SLICE_RESPONSE_BYTES:
+                        raise ValueError("slice response exceeds maximum size")
+                    output_lines.append(rendered)
 
         return "\n".join(output_lines)
 
@@ -724,30 +947,41 @@ class CASSliceViewer:
         start_line: int,
         end_line: int,
     ) -> Iterator[str]:
-        """Generator yielding lines one-by-one without buffering in memory."""
-        file_path = self.cas_store.get_file_path(ref_or_hash)
+        """Verify the object before returning a bounded streaming iterator."""
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         if start_line < 1:
             start_line = 1
 
-        current_line_num = 0
-        with open(file_path, "r", encoding="utf-8", errors="strict") as f:
-            for line in f:
-                current_line_num += 1
-                if current_line_num > end_line:
-                    break
-                if current_line_num >= start_line:
-                    yield line.rstrip("\r\n")
+        def _lines() -> Iterator[str]:
+            current_line_num = 0
+            output_bytes = 0
+            with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8", errors="strict") as f:
+                for line in f:
+                    current_line_num += 1
+                    if current_line_num > end_line:
+                        break
+                    if current_line_num >= start_line:
+                        rendered = line.rstrip("\r\n")
+                        output_bytes += len(rendered.encode("utf-8")) + 1
+                        if output_bytes > MAX_SLICE_RESPONSE_BYTES:
+                            raise ValueError("slice response exceeds maximum size")
+                        yield rendered
+        return _lines()
 
     def get_line_count(self, ref_or_hash: str) -> int:
         """Count total lines in a CAS object using fast chunked buffer scanning."""
-        file_path = self.cas_store.get_file_path(ref_or_hash)
+        data = self.cas_store.get_bytes(ref_or_hash, verify=True)
         count = 0
+        total_bytes = 0
         buffer_size = 65536
-        with open(file_path, "rb") as f:
+        with io.BytesIO(data) as f:
             while True:
                 buf = f.read(buffer_size)
                 if not buf:
                     break
+                total_bytes += len(buf)
+                if total_bytes > MAX_CAS_OBJECT_BYTES:
+                    raise FableCASError("CAS object exceeds maximum size")
                 count += buf.count(b"\n")
         return count
 
@@ -792,7 +1026,7 @@ class FableCompress:
         """Losslessly retrieve original content from compressed node."""
         if compressed_node.get("type") != "cas_ref" or "cas_ref" not in compressed_node:
             raise ValueError("Invalid compressed CAS node")
-        return self.cas_store.get_text(compressed_node["cas_ref"])
+        return self.cas_store.get_text(compressed_node["cas_ref"], verify=True)
 
     def calculate_token_ratio(self, raw_text: str, compressed_repr: str) -> float:
         """
@@ -805,8 +1039,9 @@ class FableCompress:
         return compressed_tokens / float(len(raw_text))
 
 
-# Global default CAS engine instance for fable-engine server
-FABLE_CAS_DIR = Path(os.environ.get("FABLE_CAS_DIR", Path.home() / ".fable_cas"))
+# Global default CAS engine instance for fable-engine server.  Keep CAS beside
+# sessions for packaged runs; the legacy home location is retained in source mode.
+FABLE_CAS_DIR = Path(os.environ.get("FABLE_CAS_DIR", DATA_DIR / "cas"))
 CAS_ENGINE = FableCompress(root_dir=FABLE_CAS_DIR)
 
 
@@ -865,7 +1100,7 @@ class AntiLoopCircuitBreaker:
 class EpistemicEvidenceValidator:
     """Validates that [PROVEN] evidence strings map to real filesystem files, line ranges, URLs, or CLI stdout."""
 
-    CITATION_PATTERN = re.compile(r"([A-Za-z0-9_./\\:-]+(?:\.[A-Za-z0-9]+))(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?")
+    CITATION_PATTERN = re.compile(r"^(.*?)(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?$")
 
     def __init__(self, workspace_root: Optional[Path] = None):
         self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
@@ -877,12 +1112,17 @@ class EpistemicEvidenceValidator:
         elif clean_str.startswith("file://"):
             clean_str = clean_str[7:]
 
-        match = self.CITATION_PATTERN.search(clean_str)
-        if not match:
+        match = re.search(r":L?(\d+)(?:-L?(\d+))?$", clean_str)
+        if match:
+            file_path_str = clean_str[:match.start()]
+            start_line = int(match.group(1))
+            end_line = int(match.group(2)) if match.group(2) else start_line
+        else:
+            file_path_str = clean_str
+            start_line = None
+            end_line = None
+        if not file_path_str:
             return None
-        file_path_str = match.group(1)
-        start_line = int(match.group(2)) if match.group(2) else None
-        end_line = int(match.group(3)) if match.group(3) else start_line
         return {
             "file_path": file_path_str,
             "start_line": start_line,
@@ -1020,6 +1260,7 @@ class FableSession:
             }
         ]
         self.unlock_details: Optional[Dict[str, Any]] = None
+        self._restored_untrusted = False
 
     @property
     def pacing_deadline_time(self) -> float:
@@ -1064,11 +1305,13 @@ class FableSession:
 
     def _gate_report(self) -> Dict[str, Any]:
         """Return auditable gate state instead of relying on raw item counts."""
-        proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN"]
+        proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN" and not i.get("_restored_untrusted")]
         proven_with_evidence = [i for i in proven_items if str(i.get("evidence", "")).strip()]
         invariants_with_proof = [
-            inv for inv in self.invariants if str(inv.get("proof_or_rationale", "")).strip()
+            inv for inv in self.invariants if not inv.get("_restored_untrusted") and str(inv.get("proof_or_rationale", "")).strip()
         ]
+        # Restored phase is reset to Phase 1; subsequent in-process
+        # transitions are legitimate fresh gates.
         phase_index = PHASE_INDEX_MAP.get(self.active_phase, 1)
         checks = {
             "two_proven_evidence_items": len(proven_with_evidence) >= 2,
@@ -1316,7 +1559,7 @@ class FableSession:
             )
 
         gate_report = self._gate_report()
-        proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN"]
+        proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN" and not i.get("_restored_untrusted")]
         errors: List[str] = []
         if not gate_report["checks"]["two_proven_evidence_items"]:
             errors.append(
@@ -1386,75 +1629,99 @@ class FableSession:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FableSession":
-        """Deserializes session from dictionary."""
-        session = cls(
-            session_name=data["session_name"],
-            objective=data.get("objective", ""),
-            time_budget_minutes=data.get("time_budget_minutes", 60.0),
-            session_id=data.get("session_id"),
-            start_time=data.get("start_time")
-        )
-        session.time_budget_seconds = session.time_budget_minutes * 60.0
-        session._authority_deadline_wall = float(data.get(
-            "authority_deadline_time",
-            data.get("deadline_time", session.start_time + session.time_budget_seconds)
-        ))
-        now_wall = session._wall_clock()
-        now_monotonic = session._monotonic_clock()
-        session._authority_deadline_monotonic = now_monotonic + max(
-            0.0, session._authority_deadline_wall - now_wall
-        )
-        pacing_minutes = data.get("pacing_budget_minutes", session.time_budget_minutes)
-        session.pacing_budget_minutes = _validate_time_budget(pacing_minutes, "pacing_budget_minutes")
-        session.pacing_budget_seconds = session.pacing_budget_minutes * 60.0
-        session._pacing_started_wall = float(data.get("pacing_started_time", session.start_time))
-        session._pacing_started_monotonic = now_monotonic - max(0.0, now_wall - session._pacing_started_wall)
-        session._pacing_deadline_wall = min(
-            float(data.get("pacing_deadline_time", session.start_time + session.pacing_budget_seconds)),
-            session.deadline_time
-        )
-        session._pacing_deadline_monotonic = now_monotonic + max(
-            0.0, session._pacing_deadline_wall - now_wall
-        )
-        session.active_phase = data.get("active_phase", PHASES[0])
-        session.execution_locked = data.get("execution_locked", True)
-        session.can_execute_code = data.get("can_execute_code", False)
-        session.epistemic_ledger = data.get("epistemic_ledger", [])
-        session.invariants = data.get("invariants", [])
-        session.refinement_cycles = data.get("refinement_cycles", [])
-        session.phase_history = data.get("phase_history", [])
-        session.unlock_details = data.get("unlock_details")
+        """Restore data without importing persisted execution authority.
+
+        Persistence is an interchange format, not an authority token.  The
+        deadline, phase, evidence, invariants, and unlock flags are all treated
+        as untrusted; a restored process starts a fresh locked authority clock.
+        Historical data remains visible, but cannot satisfy fresh gates.
+        """
+        budget = data.get("time_budget_minutes", 60.0)
+        session = cls(session_name=data["session_name"], objective=data.get("objective", ""),
+                      time_budget_minutes=budget, session_id=data.get("session_id"))
+        session._restored_untrusted = True
+        session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
+        session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
+        session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
+        session.active_phase = PHASES[0]
+        session.phase_history = [{"phase": PHASES[0], "entered_at": session.start_time,
+                                 "summary": "Restored in safe locked state; fresh gates required"}]
+        session.execution_locked = True
+        session.can_execute_code = False
+        session.unlock_details = None
         return session
 
     def save(self, target_path: Optional[Path] = None) -> Path:
-        """Atomically saves session to JSON file."""
-        path = target_path or (SESSIONS_DIR / f"{self.session_name}.json")
-        temp_path = path.with_suffix(".tmp")
-        
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
-        
-        for attempt in range(5):
+        """Atomically save a session using a unique no-follow temporary file."""
+        path = Path(target_path or (SESSIONS_DIR / f"{self.session_name}.json")).expanduser().absolute()
+        parent = path.parent
+        _assert_private_path(parent)
+        parent.mkdir(parents=True, exist_ok=True)
+        _assert_private_path(parent)
+        if parent.is_symlink() or not parent.is_dir() or path.is_symlink():
+            raise OSError("session path or parent is a symlink/reparse point")
+        os.chmod(parent, 0o700)
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            parent_fd = _open_directory_nofollow(parent, create=True)
+            temp_name = f".{path.name}.{os.getpid()}-{os.urandom(8).hex()}.tmp"
+            fd = None
             try:
-                temp_path.replace(path)
-                break
-            except OSError:
-                if attempt == 4:
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(self.to_dict(), f, indent=2)
-                    try:
-                        if temp_path.exists():
-                            temp_path.unlink()
-                    except Exception:
-                        pass
+                fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent_fd)
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    fd = None
+                    json.dump(self.to_dict(), handle, indent=2)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_name, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                try:
+                    os.fsync(parent_fd)
+                except OSError:
+                    # Linux O_PATH directory descriptors are suitable for
+                    # descriptor-relative publication but not fsync targets.
+                    pass
+            finally:
+                if fd is not None:
+                    os.close(fd)
+                try:
+                    os.unlink(temp_name, dir_fd=parent_fd)
+                except OSError:
+                    pass
+                os.close(parent_fd)
+        else:
+            fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(parent))
+            temp_path = Path(temporary)
+            try:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
                 else:
-                    time.sleep(0.02 * (attempt + 1))
+                    os.chmod(temporary, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(self.to_dict(), handle, indent=2)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_path, path)
+            finally:
+                if temp_path.exists() or temp_path.is_symlink():
+                    temp_path.unlink()
         logger.info(f"Fable session '{self.session_name}' saved to {path}")
         return path
 
 
 # In-Memory Active Sessions Table
 ACTIVE_SESSIONS: Dict[str, FableSession] = {}
+
+
+def _safe_session_file(path: Path) -> None:
+    _assert_private_path(path.parent)
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        raise ValueError(f"session file does not exist: {path.name}")
+    attrs = int(getattr(st, "st_file_attributes", 0))
+    if (attrs & 0x400 or stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
+            or st.st_nlink != 1 or (os.name != "nt" and stat.S_IMODE(st.st_mode) & 0o077)):
+        raise ValueError("session file must be a private regular non-hardlinked file")
 
 
 def get_or_load_session(session_name: str) -> FableSession:
@@ -1464,8 +1731,9 @@ def get_or_load_session(session_name: str) -> FableSession:
         return ACTIVE_SESSIONS[clean_name]
 
     file_path = SESSIONS_DIR / f"{clean_name}.json"
-    if file_path.is_file():
+    if file_path.exists() or file_path.is_symlink():
         try:
+            _safe_session_file(file_path)
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             session = FableSession.from_dict(data)
@@ -1798,6 +2066,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             session_entries = []
             for f in files:
                 try:
+                    _safe_session_file(f)
                     with open(f, "r", encoding="utf-8") as s_file:
                         s_data = json.load(s_file)
                     status_icon = "🟢" if not s_data.get("execution_locked", True) else "🛑"
@@ -1858,13 +2127,16 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             if content is None:
                 return "Error: 'content' (or 'payload') is required for action 'compress_payload'."
             label = arguments.get("label", "payload")
+            content_text = str(content)
+            if len(content_text.encode("utf-8")) > MAX_CAS_OBJECT_BYTES:
+                return "Error: payload exceeds maximum CAS object size."
 
-            compressed_node = CAS_ENGINE.compress_payload_to_cas(str(content), label=label)
-            raw_len = len(str(content))
-            raw_tokens = CAS_ENGINE.estimate_token_count(str(content))
+            compressed_node = CAS_ENGINE.compress_payload_to_cas(content_text, label=label)
+            raw_len = len(content_text)
+            raw_tokens = CAS_ENGINE.estimate_token_count(content_text)
             comp_repr = json.dumps(compressed_node, separators=(",", ":"))
             comp_tokens = CAS_ENGINE.estimate_token_count(comp_repr)
-            ratio = CAS_ENGINE.calculate_token_ratio(str(content), comp_repr)
+            ratio = CAS_ENGINE.calculate_token_ratio(content_text, comp_repr)
 
             invariant_met = ratio <= 0.003 if raw_len >= 10000 else True
             badge = "✅ PASS (<= 0.003 tokens/char)" if invariant_met else f"⚠️ Ratio: {ratio:.6f} tokens/char"
@@ -1888,7 +2160,9 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             if not cas_ref:
                 return "Error: 'cas_ref' is required for action 'decompress_payload'."
             try:
-                text = CAS_ENGINE.cas_store.get_text(cas_ref)
+                text = CAS_ENGINE.cas_store.get_text(cas_ref, verify=True)
+                if len(text.encode("utf-8")) > MAX_RPC_RESPONSE_BYTES // 2:
+                    return "Error: decompressed response exceeds maximum size; use view_slice."
                 lines = CAS_ENGINE.slice_viewer.get_line_count(cas_ref)
                 return (
                     f"### 📦 Fable CAS Payload Retrieved\n\n"
@@ -2162,26 +2436,106 @@ TOOL_SCHEMA = {
 
 
 def send_response(response_dict: Dict[str, Any]):
-    """Writes a JSON-RPC response to stdout followed by newline and flushes."""
-    encoded = json.dumps(response_dict)
-    sys.stdout.write(encoded + "\n")
-    sys.stdout.flush()
+    """Writes a bounded JSON-RPC response to stdout with UTF-8 safety."""
+    encoded = json.dumps(response_dict, ensure_ascii=False)
+    encoded_bytes = encoded.encode("utf-8")
+    if len(encoded_bytes) > MAX_RPC_RESPONSE_BYTES:
+        response_dict = {
+            "jsonrpc": "2.0",
+            "id": response_dict.get("id") if isinstance(response_dict, dict) else None,
+            "error": {"code": -32000, "message": "Response exceeds maximum size"}
+        }
+        encoded = json.dumps(response_dict, ensure_ascii=False)
+        encoded_bytes = encoded.encode("utf-8")
+    payload = encoded_bytes + b"\n"
+    if hasattr(sys.stdout, "buffer") and sys.stdout.buffer is not None:
+        try:
+            sys.stdout.buffer.write(payload)
+            sys.stdout.buffer.flush()
+            return
+        except Exception:
+            pass
+    try:
+        sys.stdout.write(encoded + "\n")
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        sys.stdout.write(payload.decode("utf-8", errors="replace"))
+        sys.stdout.flush()
+
+
+def _bounded_lines(stream, limit: int):
+    """Yield newline-delimited frames without waiting for EOF.
+
+    ``read(4096)`` is unsafe for interactive stdio: some buffered stream
+    implementations try to fill that request and therefore wait for more
+    input even after a complete JSON-RPC line has arrived.  Read one byte (or
+    one text character for StringIO-like test streams) at a time instead.  A
+    BufferedReader/FileIO read of one byte returns as soon as a byte is
+    available, while the bounded prefix and ``oversized`` flag keep memory and
+    raw-frame accounting under control.
+    """
+    raw_stream = getattr(stream, "buffer", None)
+    if raw_stream is None or not hasattr(raw_stream, "read"):
+        raw_stream = stream
+    pending = bytearray()
+    oversized = False
+    while True:
+        unit = raw_stream.read(1)
+        if not unit:
+            if pending or oversized:
+                yield bytes(pending).decode("utf-8", "replace"), oversized
+            return
+        if isinstance(unit, str):
+            encoded = unit.encode("utf-8", "replace")
+        else:
+            encoded = bytes(unit)
+        for byte in encoded:
+            if byte == 0x0A:
+                yield bytes(pending).decode("utf-8", "replace"), oversized
+                pending.clear()
+                oversized = False
+            elif not oversized:
+                pending.append(byte)
+                if len(pending) > limit:
+                    # Keep only a bounded prefix while consuming through the
+                    # delimiter; this preserves the next frame in the stream.
+                    oversized = True
+                    del pending[limit:]
 
 
 def main():
     logger.info("Starting Fable-Engine MCP Server on stdio...")
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            break
+    for line, oversized in _bounded_lines(sys.stdin, MAX_RPC_LINE_BYTES):
+        if oversized:
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
+        # Count the raw frame before trimming whitespace; otherwise an attacker
+        # can bypass the line limit with an oversized whitespace prefix/suffix.
+        if len(line.encode("utf-8", "replace")) > MAX_RPC_LINE_BYTES:
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
         line = line.strip()
         if not line:
             continue
 
+        if len(line.encode("utf-8", "replace")) > MAX_RPC_LINE_BYTES:
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
         try:
             req = json.loads(line)
-        except Exception as e:
-            logger.error(f"Failed to parse incoming JSON line: {e}")
+        except Exception:
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            continue
+        # JSON-RPC requests are objects; arrays and scalar values must not
+        # reach req.get() and crash the stdio server.
+        if not isinstance(req, dict):
+            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
+        if req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+            send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})
+            continue
+        if "params" in req and not isinstance(req["params"], dict):
+            send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})
             continue
 
         msg_id = req.get("id")
@@ -2226,6 +2580,10 @@ def main():
         elif method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
+            if not isinstance(tool_name, str) or not isinstance(arguments, dict):
+                send_response({"jsonrpc": "2.0", "id": msg_id,
+                               "error": {"code": -32600, "message": "Invalid Request"}})
+                continue
 
             if tool_name == "fable_session":
                 try:

@@ -87,9 +87,13 @@ is not sufficient. Command stdout/stderr are drained concurrently into bounded
 buffers; exceeding `max_output_bytes` terminates the process (and its POSIX
 process group) instead of truncating after unbounded `subprocess.run()` capture.
 The broker implements every advertised protocol capability, including bounded
-`inspect_files` and the `probe_capabilities` alias. It is covered by
-child-process, executable-path, output-limit, capability, allowlist,
-path-containment, and locked-write tests.
+`inspect_files` and the `probe_capabilities` alias. Its JSON-lines reader is
+interactive: it emits a response as soon as a newline-terminated frame arrives
+without waiting for stdin EOF, caps raw frames at 1 MiB, consumes oversized
+frames through their delimiter to preserve synchronization, and bounds error
+text to 8 KiB. It is covered by child-process, open-stdin, malformed/oversized
+frame, executable-path, output-limit, capability, allowlist, path-containment,
+and locked-write tests.
 
 The checked-in `HOST_PROFILES` are explicitly **expected capability
 profiles**, not attestations. They are useful defaults for planning and
