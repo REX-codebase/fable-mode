@@ -40,6 +40,8 @@ class ReleaseDownloaderStaticTests(unittest.TestCase):
         ):
             self.assertIn(f"artifact: {artifact}", self.workflow)
             self.assertIn(artifact, self.readme)
+        self.assertIn("os: macos-15-intel", self.workflow)
+        self.assertNotIn("os: macos-13", self.workflow)
         self.assertIn("os: macos-14", self.workflow)
         self.assertIn("fable-mode-vX.Y.Z-macos-arm64.zip", self.readme)
         self.assertIn("SHA256SUMS", self.readme)
