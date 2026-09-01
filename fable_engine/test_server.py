@@ -938,8 +938,179 @@ class TestFableCompressionHandlerDispatch(unittest.TestCase):
         self.assertIn("Token Compression Invariant", res)
 
 
+class TestFableSystem3ActionsDispatch(unittest.TestCase):
+    """Verifies all System 3 MCP actions and session persistence via dispatcher."""
+
+    def setUp(self):
+        self.session_name = f"test_sys3_{int(time.time() * 1000)}"
+        init_res = handle_fable_session({
+            "action": "create_session",
+            "session_name": self.session_name,
+            "objective": "Test System 3 Meta-Cognitive Deliberation",
+            "time_budget_minutes": 30.0,
+        })
+        self.assertIn("Fable Cognitive Session Initialized", init_res)
+
+    def tearDown(self):
+        target_file = SESSIONS_DIR / f"{self.session_name}.json"
+        if target_file.exists():
+            try:
+                target_file.unlink()
+            except Exception:
+                pass
+        if self.session_name in ACTIVE_SESSIONS:
+            del ACTIVE_SESSIONS[self.session_name]
+
+    def test_system3_dialectical_synthesis_dispatch(self):
+        """Verifies system3_dialectical_synthesis action and TRIZ transcendence."""
+        res = handle_fable_session({
+            "action": "system3_dialectical_synthesis",
+            "session_name": self.session_name,
+            "thesis_title": "Lock-Free Ring Buffer",
+            "thesis_description": "Single-writer CAS ring buffer with bounded queue",
+            "antithesis_title": "Contention Bottleneck at Multi-Producer",
+            "contradictions": [
+                {
+                    "improving_parameter": "throughput",
+                    "worsening_parameter": "latency",
+                    "description": "Multi-producer atomic contention degrades P99 latency",
+                    "severity": 0.85
+                }
+            ],
+            "failure_modes": ["Cache line bouncing under 16 concurrent producers"],
+            "max_debate_rounds": 3,
+        })
+        self.assertIn("System 3 Dialectical Synthesis Emerged", res)
+        self.assertIn("Transcended TRIZ Inventive Principles", res)
+        self.assertIn("Resolved Contradictions", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_syntheses), 1)
+        self.assertTrue(len(session.refinement_cycles) > 0)
+
+    def test_system3_causal_simulate_dispatch(self):
+        """Verifies system3_causal_simulate action with Pearl do-calculus and brittleness analysis."""
+        nodes = [
+            {"node_id": "threads", "name": "Worker Threads", "node_type": "exogenous", "value": 4.0},
+            {"node_id": "contention", "name": "Lock Contention", "node_type": "endogenous", "value": 0.0},
+            {"node_id": "throughput", "name": "Operations/sec", "node_type": "metric", "value": 0.0}
+        ]
+        edges = [
+            {"source": "threads", "target": "contention", "weight": 0.5},
+            {"source": "threads", "target": "throughput", "weight": 2.0},
+            {"source": "contention", "target": "throughput", "weight": -1.2}
+        ]
+        interventions = {"contention": 0.1}
+
+        res = handle_fable_session({
+            "action": "system3_causal_simulate",
+            "session_name": self.session_name,
+            "model_name": "ThreadContentionDAG",
+            "nodes": nodes,
+            "edges": edges,
+            "interventions": interventions,
+            "target_metric": "throughput"
+        })
+        self.assertIn("System 3 Pearl's Do-Calculus & Causal Simulation", res)
+        self.assertIn("Pearl's Do-Operator Intervention", res)
+        self.assertIn("Structural Brittleness Report", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_causal_graphs), 1)
+
+    def test_system3_evolve_paradigms_dispatch(self):
+        """Verifies system3_evolve_paradigms action with 10D Pareto frontier selection."""
+        res = handle_fable_session({
+            "action": "system3_evolve_paradigms",
+            "session_name": self.session_name,
+            "generations": 2,
+            "population_size": 8,
+            "mutation_rate": 0.20,
+        })
+        self.assertIn("System 3 Evolutionary Paradigm Engine", res)
+        self.assertIn("Top Rank 1 Non-Dominated Pareto Frontier", res)
+        self.assertIn("Winning Gene Allocation", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_gene_pools), 1)
+
+    def test_system3_induce_axioms_dispatch(self):
+        """Verifies system3_induce_axioms action and auto-recording into invariants."""
+        res = handle_fable_session({
+            "action": "system3_induce_axioms",
+            "session_name": self.session_name,
+            "domain": "architecture"
+        })
+        self.assertIn("System 3 Neuro-Symbolic Invariant Induction", res)
+        self.assertIn("Axioms Induced", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertTrue(len(session.system3_axioms) > 0)
+        self.assertTrue(len(session.invariants) > 0)
+
+    def test_system3_meta_reflect_dispatch(self):
+        """Verifies system3_meta_reflect action with bias detection and heuristic rewriting."""
+        res = handle_fable_session({
+            "action": "system3_meta_reflect",
+            "session_name": self.session_name,
+            "focus_area": "Architecture Deliberation Trace"
+        })
+        self.assertIn("System 3 Meta-Cognitive Deliberation Audit", res)
+        self.assertIn("Recommended Cognitive Gear", res)
+        self.assertIn("Cognitive Bias Diagnostics", res)
+        self.assertIn("Dynamic Search Heuristics", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_reflections), 1)
+
+    def test_system3_tri_level_orchestrate_dispatch(self):
+        """Verifies system3_tri_level_orchestrate action."""
+        res = handle_fable_session({
+            "action": "system3_tri_level_orchestrate",
+            "session_name": self.session_name,
+            "task_complexity": 0.95,
+            "contradiction_density": 0.85,
+            "failure_count": 2,
+            "epistemic_uncertainty": 0.60
+        })
+        self.assertIn("System 3 Tri-Level Cognitive Arbitration", res)
+        self.assertIn("SYSTEM_3_META_COGNITIVE", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_orchestrations), 1)
+
+    def test_system3_session_roundtrip_persistence(self):
+        """Verifies full roundtrip serialization & disk saving of all System 3 state fields."""
+        # Execute synthesis and causal simulation
+        handle_fable_session({
+            "action": "system3_dialectical_synthesis",
+            "session_name": self.session_name,
+            "thesis_title": "Thesis A",
+            "thesis_description": "Desc A",
+            "antithesis_title": "Critique B",
+        })
+        handle_fable_session({
+            "action": "system3_causal_simulate",
+            "session_name": self.session_name,
+            "nodes": [{"node_id": "X", "value": 1.0}],
+            "edges": []
+        })
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        d = session.to_dict()
+        self.assertEqual(len(d["system3_syntheses"]), 1)
+        self.assertEqual(len(d["system3_causal_graphs"]), 1)
+
+        # Restore from dict
+        restored = FableSession.from_dict(d)
+        self.assertEqual(len(restored.system3_syntheses), 1)
+        self.assertEqual(len(restored.system3_causal_graphs), 1)
+        self.assertEqual(restored.session_name, self.session_name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 
 

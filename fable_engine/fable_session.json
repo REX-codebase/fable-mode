@@ -1,6 +1,6 @@
 {
   "name": "fable_session",
-  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, and token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant).",
+  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant), and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction).",
   "parameters": {
     "properties": {
       "action": {
@@ -24,12 +24,22 @@
           "view_slice",
           "accumulate_payload",
           "flush_accumulator",
-          "get_compression_stats"
+          "get_compression_stats",
+          "system3_dialectical_synthesis",
+          "system3_causal_simulate",
+          "system3_evolve_paradigms",
+          "system3_induce_axioms",
+          "system3_meta_reflect",
+          "system3_tri_level_orchestrate"
         ],
         "type": "string"
       },
       "accumulate_payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
+        "type": "string"
+      },
+      "antithesis_title": {
+        "description": "Title of the antithesis / adversarial critique for System 3 dialectical synthesis.",
         "type": "string"
       },
       "architectural_refinement": {
@@ -52,9 +62,21 @@
         "description": "Raw text content or payload to store/compress into Content-Addressed Storage (CAS).",
         "type": "string"
       },
+      "contradiction_density": {
+        "description": "Contradiction density index [0.0, 1.0] for System 3 cognitive gear shifting.",
+        "type": "number"
+      },
+      "contradictions": {
+        "description": "List of parameter trade-offs / contradictions to resolve with TRIZ principles.",
+        "type": ["array", "string"]
+      },
       "critique_or_bottleneck": {
         "description": "Critical flaw, vulnerability, edge case, memory/latency bottleneck, or assumption scrutinized.",
         "type": "string"
+      },
+      "crossover_rate": {
+        "description": "Genetic crossover rate probability for evolutionary engine (default 0.80).",
+        "type": "number"
       },
       "domain": {
         "description": "Domain boundary for the invariant.",
@@ -65,13 +87,29 @@
         ],
         "type": "string"
       },
+      "edges": {
+        "description": "List of directed edge dictionaries for Causal DAG construction.",
+        "type": ["array", "string"]
+      },
       "end_line": {
         "description": "Ending line number (1-indexed inclusive) for windowed line slice viewing.",
         "type": "integer"
       },
+      "epistemic_uncertainty": {
+        "description": "Epistemic uncertainty index [0.0, 1.0] for System 3 arbitration.",
+        "type": "number"
+      },
       "evidence": {
         "description": "Source file, command output, line number, or URL supporting the claim.",
         "type": "string"
+      },
+      "failure_count": {
+        "description": "Historical failure count for tri-level cognitive gear arbitration.",
+        "type": "integer"
+      },
+      "failure_modes": {
+        "description": "List of adversarial failure modes identified in critique.",
+        "type": ["array", "string"]
       },
       "focus_area": {
         "description": "Specific subsystem, component, algorithm, or interface being critically re-evaluated.",
@@ -85,9 +123,17 @@
         "description": "Mathematical or formal contract specification that must never be violated.",
         "type": "string"
       },
+      "generations": {
+        "description": "Number of evolutionary generations to run (default 3).",
+        "type": "integer"
+      },
       "include_line_numbers": {
         "description": "Whether to format line slice with line numbers.",
         "type": "boolean"
+      },
+      "interventions": {
+        "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
+        "type": ["object", "string"]
       },
       "invariant_name": {
         "description": "Identifier or title of the formal invariant (e.g., 'INV-01: Zero-Deadlock Ring Buffer').",
@@ -97,9 +143,21 @@
         "description": "Optional label or description for compressed CAS node.",
         "type": "string"
       },
+      "max_debate_rounds": {
+        "description": "Maximum number of dialectical debate rounds for synthesis (default 4).",
+        "type": "integer"
+      },
       "metadata": {
         "description": "Optional metadata dictionary attached to accumulated micro-payload.",
         "type": "object"
+      },
+      "model_name": {
+        "description": "Name for the causal DAG model in System 3 simulation.",
+        "type": "string"
+      },
+      "mutation_rate": {
+        "description": "Genetic mutation rate probability for evolutionary engine (default 0.15).",
+        "type": "number"
       },
       "next_phase": {
         "description": "Target phase to advance the session into.",
@@ -113,9 +171,17 @@
         ],
         "type": "string"
       },
+      "nodes": {
+        "description": "List of node dictionaries for Causal DAG construction.",
+        "type": ["array", "string"]
+      },
       "objective": {
         "description": "High-level goal or problem statement for the reasoning session.",
         "type": "string"
+      },
+      "objective_weights": {
+        "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
+        "type": ["object", "string"]
       },
       "payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
@@ -124,6 +190,10 @@
       "phase_summary": {
         "description": "Concise summary of findings or deliverables completed in the previous phase.",
         "type": "string"
+      },
+      "population_size": {
+        "description": "Population size for evolutionary gene pool (default 12).",
+        "type": "integer"
       },
       "proof_or_rationale": {
         "description": "Proof sketch, rationale, or inductive argument establishing the invariant.",
@@ -136,6 +206,10 @@
       "refinement_type": {
         "description": "Type of rethink-refine cycle (e.g. 'archetype_exploration', 'triz_resolution', 'adversarial_falsification', 'benchmark_probe', 'failure_mode_analysis').",
         "type": "string"
+      },
+      "seed_paradigms": {
+        "description": "Optional list of initial paradigm definitions to seed the gene pool.",
+        "type": ["array", "string"]
       },
       "session_name": {
         "description": "Unique identifier / name for the Fable session.",
@@ -158,8 +232,28 @@
         ],
         "type": "string"
       },
+      "target_metric": {
+        "description": "Target KPI node ID for sensitivity and structural brittleness analysis.",
+        "type": "string"
+      },
+      "target_residual_threshold": {
+        "description": "Target residual contradiction score threshold for convergence (default 0.15).",
+        "type": "number"
+      },
+      "task_complexity": {
+        "description": "Task complexity index [0.0, 1.0] for tri-level cognitive arbitration.",
+        "type": "number"
+      },
       "terminal_probe_results": {
         "description": "Live empirical probe output, benchmark figures, latency numbers, or profiling stats supporting the refinement.",
+        "type": "string"
+      },
+      "thesis_description": {
+        "description": "Core architecture description and assumptions for the thesis candidate.",
+        "type": "string"
+      },
+      "thesis_title": {
+        "description": "Title of the thesis paradigm for System 3 dialectical synthesis.",
         "type": "string"
       },
       "time_budget_minutes": {

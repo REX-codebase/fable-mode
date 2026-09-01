@@ -50,6 +50,40 @@ BASE_DIR = Path(__file__).resolve().parent
 SESSIONS_DIR = BASE_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
+# System 3 Architecture Imports
+if str(BASE_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR.parent))
+
+from fable_v2.system3 import (
+    CausalDAG,
+    CausalNode,
+    CausalEdge,
+    CausalNodeType,
+    BrittlenessReport,
+    InterventionResult,
+    ThesisCandidate,
+    AntithesisCritique,
+    Contradiction,
+    TRIZPrinciple,
+    TRIZContradictionResolver,
+    DialecticalSynthesizer,
+    EmergentSynthesis,
+    CognitiveGenome,
+    CognitiveGenePool,
+    NeuroSymbolicAxiom,
+    AxiomProvenance,
+    AxiomStatus,
+    MetaProofInducer,
+    CognitiveGear,
+    CognitiveBiasType,
+    CognitiveBiasFinding,
+    CognitiveBiasDetector,
+    DynamicSearchHeuristicRewriter,
+    SearchHeuristicConfig,
+    TriLevelArbitrator,
+    System3Executive,
+)
+
 # Standard Fable Phases
 PHASES = [
     "Phase 1: Epistemic Grounding & Live Research",
@@ -1021,6 +1055,14 @@ class FableSession:
         ]
         self.unlock_details: Optional[Dict[str, Any]] = None
 
+        # System 3 Meta-Cognitive State
+        self.system3_causal_graphs: List[Dict[str, Any]] = []
+        self.system3_syntheses: List[Dict[str, Any]] = []
+        self.system3_gene_pools: List[Dict[str, Any]] = []
+        self.system3_axioms: List[Dict[str, Any]] = []
+        self.system3_reflections: List[Dict[str, Any]] = []
+        self.system3_orchestrations: List[Dict[str, Any]] = []
+
     @property
     def pacing_deadline_time(self) -> float:
         """Wall-clock representation of the internal pacing deadline."""
@@ -1134,7 +1176,15 @@ class FableSession:
             "refinement_count": len(self.refinement_cycles),
             "refinement_cycles": self.refinement_cycles,
             "cognitive_gates": self._gate_report(),
-            "unlock_details": self.unlock_details
+            "unlock_details": self.unlock_details,
+            "system3_counts": {
+                "causal_graphs": len(self.system3_causal_graphs),
+                "syntheses": len(self.system3_syntheses),
+                "gene_pools": len(self.system3_gene_pools),
+                "axioms": len(self.system3_axioms),
+                "reflections": len(self.system3_reflections),
+                "orchestrations": len(self.system3_orchestrations),
+            }
         }
 
     @staticmethod
@@ -1381,7 +1431,13 @@ class FableSession:
             "invariants": self.invariants,
             "refinement_cycles": self.refinement_cycles,
             "phase_history": self.phase_history,
-            "unlock_details": self.unlock_details
+            "unlock_details": self.unlock_details,
+            "system3_causal_graphs": self.system3_causal_graphs,
+            "system3_syntheses": self.system3_syntheses,
+            "system3_gene_pools": self.system3_gene_pools,
+            "system3_axioms": self.system3_axioms,
+            "system3_reflections": self.system3_reflections,
+            "system3_orchestrations": self.system3_orchestrations
         }
 
     @classmethod
@@ -1424,6 +1480,12 @@ class FableSession:
         session.refinement_cycles = data.get("refinement_cycles", [])
         session.phase_history = data.get("phase_history", [])
         session.unlock_details = data.get("unlock_details")
+        session.system3_causal_graphs = data.get("system3_causal_graphs", [])
+        session.system3_syntheses = data.get("system3_syntheses", [])
+        session.system3_gene_pools = data.get("system3_gene_pools", [])
+        session.system3_axioms = data.get("system3_axioms", [])
+        session.system3_reflections = data.get("system3_reflections", [])
+        session.system3_orchestrations = data.get("system3_orchestrations", [])
         return session
 
     def save(self, target_path: Optional[Path] = None) -> Path:
@@ -1984,13 +2046,433 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Token Compression Invariant**: `<= 0.003 tokens/character`"
             )
 
+        # 19. SYSTEM 3: DIALECTICAL SYNTHESIS
+        elif action in ("system3_dialectical_synthesis", "dialectical_synthesis", "triz_synthesis", "synthesis"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_dialectical_synthesis'."
+            thesis_title = arguments.get("thesis_title") or arguments.get("title") or "Architectural Thesis"
+            thesis_desc = arguments.get("thesis_description") or arguments.get("description") or arguments.get("thesis") or "Primary architectural candidate."
+            antithesis_title = arguments.get("antithesis_title") or arguments.get("critique_title") or arguments.get("critique") or "Adversarial Critique"
+
+            raw_contradictions = arguments.get("contradictions") or arguments.get("contradiction_list") or []
+            parsed_contradictions = []
+            if isinstance(raw_contradictions, str):
+                try:
+                    loaded = json.loads(raw_contradictions)
+                    if isinstance(loaded, list):
+                        raw_contradictions = loaded
+                    elif isinstance(loaded, dict):
+                        raw_contradictions = [loaded]
+                except Exception:
+                    raw_contradictions = [
+                        {"improving_parameter": "performance", "worsening_parameter": "safety", "description": line.strip(), "severity": 0.7}
+                        for line in raw_contradictions.splitlines() if line.strip()
+                    ]
+
+            if isinstance(raw_contradictions, list):
+                for idx, c in enumerate(raw_contradictions):
+                    if isinstance(c, dict):
+                        parsed_contradictions.append(Contradiction(
+                            contradiction_id=c.get("contradiction_id", f"c_{idx+1:03d}"),
+                            improving_parameter=c.get("improving_parameter", "performance"),
+                            worsening_parameter=c.get("worsening_parameter", "safety"),
+                            description=c.get("description", "Architectural trade-off"),
+                            severity=float(c.get("severity", 0.7)),
+                        ))
+                    elif isinstance(c, str):
+                        parsed_contradictions.append(Contradiction(
+                            contradiction_id=f"c_{idx+1:03d}",
+                            improving_parameter="performance",
+                            worsening_parameter="safety",
+                            description=c,
+                            severity=0.7,
+                        ))
+
+            failure_modes = arguments.get("failure_modes") or []
+            if isinstance(failure_modes, str):
+                try:
+                    failure_modes = json.loads(failure_modes)
+                except Exception:
+                    failure_modes = [f.strip() for f in failure_modes.splitlines() if f.strip()]
+
+            thesis = ThesisCandidate(
+                thesis_id=f"th_{session_name}_{int(time.time()*1000)%10000}",
+                title=thesis_title,
+                description=thesis_desc,
+            )
+            critique = AntithesisCritique(
+                critique_id=f"cr_{session_name}_{int(time.time()*1000)%10000}",
+                thesis_id=thesis.thesis_id,
+                title=antithesis_title,
+                contradictions=parsed_contradictions,
+                failure_modes=failure_modes if isinstance(failure_modes, list) else [str(failure_modes)],
+                severity_score=float(arguments.get("severity_score", 0.75)),
+            )
+
+            max_rounds = int(arguments.get("max_debate_rounds", 4))
+            threshold = float(arguments.get("target_residual_threshold", 0.15))
+
+            synthesizer = DialecticalSynthesizer()
+            synthesis = synthesizer.synthesize(
+                thesis, critique, max_debate_rounds=max_rounds, target_residual_threshold=threshold
+            )
+
+            session = get_or_load_session(session_name)
+            session.system3_syntheses.append(synthesis.to_dict())
+
+            session.log_refinement_cycle(
+                refinement_type="system3_dialectical_synthesis",
+                focus_area=f"{thesis_title} vs {antithesis_title}",
+                critique_or_bottleneck=f"Contradictions: {len(parsed_contradictions)} parameter conflicts analyzed.",
+                architectural_refinement=synthesis.pareto_improvement_claim,
+            )
+            session.save()
+
+            principles_list = "\n".join([f"- **TRIZ Principle #{p.number} ({p.name})**: {p.description}" for p in synthesis.transcended_principles]) or "- No principles transcended."
+            contra_list = "\n".join([f"- `{c.improving_parameter}` vs `{c.worsening_parameter}`: {c.description} (Severity: {c.severity})" for c in synthesis.resolved_contradictions]) or "- None declared."
+
+            return (
+                f"### ⚡ System 3 Dialectical Synthesis Emerged\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Synthesis Title**: **{synthesis.title}** (`{synthesis.synthesis_id}`)\n"
+                f"- **Debate Rounds Executed**: `{synthesis.debate_rounds_executed}`\n"
+                f"- **Initial Contradiction Severity**: `{synthesis.initial_contradiction_score:.2f}`\n"
+                f"- **Residual Contradiction Severity**: `{synthesis.residual_contradiction_score:.2f}`\n"
+                f"- **Convergence Achieved**: `{'✅ YES' if synthesis.convergence_achieved else '⚠️ PARTIAL'}`\n\n"
+                f"#### 🧬 Transcended TRIZ Inventive Principles:\n{principles_list}\n\n"
+                f"#### ⚔️ Resolved Contradictions:\n{contra_list}\n\n"
+                f"#### 🏛️ Synthesized Architectural Blueprint:\n{synthesis.synthesized_architecture}\n\n"
+                f"> [!TIP]\n"
+                f"> {synthesis.pareto_improvement_claim}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 20. SYSTEM 3: CAUSAL SIMULATION & PEARL DO-CALCULUS
+        elif action in ("system3_causal_simulate", "causal_simulate", "causal_graph", "do_calculus"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_causal_simulate'."
+            model_name = arguments.get("model_name", "System3CausalModel")
+            nodes_input = arguments.get("nodes", [])
+            edges_input = arguments.get("edges", [])
+            interventions_input = arguments.get("interventions", {})
+            target_metric = arguments.get("target_metric")
+
+            if isinstance(nodes_input, str):
+                try:
+                    nodes_input = json.loads(nodes_input)
+                except Exception:
+                    nodes_input = []
+            if isinstance(edges_input, str):
+                try:
+                    edges_input = json.loads(edges_input)
+                except Exception:
+                    edges_input = []
+            if isinstance(interventions_input, str):
+                try:
+                    interventions_input = json.loads(interventions_input)
+                except Exception:
+                    interventions_input = {}
+
+            dag = CausalDAG(name=model_name)
+            for n in nodes_input:
+                if isinstance(n, dict):
+                    dag.add_node(
+                        node_id=n.get("node_id", n.get("id")),
+                        name=n.get("name"),
+                        node_type=CausalNodeType(n.get("node_type", "endogenous")),
+                        value=float(n.get("value", 0.0)),
+                        default_value=float(n["default_value"]) if "default_value" in n else None,
+                        min_value=float(n["min_value"]) if "min_value" in n else None,
+                        max_value=float(n["max_value"]) if "max_value" in n else None,
+                        description=n.get("description", ""),
+                    )
+
+            for e in edges_input:
+                if isinstance(e, dict):
+                    dag.add_edge(
+                        source=e["source"],
+                        target=e["target"],
+                        weight=float(e.get("weight", 1.0)),
+                        relation_type=e.get("relation_type", "linear"),
+                        description=e.get("description", ""),
+                    )
+
+            is_acyclic, cycle = dag.check_acyclicity()
+            if not is_acyclic:
+                return f"Error: Graph contains a cycle: {' -> '.join(cycle)}. Causal models must be valid DAGs."
+
+            topo_order = dag.topological_sort()
+            factual_values = dag.compute_forward()
+
+            interv_res = None
+            if interventions_input and isinstance(interventions_input, dict):
+                interv_map = {k: float(v) for k, v in interventions_input.items()}
+                interv_res = dag.do_intervention(interv_map)
+
+            brittleness_rep = None
+            if target_metric and target_metric in dag.nodes:
+                brittleness_rep = dag.evaluate_brittleness(target_metric)
+
+            session = get_or_load_session(session_name)
+            session.system3_causal_graphs.append({
+                "dag": dag.to_dict(),
+                "topological_order": topo_order,
+                "factual_values": factual_values,
+                "intervention": interv_res.to_dict() if interv_res else None,
+                "brittleness": brittleness_rep.to_dict() if brittleness_rep else None,
+                "timestamp": time.time(),
+            })
+            session.save()
+
+            lines = [
+                f"### 🌐 System 3 Pearl's Do-Calculus & Causal Simulation\n\n",
+                f"- **Model**: `{dag.name}` ({len(dag.nodes)} nodes, {len(dag.edges)} directed causal edges)\n",
+                f"- **Topological Order**: `{' -> '.join(topo_order)}`\n",
+            ]
+
+            if interv_res:
+                lines.append(f"\n#### ✂️ Pearl's Do-Operator Intervention: `do({interv_res.interventions})`\n")
+                lines.append(f"- **Severed Edges**: `{len(interv_res.severed_edges)}` ({interv_res.severed_edges})\n")
+                lines.append(f"- **Impacted Nodes**: `{', '.join(interv_res.impacted_nodes)}`\n\n")
+                lines.append("| Node | Factual Value | Counterfactual Value | Delta (Δ) |\n")
+                lines.append("|---|---|---|---|\n")
+                for nid in topo_order:
+                    f_val = interv_res.original_values.get(nid, 0.0)
+                    cf_val = interv_res.counterfactual_values.get(nid, 0.0)
+                    delta = interv_res.deltas.get(nid, 0.0)
+                    delta_str = f"+{delta:.4f}" if delta > 0 else f"{delta:.4f}"
+                    lines.append(f"| `{nid}` | {f_val:.4f} | **{cf_val:.4f}** | `{delta_str}` |\n")
+
+            if brittleness_rep:
+                lines.append(f"\n#### 🔬 Structural Brittleness Report (`{brittleness_rep.target_metric}`)\n")
+                lines.append(f"- **Overall Brittleness Score**: `{brittleness_rep.overall_brittleness_score:.4f}` / 1.0\n")
+                spof_str = ", ".join(brittleness_rep.single_points_of_failure) if brittleness_rep.single_points_of_failure else "None (Resilient)"
+                lines.append(f"- **Single Points of Failure**: `{spof_str}`\n")
+                for rec in brittleness_rep.recommendations:
+                    lines.append(f"- 💡 {rec}\n")
+
+            if session.execution_locked:
+                lines.append(SILENT_DELIBERATION_REMINDER)
+
+            return "".join(lines)
+
+        # 21. SYSTEM 3: EVOLVE PARADIGMS (10D PARETO FRONTIER OPTIMIZER)
+        elif action in ("system3_evolve_paradigms", "evolve_paradigms", "evolution_generation", "genetic_optimize"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_evolve_paradigms'."
+            generations = int(arguments.get("generations", 3))
+            pop_size = int(arguments.get("population_size", 12))
+            mutation_rate = float(arguments.get("mutation_rate", 0.15))
+            crossover_rate = float(arguments.get("crossover_rate", 0.80))
+            seed_paradigms = arguments.get("seed_paradigms")
+            if isinstance(seed_paradigms, str):
+                try:
+                    seed_paradigms = json.loads(seed_paradigms)
+                except Exception:
+                    seed_paradigms = None
+
+            weights = arguments.get("objective_weights")
+            if isinstance(weights, str):
+                try:
+                    weights = json.loads(weights)
+                except Exception:
+                    weights = None
+
+            pool = CognitiveGenePool(
+                population_size=pop_size,
+                mutation_rate=mutation_rate,
+                crossover_rate=crossover_rate,
+            )
+            pool.initialize_population(seed_paradigms=seed_paradigms)
+
+            for _ in range(generations):
+                pool.evolve_generation()
+
+            pareto_frontier = pool.get_pareto_frontier()
+            best_genome = pool.get_best_genome(weights)
+
+            session = get_or_load_session(session_name)
+            session.system3_gene_pools.append(pool.to_dict())
+
+            session.log_refinement_cycle(
+                refinement_type="system3_evolutionary_optimization",
+                focus_area=f"10D Pareto Frontier Search across {generations} generations",
+                critique_or_bottleneck=f"Optimized {pop_size} genomes across 10 dimensions.",
+                architectural_refinement=f"Evolved top paradigm '{best_genome.paradigm_name}' with scalar fitness {best_genome.compute_scalar_fitness(weights):.4f}.",
+            )
+            session.save()
+
+            table_rows = []
+            for g in pareto_frontier[:5]:
+                f = g.fitness_scores
+                table_rows.append(
+                    f"| `{g.genome_id}` | **{g.paradigm_name[:24]}** | `{f.get('latency',0):.2f}` | "
+                    f"`{f.get('throughput',0):.2f}` | `{f.get('memory_efficiency',0):.2f}` | "
+                    f"`{f.get('fault_tolerance',0):.2f}` | `{f.get('modularity',0):.2f}` | "
+                    f"`{f.get('security',0):.2f}` | `{f.get('token_compaction',0):.2f}` | `{g.compute_scalar_fitness(weights):.4f}` |"
+                )
+
+            table_str = "\n".join(table_rows)
+
+            return (
+                f"### 🧬 System 3 Evolutionary Paradigm Engine\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Generations Evolved**: `{pool.generation_count}` (Population: `{len(pool.population)}`)\n"
+                f"- **Rank 1 Pareto Frontier Size**: `{len(pareto_frontier)}` non-dominated solutions\n"
+                f"- **Top Archetype**: **{best_genome.paradigm_name}** (`{best_genome.genome_id}`)\n\n"
+                f"#### 🏆 Top Rank 1 Non-Dominated Pareto Frontier:\n"
+                f"| ID | Paradigm | Lat | Tput | Mem | Fault | Mod | Sec | Token | Score |\n"
+                f"|---|---|---|---|---|---|---|---|---|---|\n"
+                f"{table_str}\n\n"
+                f"#### 🧬 Winning Gene Allocation (`{best_genome.genome_id}`):\n"
+                + "\n".join([f"- **{k}**: `{v}`" for k, v in best_genome.genes.items()])
+                + f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 22. SYSTEM 3: INDUCE AXIOMS (NEURO-SYMBOLIC META-PROOF INDUCTION)
+        elif action in ("system3_induce_axioms", "induce_axioms", "neuro_symbolic_induction", "formalize_axioms"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_induce_axioms'."
+            session = get_or_load_session(session_name)
+            domain = arguments.get("domain", "architecture")
+
+            inducer = MetaProofInducer()
+            axioms = inducer.induce_axioms_from_session(
+                receipts=[],
+                evidence=[],
+                session_telemetry=session.get_telemetry(),
+                domain_hints=[domain],
+            )
+
+            for ax in axioms:
+                session.system3_axioms.append(ax.to_dict())
+                if not any(i.get("name") == ax.name for i in session.invariants):
+                    session.record_invariant(
+                        invariant_name=ax.name,
+                        formal_statement=ax.symbolic_expression,
+                        proof_or_rationale=ax.proof_sketch or ax.natural_language,
+                        domain=ax.domain if ax.domain in ("architecture", "design", "coding") else "architecture",
+                    )
+
+            session.save()
+
+            axiom_blocks = []
+            for ax in axioms:
+                axiom_blocks.append(
+                    f"#### 📜 `{ax.axiom_id}`: **{ax.name}** `[{ax.domain.upper()}]`\n"
+                    f"- **Symbolic Expression**: `{ax.symbolic_expression}`\n"
+                    f"- **Natural Language**: {ax.natural_language}\n"
+                    f"- **Epistemic Confidence**: `{ax.confidence * 100:.1f}%` (`{ax.status.value.upper()}`)\n"
+                    f"- **Proof Rationale**: {ax.proof_sketch}\n"
+                )
+
+            return (
+                f"### 📐 System 3 Neuro-Symbolic Invariant Induction\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Axioms Induced**: `{len(axioms)}`\n"
+                f"- **Auto-Recorded Invariants**: `{len(session.invariants)}` total in session\n\n"
+                + "\n".join(axiom_blocks)
+                + f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 23. SYSTEM 3: META REFLECTION & COGNITIVE BIAS AUDIT
+        elif action in ("system3_meta_reflect", "meta_reflect", "cognitive_audit", "meta_cognition"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_meta_reflect'."
+            session = get_or_load_session(session_name)
+            focus_area = arguments.get("focus_area", "Full Deliberation Trace")
+
+            executive = System3Executive()
+            report = executive.meta_reflect(session.to_dict())
+
+            session.system3_reflections.append(report)
+
+            bias_summary = f"{len(report['bias_findings'])} biases flagged" if report['bias_findings'] else "0 biases detected (Clean)"
+            session.log_refinement_cycle(
+                refinement_type="system3_meta_reflection",
+                focus_area=focus_area,
+                critique_or_bottleneck=f"Meta-cognitive audit: {bias_summary}. Contradiction density: {report['contradiction_density']:.2f}.",
+                architectural_refinement=f"Shifted cognitive gear to {report['cognitive_gear']}. Updated search heuristics temperature: {report['updated_search_heuristics']['exploration_temperature']}.",
+            )
+            session.save()
+
+            bias_lines = []
+            for b in report["bias_findings"]:
+                bias_lines.append(
+                    f"- ⚠️ **{b['bias_type'].upper()}** (Severity: `{b['severity']}` in *{b['detected_in']}*):\n"
+                    f"  - *Evidence*: {b['evidence_trail']}\n"
+                    f"  - *Mitigation*: {b['mitigation_strategy']}"
+                )
+            bias_block = "\n".join(bias_lines) if bias_lines else "✅ Zero cognitive biases detected. Epistemic reasoning is well-calibrated."
+
+            directives_block = "\n".join([f"- 🎯 {d}" for d in report["directives"]])
+
+            return (
+                f"### 🧠 System 3 Meta-Cognitive Deliberation Audit\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Recommended Cognitive Gear**: `{report['cognitive_gear'].upper()}`\n"
+                f"- **Contradiction Density**: `{report['contradiction_density']:.2f}`\n"
+                f"- **Arbitration Rationale**: {report['arbitration_rationale']}\n\n"
+                f"#### 🔍 Cognitive Bias Diagnostics:\n{bias_block}\n\n"
+                f"#### 🚀 System 3 Executive Directives:\n{directives_block}\n\n"
+                f"#### ⚙️ Dynamic Search Heuristics:\n"
+                f"- **Exploration Temperature**: `{report['updated_search_heuristics']['exploration_temperature']}`\n"
+                f"- **Pruning Cutoff Threshold**: `{report['updated_search_heuristics']['pruning_threshold']}`\n"
+                f"- **Max Branching Factor**: `{report['updated_search_heuristics']['max_branching_factor']}`\n"
+                f"- **Falsification Intensity**: `{report['updated_search_heuristics']['falsification_intensity']}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 24. SYSTEM 3: TRI-LEVEL COGNITIVE ORCHESTRATION
+        elif action in ("system3_tri_level_orchestrate", "tri_level_orchestrate", "cognitive_gear_shift", "arbitrate_cognition"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_tri_level_orchestrate'."
+            complexity = float(arguments.get("task_complexity", 0.75))
+            density = float(arguments.get("contradiction_density", 0.60))
+            failures = int(arguments.get("failure_count", 0))
+            uncertainty = float(arguments.get("epistemic_uncertainty", 0.40))
+
+            arbitrator = TriLevelArbitrator()
+            decision = arbitrator.arbitrate(
+                task_complexity=complexity,
+                contradiction_density=density,
+                failure_count=failures,
+                epistemic_uncertainty=uncertainty,
+            )
+
+            session = get_or_load_session(session_name)
+            session.system3_orchestrations.append({
+                "decision": decision,
+                "timestamp": time.time(),
+                "inputs": {
+                    "complexity": complexity,
+                    "density": density,
+                    "failures": failures,
+                    "uncertainty": uncertainty,
+                }
+            })
+            session.save()
+
+            directives_str = "\n".join([f"- {d}" for d in decision["directives"]])
+
+            return (
+                f"### 🎛️ System 3 Tri-Level Cognitive Arbitration\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Recommended Operating Gear**: `⚙️ {decision['recommended_gear'].upper()}`\n"
+                f"- **Composite Difficulty Index**: `{decision['composite_difficulty']:.3f}` / 1.0\n"
+                f"- **Arbitration Rationale**: {decision['rationale']}\n\n"
+                f"#### 🧭 Prescribed Cognitive Action Directives:\n{directives_str}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
                 f"'create_session', 'set_timer', 'get_status', 'telemetry', 'advance_phase', "
                 f"'log_epistemic_item', 'record_invariant', 'log_refinement_cycle', 'unlock_execution', "
                 f"'checkpoint_session', 'restore_session', 'list_sessions', 'compile_delegation_contract', "
-                f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats'."
+                f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
+                f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -2006,7 +2488,8 @@ TOOL_SCHEMA = {
         "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\n"
         "Enforces DeepThink cognitive rigor, hard mechanical time-lock, anti-rush execution lockout, epistemic truth logging (PROVEN/HYPOTHESIS/UNKNOWN),\n"
         "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, subagent delegation contract compilation,\n"
-        "live user-controlled time-budgeted pacing telemetry, and token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant)."
+        "live user-controlled time-budgeted pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant),\n"
+        "and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2032,7 +2515,13 @@ TOOL_SCHEMA = {
                     "view_slice",
                     "accumulate_payload",
                     "flush_accumulator",
-                    "get_compression_stats"
+                    "get_compression_stats",
+                    "system3_dialectical_synthesis",
+                    "system3_causal_simulate",
+                    "system3_evolve_paradigms",
+                    "system3_induce_axioms",
+                    "system3_meta_reflect",
+                    "system3_tri_level_orchestrate"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -2154,6 +2643,94 @@ TOOL_SCHEMA = {
             "metadata": {
                 "type": "object",
                 "description": "Optional metadata dictionary attached to accumulated micro-payload."
+            },
+            "thesis_title": {
+                "type": "string",
+                "description": "Title of the thesis paradigm for System 3 dialectical synthesis."
+            },
+            "thesis_description": {
+                "type": "string",
+                "description": "Core architecture description and assumptions for the thesis candidate."
+            },
+            "antithesis_title": {
+                "type": "string",
+                "description": "Title of the antithesis / adversarial critique."
+            },
+            "contradictions": {
+                "description": "List of parameter trade-offs / contradictions to resolve with TRIZ principles.",
+                "type": ["array", "string"]
+            },
+            "failure_modes": {
+                "description": "List of adversarial failure modes identified in critique.",
+                "type": ["array", "string"]
+            },
+            "max_debate_rounds": {
+                "type": "integer",
+                "description": "Maximum number of dialectical debate rounds for synthesis (default 4)."
+            },
+            "target_residual_threshold": {
+                "type": "number",
+                "description": "Target residual contradiction score threshold for convergence (default 0.15)."
+            },
+            "model_name": {
+                "type": "string",
+                "description": "Name for the causal DAG model in System 3 simulation."
+            },
+            "nodes": {
+                "description": "List of node dictionaries for Causal DAG construction.",
+                "type": ["array", "string"]
+            },
+            "edges": {
+                "description": "List of directed edge dictionaries for Causal DAG construction.",
+                "type": ["array", "string"]
+            },
+            "interventions": {
+                "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
+                "type": ["object", "string"]
+            },
+            "target_metric": {
+                "type": "string",
+                "description": "Target KPI node ID for sensitivity and structural brittleness analysis."
+            },
+            "generations": {
+                "type": "integer",
+                "description": "Number of evolutionary generations to run (default 3)."
+            },
+            "population_size": {
+                "type": "integer",
+                "description": "Population size for evolutionary gene pool (default 12)."
+            },
+            "mutation_rate": {
+                "type": "number",
+                "description": "Genetic mutation rate probability (default 0.15)."
+            },
+            "crossover_rate": {
+                "type": "number",
+                "description": "Genetic crossover rate probability (default 0.80)."
+            },
+            "seed_paradigms": {
+                "description": "Optional list of initial paradigm definitions to seed the gene pool.",
+                "type": ["array", "string"]
+            },
+            "objective_weights": {
+                "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
+                "type": ["object", "string"]
+            },
+            "task_complexity": {
+                "type": "number",
+                "description": "Task complexity index [0.0, 1.0] for tri-level cognitive arbitration."
+            },
+            "contradiction_density": {
+                "type": "number",
+                "description": "Contradiction density index [0.0, 1.0] for cognitive gear shifting."
+            },
+            "failure_count": {
+                "type": "integer",
+                "description": "Historical failure count for tri-level cognitive gear arbitration."
+            },
+            "epistemic_uncertainty": {
+                "type": "number",
+                "description": "Epistemic uncertainty index [0.0, 1.0] for arbitration."
             }
         },
         "required": ["action"]
