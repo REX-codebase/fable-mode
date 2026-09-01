@@ -3,8 +3,9 @@ name: fable-mode
 description: >-
   Extreme-depth cognitive architecture, effortless agentic execution engine, DeepThink reasoning
   protocol, Deterministic Deliberative System 2 Thinking, Anti-Hallucination Epistemic Calibration,
-  Hard Mechanical Time-Lock, Continuous Rethink-Refine Loop (log_refinement_cycle), and Time-Budgeted
-  Session Pacing (30 min / multi-hour endurance) via the fable-engine MCP. Enforces strict cognitive
+  Hard Mechanical Time-Lock, Continuous Rethink-Refine Loop (log_refinement_cycle), Time-Budgeted
+  Session Pacing (30 min / multi-hour endurance) via the fable-engine MCP, and dedicated Domain
+  Cognitive Gears (including domain: "design" / Cinematic Design Engine). Enforces strict cognitive
   separation: Main Agent performs all DeepThink, System 2 deliberation, epistemic verification, and
   architectural blueprinting (cannot code directly); all code writing and file modifications are
   executed strictly by subagents. Activates whenever the user requests deep thinking, architectural
@@ -27,6 +28,7 @@ description: >-
 8. **Dedicated Session & Timer Management via `fable_session` MCP**: Mandatory session creation (`create_session`), active phase tracking (`advance_phase`), duration timers (`set_timer`), refinement logging (`log_refinement_cycle`), and atomic WAL checkpoints (`checkpoint_session`).
 9. **Token Compression Subsystem (0.003 tokens/char invariant)**: High-entropy Content-Addressed Storage (`FableCASStore`), adaptive micro-payload batching (`AdaptiveChunkAccumulator`), micro-bytecode serialization (`FableGrammar333`), and zero-copy windowed line slicing (`CASSliceViewer`), guaranteeing `<= 0.003 tokens/character` on large payloads with 100% bit-exact lossless roundtrip recovery.
 10. **System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture**: Higher-order causal modeling (Pearl's do-calculus DAG simulation), dialectical transcendence of trade-offs via 40 TRIZ inventive principles, 10-Dimensional Pareto frontier genetic optimization (NSGA-II), neuro-symbolic axiom induction, and live cognitive bias detection (confirmation, anchoring, sunk cost, circularity).
+11. **Dedicated Domain Cognitive Gears (`domain: "design"` / Cinematic Design Engine)**: Autonomous activation for frontend design, generative UI, 3D WebGL scenes, and high-concept digital typography—enforcing 7-layer optical depth staging, 6 Haute aesthetic archetypes, golden-ratio fluid typography, Newtonian spring motion physics, and anti-AI-slop elimination.
 
 --------------------------------------------------------------------------------
 
@@ -215,10 +217,59 @@ PHASE 6: Checkpoint Finalization & Walkthrough Delivery
 
 --------------------------------------------------------------------------------
 
+## The Dedicated Cinematic Design Engine Subsystem (Domain: "design")
+
+When operating on frontend interfaces, generative UI, creative web design, 3D WebGL, or design systems, Fable-Mode engages its dedicated **Domain Cognitive Gear (`domain: "design"`)**. It enforces mathematical aesthetics, physical optical depth, and anti-slop rigor.
+
+### 1. 7-Layer Optical Depth Staging Architecture
+Instead of flat 1-layer surfaces, interfaces are constructed as a 7-layer physical optical stack:
+- **Layer 0 (Atmospheric Void)**: Deep chromatic obsidian or bone foundation (`oklch(0.08 0.02 270)` / `oklch(0.97 0.005 90)`). Never raw `#000000` or `#ffffff`.
+- **Layer 1 (Micro-Texture / Film Grain)**: Procedural SVG noise overlay (`feTurbulence`) at 3.5% opacity with `mix-blend-mode: overlay`.
+- **Layer 2 (Volumetric Directional Lighting)**: Radial caustics with inverse-square falloff ($I \propto 1/d^2$).
+- **Layer 3 (Refractive Glassmorphic Substrate)**: Frosted optical planes (`backdrop-filter: blur(20px) saturate(180%)`).
+- **Layer 4 (Hairline Specular Rim Lighting)**: Sub-pixel 0.5px translucent borders with inset highlights (`box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.18)`).
+- **Layer 5 (Foreground Fluid Typography & Telemetry)**: Golden-ratio scale typography with variable font axes and tabular telemetry.
+- **Layer 6 (Interactive Micro-Physics)**: 2nd-order damped harmonic oscillator transforms and magnetic focal interactions.
+
+### 2. 6 Haute Aesthetic Universes
+1. **Cyber-Obsidian Monolith** (Teenage Engineering / Avionics): Obsidian voids, hairline borders, luminescent cyan/lime spectral accents.
+2. **Haute Editorial Modernism** (Stripe Press / High Fashion): Asymmetric 1.618:1 negative space, 0.5px hairline rules, serif display + grotesque body.
+3. **Swiss Precision & Vignelli** (Braun / Leica / Massimo): Mathematical grid, extreme scale contrast, monochrome with single International Red/Blue accent.
+4. **Kinetic Spatial HUD** (Cyber Terminal / Scifi): Containerless telemetry ribbons, sub-pixel badge pills, Geist Mono + Instrument Sans.
+5. **Neo-Nordic Fluidity** (Bang & Olufsen / Aalto): Deep pine, warm bone, pebble curves (`rounded-3xl`), organic tactile warmth.
+6. **Cold Chromatic Brutalism** (Balenciaga / 032c): Exposed coordinate indices, raw manifestos, ultra-wide sans + monospace.
+
+### 3. Golden-Ratio Fluid Typography & Variable Font Choreography
+- Continuous scale interpolation: $\text{FontSize}(V) = \text{clamp}(S_{\min}, S_{\min} + (S_{\max} - S_{\min}) \cdot \frac{V - V_{\min}}{V_{\max} - V_{\min}}, S_{\max})$ between $V_{\min}=375\text{px}$ and $V_{\max}=1440\text{px}$.
+- Variable font axis choreography: dynamic weight (`wght`), optical sizing (`opsz`), and tabular numerals (`tnum`).
+
+### 4. Newtonian Spring Motion Physics & Gesture Choreography
+- 2nd-order damped harmonic oscillators ($m\ddot{x} + c\dot{x} + kx = 0$):
+  - `snappy` ($\zeta = 0.72$): Micro-buttons, badges, switches.
+  - `modal` ($\zeta = 1.00$): Dialogs, drawers, navigation sheets (critically damped, zero overshoot).
+  - `velvet` ($\zeta = 0.88$): Scroll parallax, smooth cursor tracking.
+  - `magnetic` ($\zeta = 0.77$): Drag-and-drop docking, card snapping.
+
+### 5. Design TRIZ Contradiction Matrix
+- **Richness vs Performance**: Resolved via CSS `backdrop-filter` isolation, hardware compositor promotion (`transform: translate3d(0,0,0)`), and `@media (prefers-reduced-transparency)`.
+- **Density vs Clarity**: Resolved via monospace telemetry ribbons with progressive disclosure hover-slices and HUD overlays.
+- **High Art vs Accessibility**: Resolved via APCA $L_c \ge 75$ mathematical luminance mapping ensuring WCAG AAA compliance across all OKLCH coordinates.
+
+### 6. 5-Tier Design Verification Quality Gate (Definition of Done)
+1. **Tier 1 (Optical Depth & Staging Audit)**: Verify 7-layer stack integrity; zero flat borders; correct hairline specular rims.
+2. **Tier 2 (Haute Aesthetic & Anti-Slop Check)**: Pass the 5-point Anti-AI-Slop elimination checklist (no purple glow blobs, no boilerplate cards, no marketing buzzwords).
+3. **Tier 3 (Fluid Typography & Contrast Gate)**: All font sizes use mathematical `clamp(...)`; APCA luminance contrast passes AAA.
+4. **Tier 4 (Kinetic Physics & 60 FPS Gate)**: Damped harmonic oscillators verified; GPU compositor transforms isolated; zero layout thrashing.
+5. **Tier 5 (Responsive & Accessibility Audit)**: Tested across 375px to 1440px+ viewports; `prefers-reduced-motion` and `prefers-reduced-transparency` implemented.
+
+--------------------------------------------------------------------------------
+
 ## Modular Reference Guides
 
 For comprehensive deep-dives, mental models, and production blueprints, refer to:
 
+- [Cinematic Design Engine Reference](./references/cinematic-design-engine.md) — 7-Layer optical depth staging, 6 Haute aesthetic archetypes, fluid golden-ratio typography, Newtonian spring motion physics, and anti-slop elimination checklist.
+- [Design Tokens & Typographic Matrix](./references/design-tokens-and-typographies.md) — Complete OKLCH precision color tokens, variable font axis setups, fluid clamp CSS variables, and font fallback matrices.
 - [Cognitive Protocol & Epistemic Calibration](./references/cognitive-protocol.md) — Dual-process System 1/System 2 architecture, epistemic calibration framework, anti-hallucination rules, continuous refinement loops, and compute scaling.
 - [Weak-Model Frontier Uplift Reference](./references/weak-model-frontier-uplift.md) — 5 Mechanical Guards, anti-loop circuit breaker, subagent contract compiler, and sub-70B model micro-scaffolds.
 - [Deterministic System 2 Session Engine (`fable_session` MCP)](./references/system2-session-engine.md) — Full API reference for `fable_session` actions (`log_refinement_cycle`, `compile_delegation_contract`, `unlock_execution`), Mechanical Time-Lock mechanics, permission matrix, and WAL checkpoints.
@@ -240,6 +291,3 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 - [Ultra-Low Latency Distributed Broker](./examples/distributed-system-design.md) — Multi-archetype design of a 10M msg/sec distributed engine.
 - [Lock-Free Concurrent Cache Architecture](./examples/breakthrough-algorithm-synthesis.md) — TRIZ innovation resolving high-contention cache performance.
 - [Repo-Scale SWE-Bench Root-Cause Debugging](./examples/swe-bench-pro-debugging.md) — Systematic isolation and verified remediation of complex race condition.
-
-
-

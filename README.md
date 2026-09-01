@@ -2,334 +2,343 @@
 
 ![Fable-Mode Hero](./assets/hero-banner.svg)
 
-# 🔮 Fable-Mode: Deterministic System 2 Cognitive Engine & Fleet Orchestrator
+# ?? Fable-Mode: Deterministic Deliberative Cognitive Architecture & Fleet Orchestrator
 
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?logo=python&logoColor=white&style=for-the-badge)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](./LICENSE)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0-8A2BE2?style=for-the-badge)](https://modelcontextprotocol.io/)
-[![Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20Stdlib)-brightgreen?style=for-the-badge)](#zero-dependencies-architecture)
-[![Engine](https://img.shields.io/badge/Cognition-System%202%20Deliberation-ff69b4?style=for-the-badge)](#-the-why-fable-mode-paradigm-shift)
+[![Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20Stdlib)-brightgreen?style=for-the-badge)](#-zero-dependencies-architecture)
+[![Cognition](https://img.shields.io/badge/Cognition-System%202%20%2B%20System%203-ff69b4?style=for-the-badge)](#-domain-cognitive-gears)
+[![Design](https://img.shields.io/badge/Engine-Cinematic%20Design-orange?style=for-the-badge)](#-3-cinematic-design-engine)
 
-**An independent REX-codebase cognitive engine and fleet orchestrator for MCP-compatible language-model hosts.**
+**A deterministic, evidence-gated cognitive architecture and Model Context Protocol (MCP) orchestrator that transforms shallow, rushed AI code generation into verified, deep-deliberation engineering workflows.**
 
-[Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Installation & downloads](#-installation--downloads) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
+[What Fable-Mode Is](#-what-fable-mode-actually-is-and-what-it-is-not) ? [Core Architecture](#-core-architecture--components) ? [Domain Cognitive Gears](#-domain-cognitive-gears) ? [Lifecycle & State Machine](#-how-it-works-in-practice-the-6-phase-lifecycle) ? [MCP Tool Reference](#-mcp-tool-reference--api) ? [Installation & Downloads](#-installation--downloads) ? [Benchmarks & Tests](#-benchmarks--test-verification)
 
 </div>
 
 ---
 
-> **Independence notice:** Fable-Mode is independently built and maintained by **REX-codebase**. It is not affiliated with, endorsed by, or sponsored by Google, Google DeepMind, Antigravity, Anthropic, Claude, or any model vendor. Host names and paths below describe compatibility integrations only.
+> **Independence Notice:** Fable-Mode is independently developed and maintained by **REX-codebase**. It is not affiliated with, endorsed by, or sponsored by Google, Anthropic, OpenAI, or any model vendor. Host names and paths described below represent protocol compatibility integrations only.
 
-> **Ownership:** The source, documentation, and release history in this repository are maintained by REX-codebase under the MIT license.
-
-## ⚡ Executive Summary
-
-Current autonomous AI coding agents suffer from a fatal structural flaw: **premature execution rushing and hallucinated reasoning**. When prompted to tackle complex, repo-scale engineering tasks, LLMs rush into shallow code generation within 15–45 seconds, failing to model axiomatic constraints, hardware topologies, concurrency races, or state invariants.
-
-**`fable-mode` is designed to reduce shallow AI coding through enforceable workflow gates.** 
-
-By coupling an **Unbypassable Mechanical Time-Lock** with **Deterministic System 2 Deliberation**, an **Anti-Hallucination Epistemic Ledger**, and a **Strict Cognitive Role Separation** (Architect Conductor $\to$ Subagent Coder Fleet), `fable-mode` forces the AI to deliberate continuously, empirically test hypotheses using live terminal probes (`run_command`), and mathematically prove domain invariants before a single line of codebase source code can be modified.
-
-> [!IMPORTANT]
-> **Evidence-Gated Claims**: In `fable-mode`, `[PROVEN]` items must carry a concrete evidence pointer and formal invariants must include a proof or rationale. These are enforceable admission gates—not a claim that arbitrary model reasoning is automatically true.
+> **Ownership & License:** All source code, design blueprints, test suites, and documentation in this repository are published under the open-source [MIT License](./LICENSE).
 
 ---
 
-## 🔬 The "Why Fable-Mode?" Paradigm Shift
+## ? What Fable-Mode Actually Is (and What It Is Not)
 
-### The Fallacy of Monte Carlo Tree Search (MCTS) in LLMs
+### The Structural Failure of Rushed AI Reasoning
 
-Previous attempts at advanced AI reasoning adapted Monte Carlo Tree Search (MCTS) from board games like Go and Chess to language models. However, extensive research and empirical testing reveal that **probabilistic tree search fundamentally degrades in large language models**:
+Standard autonomous coding agents exhibit a systemic vulnerability: **premature execution rushing accompanied by ungrounded reasoning**. When presented with complex, non-trivial engineering tasks, language models frequently rush into modifying codebase files within 15?45 seconds. In doing so, they fail to model hardware memory hierarchies, concurrency race conditions, distributed partition modes, or mathematical state invariants.
 
-1. **Hallucinated $Q$-Score Drift**: LLMs evaluate their own simulated rollouts with soft, stochastic confidence scores. A hallucinated premise in Node $A$ compounds exponentially down the tree, leading the search to declare a completely broken architecture as "high value" ($Q \approx 0.94$).
-2. **Brittle Heuristic Rollouts**: MCTS relies on simulated forward transitions. Software engineering systems, however, are non-linear, stateful, and deterministic; heuristic simulations cannot replace live compiler diagnostics, AST analysis, and memory model verification.
-3. **Premature Convergence**: When given a 30-minute budget, MCTS algorithms often exhaust their token sampling tree in 3 minutes and halt prematurely, abandoning the user's allocated thinking time.
+Attempts to address this with probabilistic Monte Carlo Tree Search (MCTS) struggle in real-world software engineering contexts:
+1. **Stochastic $Q$-Score Drift**: LLMs evaluate simulated rollouts with soft confidence scores. Hallucinated premises compound across search nodes, causing the tree to assign high values to flawed architectural proposals.
+2. **Brittle Heuristic Rollouts**: Software systems are deterministic, stateful, and non-linear. Speculative token rollouts cannot substitute for live compiler diagnostics, AST validation, and formal state proofs.
+3. **Premature Termination**: Given a 30-minute thinking budget, unconstrained stochastic searches often exhaust their token sampling heuristic within 2?3 minutes, abandoning the requested deliberation window.
 
-### The Solution: Deterministic Deliberative System 2
+### The Fable-Mode Solution
 
-`fable-mode` replaces probabilistic search with **Deterministic Deliberative System 2 Thinking** grounded in Kahneman's dual-process cognitive theory, axiomatic verification, and hard mechanical constraints:
+`fable-mode` enforces **Deterministic Deliberative System 2 & System 3 Cognition** through enforceable mechanical constraints and evidence admission gates:
 
-| Dimensional Vector | Monte Carlo Tree Search (MCTS) | Deterministic System 2 Deliberation (`fable-mode`) |
+| Dimensional Vector | Stochastic Prompting / MCTS | Fable-Mode Architecture |
 | :--- | :--- | :--- |
-| **Epistemic Grounding** | 🔴 Stochastic reward rollouts produce hallucinated $Q$-scores and synthetic feedback drift. | 🟢 **Strict Epistemic Ledger** (`[PROVEN]`, `[HYPOTHESIS]`, `[UNKNOWN]`) verified via live tools. |
-| **Verification Rigor** | 🔴 Soft probabilistic averages and speculative heuristics. | 🟢 **Formal Binary Invariant Proofs** (TLA+-style state bounds, memory ordering, lock-freedom). |
-| **Execution Safety** | 🔴 Permissive; allows immediate code edits along high-scoring unverified branches. | 🟢 **Unbypassable Hard Time-Lock**: Code edit tools are mechanically disabled at the engine level. |
-| **Time-Budget Pacing** | 🔴 Unstable; often terminates in 2–4 minutes regardless of user-allocated time budget. | 🟢 **Continuous Intellectual Compounding**: AI is forced to deliberate for the entire 30m / 45m / 24h budget. |
-| **Pacing Guarantee** | 🔴 AI can oppose or argue against long-running tasks. | 🟢 **Zero-Bypass Mechanical Lock**: Engine throws hard exception if early unlock is attempted. |
-| **Cognitive Architecture** | 🔴 Monolithic agent mixes reasoning and code typing in the same context window. | 🟢 **Strict Separation**: Master Architect (System 2) orchestrates Subagent Fleet (Coders). |
+| **Epistemic Grounding** | ?? Soft heuristic confidence scores; unverified assumptions treated as facts. | ?? **Strict Epistemic Ledger** (`[PROVEN]`, `[HYPOTHESIS]`, `[UNKNOWN]`) verified via live tools. |
+| **Verification Rigor** | ?? Probabilistic token generation and speculative self-evaluations. | ?? **Formal Binary Invariant Proofs** (Curry-Howard proofs, Kripke bisimulations, state bounds). |
+| **Execution Safety** | ?? Permissive; unverified code edits occur immediately in the workspace. | ?? **Mechanical Time-Lock**: Workspace code modifications are locked at the engine level. |
+| **Time-Budget Pacing** | ?? Erratic; models stop or argue against long-running tasks within minutes. | ?? **Immutable Authority Monotonic Timer**: Model remains in active cognitive refinement. |
+| **Cognitive Architecture**| ?? Monolithic agent interleaves high-level planning and syntax typing in one context. | ?? **Strict Role Separation**: Master Architect (System 2/3) conducts Subagent Fleet (Coders). |
 
-$$\boxed{\text{System 1 Proposal} \xrightarrow{\quad\text{Epistemic Grounding}\quad} \text{Invariant Proofs} \xrightarrow{\quad\text{Adversarial Red-Teaming}\quad} \text{Mechanical Unlock} \implies \text{evidence-backed execution}}$$
+$$\boxed{\text{System 1 Proposal} \xrightarrow{\quad\text{Epistemic Grounding}\quad} \text{Invariant Proofs} \xrightarrow{\quad\text{Adversarial Red-Teaming}\quad} \text{Mechanical Unlock} \implies \text{Evidence-Backed Execution}}$$
 
 ---
 
-## 🏛️ The 6 Core Pillars of Fable-Mode
+## ??? Core Architecture & Components
 
 ```mermaid
 flowchart TB
-    subgraph P1["🛡️ Pillar 1: Mechanical Time-Lock"]
+    subgraph Host["MCP Client Host (Claude Code / Codex / Antigravity)"]
         direction TB
-        L1["User Sets 45m Budget"] --> L2["Engine Locks Workspace Edits"]
-        L2 --> L3["Premature Unlock = Hard Rejection Error"]
+        HostReq["User Request + Time Budget (e.g. 45m)"]
     end
 
-    subgraph P2["🔄 Pillar 2: Rethink-Refine Loop"]
+    subgraph FableMCP["fable-engine MCP Server (Pure Python Stdlib)"]
         direction TB
-        R1["Initial 8-Pass Complete"] --> R2{"Time Left > 0?"}
-        R2 -- Yes --> R3["Mutate Archetypes & Stress-Test"]
-        R3 --> R4["log_refinement_cycle (MCP WAL)"]
-        R4 --> R2
+        SessionMgr["Session Manager & State Engine"]
+        WAL["Write-Ahead Log (WAL) Disk Store"]
+        TimeLock["Immutable Monotonic Authority Time-Lock"]
+        Gatekeeper["Admission Gatekeeper (Epistemic + Invariant Rules)"]
+        
+        SessionMgr <--> WAL
+        SessionMgr <--> TimeLock
+        TimeLock --> Gatekeeper
     end
 
-    subgraph P3["🎯 Pillar 3: Epistemic Grounding"]
+    subgraph Deliberation["Phase 1-3: System 2 / System 3 Cognitive Engine"]
         direction TB
-        E1["Live Tool Inspection"] --> E2["[PROVEN] Verified Facts"]
-        E1 --> E3["[HYPOTHESIS] Needs Test"]
-        E1 --> E4["[UNKNOWN] Parameter to Probe"]
+        Architect["Master Architect Conductor"]
+        Probes["Live System Probes: run_command (Diagnostics / Benchmarks)"]
+        Artifacts["Design Artifacts: /brain/ Blueprints & 10D Matrices"]
+        RefineLoop["Continuous Rethink-Refine Loop (log_refinement_cycle)"]
+        
+        Architect --> Probes
+        Architect --> Artifacts
+        Architect --> RefineLoop
     end
 
-    subgraph P4["🧠 Pillar 4: 8-Pass Recursive Chain"]
+    subgraph Execution["Phase 4-6: Subagent Implementation Fleet (Post-Unlock)"]
         direction TB
-        D1["Epistemic Calibration"] --> D2["Axioms & HW Topology"]
-        D2 --> D3["TRIZ Contradictions"] --> D4["Formal Invariant Proofs"]
+        FleetRouter["Subagent Dispatcher (type: self, type: research)"]
+        Coder1["Coder Subagent A: Core Engine Implementation"]
+        Coder2["Coder Subagent B: Unit & Concurrency Test Suites"]
+        Verifier["Quality Gatekeeper: Strict Lint + Metamorphic Checks"]
+        
+        FleetRouter --> Coder1
+        FleetRouter --> Coder2
+        Coder1 --> Verifier
+        Coder2 --> Verifier
     end
 
-    subgraph P5["⚡ Pillar 5: Deliberation Matrix"]
-        direction TB
-        M1["Terminal Probes: run_command 🟢"]
-        M2["Brain Artifacts: /brain/* 🟢"]
-        M3["Workspace Code Mod: write_to_file 🔴"]
-    end
-
-    subgraph P6["👥 Pillar 6: Fleet Separation"]
-        direction TB
-        S1["Main Agent: Master Architect (Deliberation Only)"]
-        S2["Subagents: Coder Fleet (Code & Tests Post-Lock)"]
-        S1 ==> S2
-    end
-
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    HostReq --> SessionMgr
+    SessionMgr --> Architect
+    Architect --> Gatekeeper
+    Gatekeeper -- "Monotonic Clock Passed + Proofs Valid" --> FleetRouter
 ```
 
----
+### 1. Zero-Dependency Stdio MCP Server (`fable-engine`)
+The core server (`fable_engine.server`) is built entirely upon Python's standard library with zero third-party runtime dependencies. It communicates over standard I/O streams using JSON-RPC 2.0, exposing the unified `fable_session` tool.
 
-### 🛡️ 1. Immutable Authority Time-Lock
+### 2. ACID-Compliant Session State & Write-Ahead Log (WAL)
+Every session transition, epistemic observation, invariant proof, and refinement record is appended to an on-disk Write-Ahead Log (WAL) with atomic rename operations (`os.replace`). Session files reside in platform-native user data directories:
+- **Windows**: `%LOCALAPPDATA%\FableMode\data\sessions\<session_name>.json`
+- **POSIX (macOS / Linux)**: `~/.local/share/fable-mode/data/sessions/<session_name>.json`
 
-When a user specifies a time budget (e.g. `30 mins`, `45 mins`, `4 hours`, `24 hours`), the `fable-engine` MCP server initializes an immutable authority deadline. Enforcement uses a monotonic clock while the process is alive:
+### 3. Immutable Authority Time-Lock Mechanics
+When an engineering time budget (e.g. `30 mins`, `45 mins`, `4 hours`) is established via `create_session`, the engine initializes an immutable monotonic deadline:
 
 $$t_{\text{deadline}} = t_{\text{start}} + T_{\text{budget}}$$
 
-- **Immutable Authority Budget**: The `create_session` budget is the outer execution authority. `set_timer` cannot shorten or extend it.
-- **Agent Pacing Sub-Timer**: The agent may set a shorter internal pacing timer (for example, 20 minutes inside an 80-minute session). Expiry of that sub-timer never unlocks execution.
-- **Mechanical Enforcement**: Code writing tools (`write_to_file`, `replace_file_content` in the project codebase) remain hard-locked until the authority deadline and cognitive gates pass.
-- **Hard Exception on Early Halting**: If the model attempts to call `unlock_execution` before $t_{\text{current}} \ge t_{\text{deadline}}$, the tool immediately fails with a `PermissionError`:
+- **Unbypassable Enforcement**: The authority deadline is fixed at creation. Agent pacing timers (`set_timer`) can subdivide internal tasks, but cannot shorten the authority deadline.
+- **Fail-Closed Execution Gate**: If an agent attempts to invoke `unlock_execution` before $t \ge t_{\text{deadline}}$, the tool immediately raises a `PermissionError` lockout rejection.
+- **Admission Criteria**: Unlocking requires reaching Phase $\ge 3$, possessing $\ge 2$ `[PROVEN]` epistemic items with empirical evidence, and registering $\ge 1$ formal invariant with proof.
 
-```json
-{
-  "status": "ERROR",
-  "error": "EXECUTION_LOCKOUT_ACTIVE",
-  "message": "🛑 HARD TIME-LOCK VIOLATION: Execution unlock rejected! The immutable 80.0m authority budget has not elapsed yet. An internal pacing timer cannot unlock execution. Continue the Rethink-Refine Cognitive Loop.",
-  "can_execute_code": false
-}
-```
-
-The legacy public string `USER_OVERRIDE_FORCE_UNLOCK` is no longer an override. Emergency unlocks require an out-of-band `FABLE_FORCE_UNLOCK_TOKEN` environment secret that is never supplied through the model-facing schema. This keeps a model from self-authorizing an early unlock.
+### 4. Strict Cognitive Role Separation
+- **Main Agent (Master Architect & Deliberation Conductor)**: Handles all heavy System 2 & System 3 reasoning, epistemic calibration, architectural blueprinting, TRIZ contradiction resolutions, invariant proofs, and post-implementation verification. **The Main Agent is structurally prohibited from writing or modifying codebase files directly.**
+- **Subagent Fleet (Coder & Implementer Fleet)**: 100% of codebase source modifications (`write_to_file`, `replace_file_content`), build script repairs, and test suites are executed **exclusively by subagents** (`type: self` or `type: research`) dispatched only after execution is formally unlocked.
 
 ---
 
-### 🔄 2. Continuous Rethink-Refine Cognitive Loop (`log_refinement_cycle`)
+## ?? Domain Cognitive Gears
 
-If the AI finishes its baseline deliberation passes before the timer expires, it is **strictly prohibited from idling or stopping**. It enters a relentless **Rethink-Refine Loop** across 6 specialized focus areas, recording each cycle to disk via `log_refinement_cycle`:
+Fable-Mode equips language models with specialized cognitive gears tailored to distinct engineering challenges:
 
-1. `archetype_mutation`: Mutate candidate architectures to search for non-obvious, Pareto-optimal paradigms.
-2. `falsification_probe`: Formulate adversarial counter-examples, split-brain scenarios, and Byzantine edge cases.
-3. `cache_line_alignment`: Inspect 64-byte L1 cache boundaries, padding, false sharing, and struct layout packing.
-4. `invariant_stress_test`: Stress-test thread interleavings, memory fences, and asynchronous cancellation tokens.
-5. `terminal_probe`: Execute live micro-benchmarks, disassembly inspection, and compiler diagnostics via `run_command`.
-6. `proof_tightening`: Tighten formal Acquire-Release memory ordering, inductive base cases, and termination proofs.
-
-```json
-{
-  "action": "log_refinement_cycle",
-  "session_name": "lmax_disruptor_v2",
-  "refinement_type": "archetype_mutation",
-  "focus_area": "Cache Line Contention & False Sharing",
-  "critique_or_bottleneck": "Adjacent sequence atomics fall onto the same 64-byte L1 cache line on Alder Lake P-cores, inducing 42ns cache invalidation stalls during burst multi-producer writes.",
-  "architectural_refinement": "Inserted 56-byte cache line padding (7 x uint64) surrounding the producer cursor and consumer sequences to guarantee dedicated L1 line isolation.",
-  "terminal_probe_results": "Micro-benchmark (scratch/test_padding.exe): 10M iterations reduced from 64.2ns to 8.4ns per write under 8 concurrent producer threads.",
-  "artifact_path": "C:/Users/hp1/.gemini/antigravity/brain/session_id/cache_layout.md"
-}
 ```
+                  ???????????????????????????????????????????????????????????
+                  ?                FABLE-MODE COGNITIVE GEARS               ?
+                  ???????????????????????????????????????????????????????????
+                                              ?
+         ?????????????????????????????????????????????????????????????????????????????
+         ?                   ?                                   ?                   ?
+??????????????????? ?????????????????????               ??????????????????? ?????????????????????
+?  Architecture & ? ?  System 3 Meta-   ?               ? Cinematic Design? ? Token Compression ?
+? Systems Engine  ? ?  Cognitive Engine ?               ?     Engine      ? ?    (FableCompress)?
+??????????????????? ?????????????????????               ??????????????????? ?????????????????????
+         ?                   ?                                   ?                   ?
+         ?? Invariant Proofs ?? Pearl Causal DAGs (do-calculus)  ?? 7-Layer Depth    ?? Content-Addressed
+         ?? Hardware Topology?? Kripke Model Checker (CTL*)      ?? 6 Haute Archetypes  Storage (CAS)
+         ?? Cache Line Align ?? Dialectical TRIZ Synthesis       ?? Golden Ratio Typo?? Grammar333
+         ?? 10D Trade-Offs   ?? Friston Active Inference         ?? Newtonian Motion ?? Windowed Slices
+                             ?? G?delian Proof Oracle            ?? Anti-Slop Protocol
+```
+
+### 1. Architecture & Systems Engineering
+- **Formal Invariant Verification**: Rigorous state-space bounds, lock-free progress guarantees, and acquire-release memory ordering specifications.
+- **Hardware Topology Profiling**: Cache line padding (64-byte L1 isolation), false-sharing elimination, and NUMA node locality modeling.
+- **10-Dimensional Vector Scoring**: Systematic evaluation across Latency ($L$), Throughput ($T$), Memory Footprint ($M$), Fault Tolerance ($F$), Concurrency Safety ($S$), Complexity ($C$), Observability ($O$), Determinism ($D$), Testability ($E$), and Modularity ($V$).
+
+### 2. System 3 Meta-Cognition (Frontier Reasoning)
+Located in `fable_v2/system3/`, this subsystem implements advanced epistemological and mathematical deliberation:
+
+- **Causal DAG Simulation (`causal.py`)**: Models system architectures as directed acyclic causal graphs using Judea Pearl's *do-calculus*. Performs counterfactual intervention analysis ($P(Y \mid \text{do}(X=x))$) to calculate systemic brittleness and identify single-point cascade failures.
+- **Kripke Modal Model Checking (`kripke.py`)**: Formally verifies safety and liveness properties using Kripke structures ($M = \langle S, R, V \rangle$) across branching state spaces. Evaluates temporal modal operators ($\Box \phi$, $\Diamond \phi$, $\bigcirc \phi$, $\phi \ \mathcal{U} \ \psi$).
+- **TRIZ Contradiction Matrix & Dialectical Synthesis (`dialectical.py`)**: Resolves engineering trade-offs (e.g. throughput vs lock contention, memory footprint vs speed) using the 40 classical TRIZ inventive principles rather than accepting weak compromises.
+- **Friston Active Inference (`free_energy.py`)**: Optimizes deliberation policies by minimizing expected variational free energy ($G(\pi)$), balancing epistemic information foraging (reducing model ambiguity) with pragmatic goal satisfaction.
+- **G?delian Proof Oracle (`oracle.py`)**: Employs the Curry-Howard correspondence to type-check lambda terms against constructive proposition types (e.g. conjunctions, disjunctions, implicational logic), providing formal proofs for recorded invariants.
+- **Hyperbolic Poincar? Embeddings (`hyperbolic.py`)**: Maps hierarchical codebase and dependency graphs into 2D Poincar? disk hyperbolic space, preserving tree topologies without distortion.
+- **Genetic Evolutionary Paradigm Search (`evolution.py`)**: Searches architectural design genomes across mutation and crossover operators, selecting Pareto-optimal candidates along the 10D trade-off frontier.
+
+### 3. Cinematic Design Engine
+Dedicated to frontier UI/UX and product design engineering:
+
+- **7-Layer Optical Depth Staging**:
+  - `L0: Atmospheric Canvas` (Background foundations, ambient environment)
+  - `L1: Dynamic Ambient Scrim` (Depth-enhancing radial gradients, noise overlays)
+  - `L2: Surface Container` (Bento grids, modular structural boundaries)
+  - `L3: Elevated Interaction` (Interactive controls, responsive hover states)
+  - `L4: Accent Emissive` (Brand focus accents, subtle lighting cues)
+  - `L5: Floating Overlay` (Context menus, modal dialogs, tooltips)
+  - `L6: Viewport Grain` (Subtle analog texture and optical polish)
+- **6 Haute Aesthetic Archetypes**:
+  - *Ethereal Editorial*: Minimalist luxury typography with expansive whitespace and subtle line borders.
+  - *Industrial Precision*: High-density data readouts, monospaced metrics, and muted technical grays.
+  - *Swiss Brutalist*: High-contrast typography, sharp grids, architectural discipline, and zero rounded fluff.
+  - *Cybernetic High-Tech*: Deep dark tones with calibrated luminescent accents and real-time telemetry panels.
+  - *Organic Warmth*: Earth-toned OKLCH palettes, natural textures, and rounded tactile geometry.
+  - *Velvet Luxury*: Deep midnight tones, gilded accents, serif headlines, and cinematic backdrop filters.
+- **Fluid Golden-Ratio Typography**: Modular scaling ($\phi = 1.618$) using CSS `clamp(min, preferred, max)` math, automatic optical sizing, and calibrated negative letter-spacing for large display headings.
+- **Newtonian Spring Motion Physics**: Realistic animation dynamics governed by second-order differential mechanics ($F = -kx - cv$) with critical damping ($\zeta \approx 1.0$), combined with strict `@media (prefers-reduced-motion: reduce)` accessibility compliance.
+- **Anti-Slop Elimination Protocol**: Explicit prohibition of generic AI design anti-patterns (uncalibrated purple gradients, non-functional floating cards, unstyled default states, and decorative placeholder clutter).
+
+### 4. Token Compression Subsystem (FableCompress)
+Implemented in `fable_compressor.py`:
+
+- **Content-Addressed Storage (CAS)**: SHA-256 deduplicated, cryptographically verified object storage with atomic disk writes. Reduces redundant context transmission across large tool outputs.
+- **Grammar333 High-Entropy Micro-Bytecode**: Compact structural serialization for tool actions, payloads, and JSON-RPC packets.
+- **Adaptive Chunk Accumulator**: Coalesces micro-payloads into composite frames, maintaining high throughput and minimizing token fragmentation.
+- **Zero-Copy Windowed Line Slice Viewing**: Efficient line-indexed range extraction for examining large files and session transcripts.
 
 ---
 
-### 🎯 3. Anti-Hallucination Epistemic Grounding
-
-Every piece of information entering the AI's cognitive workspace is assigned a strict epistemic status:
-
-| Epistemic Tag | Definition | Verification Requirement |
-| :---: | :--- | :--- |
-| **`[PROVEN]`** | Fact verified through live environment tools (`view_file`, `grep_search`, `run_command`). | Must cite exact file path, line number, or command output stdout. |
-| **`[HYPOTHESIS]`** | Plausible assumption or design hypothesis that has not been empirically verified. | **Forbidden from codebase commits** until transformed to `[PROVEN]`. |
-| **`[UNKNOWN]`** | Parameter, missing constraint, or hardware latency that must be probed. | Must formulate a concrete terminal probe script or inspection query. |
-
-> [!CAUTION]
-> **Cognitive Lockout Gate**: The `fable-engine` server refuses to unlock execution unless the session contains **at least 2 `[PROVEN]` facts with evidence**, **at least 1 formal invariant with a proof or rationale**, and has reached the adversarial phase. Gate state is exposed in telemetry.
-
----
-
-### 🧠 4. 8-Pass Maximum-Depth Recursive `<thinking>` Chain
-
-Inside the model's internal deliberation window, `fable-mode` structures cognition into 8 exhaustive passes:
-
-```
-Pass 1: Epistemic Calibration ───────> Dissect user prompt, ground facts, extract [PROVEN]/[UNKNOWN]
-Pass 2: Axiomatic Lower Bounds ──────> Calculate Shannon entropy, memory bandwidth & O(N) lower bounds
-Pass 3: Multi-Archetype Exploration ─> Zero-Rush Rule: Design 3-5 distinct architectural paradigms
-Pass 4: Dialectical TRIZ Innovation ──> Resolve engineering trade-offs without weak compromises
-Pass 5: Adversarial Red-Teaming ─────> Inject race conditions, memory leaks, split-brain partitions
-Pass 6: Formal Invariant Proofs ─────> State machine bounds, lock-freedom, linearizability proofs
-Pass 7: 10D Vector Evaluation ───────> Score archetypes on Latency, Throughput, Safety, Complexity
-Pass 8: Blueprint & Subagent Contract> Finalize API specs, test suites, and subagent delegation manifests
-```
-
----
-
-### ⚡ 5. MCP Host Deliberation Permission Matrix
-
-During the time-lock window (Phases 1, 2, and 3), the agent has full access to inspect and verify the system, while the repository source code remains protected:
-
-| Tool / Target | Lockout Status | Permitted Operational Guidance |
-| :--- | :---: | :--- |
-| **Terminal Commands (`run_command`)** | 🟢 **AUTHORIZED** | Run compiler checks, micro-benchmarks, AST parsers, and scratch probe harnesses. |
-| **Brain Artifacts (`brain/<id>/*`)** | 🟢 **AUTHORIZED** | Author architecture blueprints, 10D trade-off matrices, and TLA+ specs. |
-| **Scratch Files (`scratch/*`)** | 🟢 **AUTHORIZED** | Write standalone benchmark scripts and isolated unit tests. |
-| **Read Tools (`view_file`, `grep`)** | 🟢 **AUTHORIZED** | Deeply inspect repository files, configs, and dependency trees. |
-| **`fable_session` MCP Actions** | 🟢 **MANDATORY** | Record epistemic items, invariants, refinement cycles, and WAL checkpoints. |
-| **Workspace Source Modifications** | 🔴 **LOCKED** | Blocked until time elapses, DoD is met, and `unlock_execution` succeeds. |
-
----
-
-### 👥 6. Strict Cognitive Separation
-
-`fable-mode` enforces absolute role purity to maximize compute efficiency and prevent context pollution:
-
-```
-+-------------------------------------------------------------------------------+
-|                    MAIN AGENT: THE ARCHITECT & CONDUCTOR                      |
-|  - Handles ALL heavy cognitive lifting: DeepThink & System 2 Deliberation     |
-|  - Manages Session State via fable_session MCP (Phase, Invariants, Epistemic) |
-|  - Continuous Rethink-Refine Loop (log_refinement_cycle) during Time-Lock     |
-|  - Executes Terminal Probes (run_command) & Creates Rich Brain Artifacts      |
-|  - Architectural Blueprinting, 10D Trade-off Matrices & TRIZ Innovations      |
-|  - Defines Invariants, Data Models, API Contracts, and Definition of Done     |
-|  - Multi-Tier Quality Gatekeeper & Verifier (Audits Subagent Output)         |
-|                                                                               |
-|  ⛔ STRICT CONSTRAINT: Main Agent CANNOT write or edit project code files.   |
-+-------------------------------------------------------------------------------+
-                                       │
-                                       │ Delegated Implementation Tasks
-                                       ▼
-+-------------------------------------------------------------------------------+
-|                       SUBAGENT FLEET: THE CODER WORKERS                       |
-|  - Type: 'self' (Coder / Implementer / Red-Team Workers)                      |
-|  - Type: 'research' (Documentation & Ecosystem Scouts)                        |
-|                                                                               |
-|  ✅ MANDATE: ALL project code writing (write_to_file), edits                  |
-|     (replace_file_content), unit tests, and refactoring are performed         |
-|     EXCLUSIVELY by subagents after the time-lock execution gate unlocks.     |
-+-------------------------------------------------------------------------------+
-```
-
----
-
-## 📊 Visual Architecture Diagrams
-
-### 1. The 6-Phase Engineering Lifecycle State Machine
+## ?? How It Works in Practice: The 6-Phase Lifecycle
 
 ```mermaid
 stateDiagram-v2
     [*] --> Phase1: create_session & set_timer
     
     state "Phase 1: Reconnaissance & Epistemic Grounding" as Phase1 {
-        [*] --> EpistemicInspection
-        EpistemicInspection --> LogProven: log_epistemic_item [PROVEN]
-        EpistemicInspection --> LogUnknown: log_epistemic_item [UNKNOWN]
+        [*] --> EpistemicDiscovery
+        EpistemicDiscovery --> LogProven: log_epistemic_item [PROVEN]
+        EpistemicDiscovery --> LogUnknown: log_epistemic_item [UNKNOWN]
     }
     
     Phase1 --> Phase2: advance_phase
     
-    state "Phase 2: Axiomatic Bounds & Archetype Synthesis" as Phase2 {
-        [*] --> HardwareProfiling: run_command (Probe L1/L2/CPU)
+    state "Phase 2: Axiomatic Bounds & Multi-Archetype Synthesis" as Phase2 {
+        [*] --> HardwareProfiling: run_command (Probe Hardware & Dependencies)
         HardwareProfiling --> MultiArchetype: 10D Trade-off Matrix
-        MultiArchetype --> TRIZResolution: TRIZ Innovation Matrix
+        MultiArchetype --> TRIZSynthesis: System 3 Dialectical Resolution
     }
     
     Phase2 --> Phase3: advance_phase
     
     state "Phase 3: System 2 Deliberation & Invariant Proofs" as Phase3 {
-        [*] --> FormalProof: record_invariant
-        FormalProof --> RedTeaming: Project Glasswing Fuzzing
-        RedTeaming --> RefineLoop: Continuous Rethink-Refine
+        [*] --> FormalProof: record_invariant & system3_proof_oracle
+        FormalProof --> ModalChecking: system3_kripke_verify
+        ModalChecking --> RefineLoop: Continuous Rethink-Refine
         
         state "Continuous Rethink-Refine (log_refinement_cycle)" as RefineLoop {
             [*] --> MutateArchetype
-            MutateArchetype --> TerminalBenchmark: run_command
+            MutateArchetype --> TerminalBenchmark: run_command (Scratch Probes)
             TerminalBenchmark --> TightenProof
-            TightenProof --> MutateArchetype: Timer Running
+            TightenProof --> MutateArchetype: Authority Clock Running
         }
     }
     
-    Phase3 --> LockoutCheck: unlock_execution
+    Phase3 --> LockoutGate: unlock_execution
     
-    state LockoutCheck <<choice>>
-    LockoutCheck --> Phase3: [now < deadline] 🛑 Hard Exception
-    LockoutCheck --> Phase4: [now >= deadline & DoD Valid] 🔓 Unlocked
+    state LockoutGate <<choice>>
+    LockoutGate --> Phase3: [now < deadline] ?? Hard Rejection Exception
+    LockoutGate --> Phase4: [now >= deadline & DoD Valid] ?? Execution Unlocked
     
-    state "Phase 4: Orchestrated Subagent Implementation" as Phase4 {
+    state "Phase 4: Subagent Fleet Delegation & Implementation" as Phase4 {
         [*] --> DispatchSubagents: invoke_subagent (type: self)
         DispatchSubagents --> CoderExecution: write_to_file & replace_file_content
         CoderExecution --> LocalUnitTests: Subagents run tests
-        LocalUnitTests --> SubagentReport: send_message (Diffs & Logs)
+        LocalUnitTests --> SubagentReport: send_message (Diffs & Test Logs)
     }
     
-    Phase4 --> Phase5: Subagents Finish
+    Phase4 --> Phase5: Subagents Complete Work
     
-    state "Phase 5: Multi-Tier Verification & Quality Gates" as Phase5 {
-        [*] --> Tier1_Lint: Strict Linters (-D warnings)
+    state "Phase 5: Multi-Tier Quality Gatekeeping" as Phase5 {
+        [*] --> Tier1_Lint: Strict Linters & Diagnostics
         Tier1_Lint --> Tier2_Unit: 100% Green Unit Tests
-        Tier2_Unit --> Tier3_Concurrency: ThreadSanitizer & Race Fuzzing
-        Tier3_Concurrency --> Tier4_Property: Metamorphic Invariant Checks
+        Tier2_Unit --> Tier3_Concurrency: Race & Sanitizer Verification
+        Tier3_Concurrency --> Tier4_Metamorphic: Metamorphic Invariant Checks
     }
     
-    Phase5 --> Phase6: Quality Gate Passed
+    Phase5 --> Phase6: Quality Gates Passed
     
-    state "Phase 6: Checkpoint Finalization & Walkthrough" as Phase6 {
-        [*] --> WALCheckpoint: checkpoint_session
-        WALCheckpoint --> DeliverWalkthrough: walkthrough.md Artifact
+    state "Phase 6: Session Checkpoint & Final Walkthrough" as Phase6 {
+        [*] --> CheckpointWAL: checkpoint_session
+        CheckpointWAL --> WriteWalkthrough: walkthrough.md Artifact
     }
     
-    Phase6 --> [*]: Mission Completed
+    Phase6 --> [*]: Task Complete
 ```
 
 ---
 
-## 📦 Installation & downloads
+## ??? MCP Tool Reference & API
+
+The `fable-engine` exposes the unified `fable_session` tool supporting the following actions:
+
+| Action | Purpose | Key Parameters |
+| :--- | :--- | :--- |
+| `create_session` | Initializes a new Fable session, arms the monotonic time-lock, and writes the initial WAL state. | `session_name` (str), `objective` (str), `time_budget_minutes` (float) |
+| `set_timer` | Sets an internal agent pacing sub-timer (cannot modify the immutable authority deadline). | `session_name` (str), `time_budget_minutes` (float) |
+| `get_status` | Returns session state, elapsed time, pacing ratio, active phase, and gate readiness. | `session_name` (str) |
+| `advance_phase` | Transitions the session state machine to a subsequent phase (Phase 1 through Phase 6). | `session_name` (str), `target_phase` (str), `rationale` (str) |
+| `log_epistemic_item` | Records an epistemic fact (`[PROVEN]` requires evidence), hypothesis (`[HYPOTHESIS]`), or ambiguity (`[UNKNOWN]`). | `session_name` (str), `tag` (str), `claim` (str), `evidence` (required for PROVEN) |
+| `record_invariant` | Registers a formal invariant specification and proof (architecture, logic, or design). | `session_name` (str), `invariant_name` (str), `formal_statement` (str), `proof_or_rationale` (str), `domain` (opt) |
+| `log_refinement_cycle` | Logs a rethink-refine cycle (archetype mutation, benchmark result, invariant stress test). | `session_name` (str), `refinement_type` (str), `focus_area` (str), `critique_or_bottleneck` (str), `architectural_refinement` (str) |
+| `unlock_execution` | Anti-rush gatekeeper: verifies the monotonic authority deadline, epistemic evidence, and formal invariants. | `session_name` (str), `rationale` (str) |
+| `checkpoint_session` | Performs an atomic Write-Ahead Log (WAL) snapshot and persists session state to disk. | `session_name` (str) |
+| `system3_causal_simulate` | Runs Pearl causal DAG simulation and counterfactual intervention analysis. | `session_name` (str), `nodes` (list), `edges` (list), `interventions` (dict) |
+| `system3_kripke_verify` | Performs formal temporal logic model checking across Kripke branching worlds. | `session_name` (str), `states` (list), `transitions` (list), `formulas` (list) |
+| `system3_dialectical_synthesis` | Applies TRIZ contradiction resolution matrix to opposing engineering parameters. | `session_name` (str), `improving_param` (str), `worsening_param` (str) |
+| `system3_proof_oracle` | Verifies constructive type-theoretic proofs using the Curry-Howard isomorphism. | `session_name` (str), `term` (dict), `expected_type` (dict) |
+
+### JSON Request Examples
+
+#### Creating a Session
+```json
+{
+  "action": "create_session",
+  "session_name": "distributed_raft_v2",
+  "objective": "Design and verify high-throughput Raft consensus with batch pipelining",
+  "time_budget_minutes": 45.0
+}
+```
+
+#### Logging an Epistemic Item
+```json
+{
+  "action": "log_epistemic_item",
+  "session_name": "distributed_raft_v2",
+  "tag": "PROVEN",
+  "claim": "Target architecture is x86_64 with 64-byte L1 cache line boundaries.",
+  "evidence": "Observed via run_command: lscpu | grep 'L1d cache' returning 32K on 64-byte lines."
+}
+```
+
+#### Logging a Continuous Refinement Cycle
+```json
+{
+  "action": "log_refinement_cycle",
+  "session_name": "distributed_raft_v2",
+  "refinement_type": "cache_line_alignment",
+  "focus_area": "Atomic Log Tail Contention",
+  "critique_or_bottleneck": "High false-sharing invalidations on shared tail cursor during multi-threaded append bursts.",
+  "architectural_refinement": "Injected 56-byte alignas(64) padding around append cursor to isolate L1 cache lines.",
+  "terminal_probe_results": "Micro-benchmark (scratch/test_ring.exe): 10M iterations latency dropped from 62.4ns to 7.8ns."
+}
+```
+
+---
+
+## ?? Installation & downloads
 
 Fable-Mode is distributed as a self-contained console runtime. It installs Fable first, then can register the installed executable with detected host CLIs. The runtime needs no Python, Git, pip, Node, network service, or GUI.
 
 ### Quick downloads
 
-The downloader scripts are available from the `main` branch now. The release
-links become available only after a tagged release has completed successfully;
-until then, GitHub will return no release asset for those URLs. All links below
-are explicit GitHub-hosted download URLs and download files only.
+The downloader scripts are available from the `main` branch now. The release links become available only after a tagged release has completed successfully; until then, GitHub will return no release asset for those URLs. All links below are explicit GitHub-hosted download URLs and download files only.
 
-**Downloaders (available now):**
+**Downloaders (available from the `main` branch now):**
 
 - [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
 - [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
 
-**Latest release artifacts (after a successful tagged release):**
+**Latest release artifacts (only after a tagged release has completed successfully):**
 
 - [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
 - [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
@@ -339,16 +348,7 @@ are explicit GitHub-hosted download URLs and download files only.
 
 ### Release artifacts and trust status
 
-**Corrective release 1.2.3:** This patch release carries the Windows frozen
-uninstall fix and aligned package and server version metadata from `main`,
-together with the corrected downloader/stable-alias and macOS runner workflow
-logic. The immutable `v1.2.2` tag and its passed build artifacts remain
-unchanged; do not use or retag that tag. The `v1.2.3` artifacts become trusted
-only after its tagged workflow completes successfully.
-
-Artifacts are **not available until a version tag build succeeds**. When a tagged
-workflow completes successfully, it publishes these architecture-specific names
-(the exact version is inserted in the GitHub Release):
+Artifacts are **not available until a version tag build succeeds**. When a tagged workflow completes successfully, it publishes these architecture-specific names (the exact version is inserted in the GitHub Release):
 
 - `fable-mode-vX.Y.Z-windows-x86_64.zip` (contains `fable-mode.exe`)
 - `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`)
@@ -356,213 +356,69 @@ workflow completes successfully, it publishes these architecture-specific names
 - `fable-mode-vX.Y.Z-linux-x86_64.tar.gz` (contains `fable-mode`)
 - `SHA256SUMS` (one SHA-256 line for each archive)
 
-The macOS x86_64 job uses `macos-13` and the macOS arm64 job uses the
-repository workflow's `macos-14` runner. These are separate archives, not a
-universal2 binary. The Windows and macOS downloaders below select only the
-matching architecture and exact expected asset name.
+Supported release targets:
+- `windows-x86_64`
+- `macos-x86_64`
+- `macos-arm64`
+- `linux-x86_64`
 
-The release workflow is the source of truth: this README does not promise that
-an artifact or Release exists before a tagged build has completed successfully.
-Both downloaders query the latest GitHub Release. A repository with no Release
-(or a Release missing the matching archive or `SHA256SUMS`) fails clearly rather
-than falling back to a source checkout.
+These downloaders fetch **unsigned binaries**. The workflow publishes SHA-256 checksums for transport and integrity verification, but cryptographic publisher signing, certificate validation, and macOS notarization are not included. Review the release and its checksums before use.
 
-#### Windows x86_64 downloader
+### Option A: Pre-Built Binary Installation
 
-From a checkout of this repository, run PowerShell on a 64-bit Windows machine:
-
+#### Windows (PowerShell)
 ```powershell
 .\download-windows.ps1
-# Or choose an install directory explicitly:
-.\download-windows.ps1 -InstallDir "$HOME\.local\fable-mode"
+# Install and verify:
+& "$HOMEable-modeable-mode.exe" install --yes
+& "$HOMEable-modeable-mode.exe" verify
 ```
 
-The default destination is `$HOME\fable-mode`; the script prints the full path
-to `fable-mode.exe` and a suggested next command. It downloads the exact
-`fable-mode-vX.Y.Z-windows-x86_64.zip` and `SHA256SUMS` assets, checks the
-archive's SHA-256 before extraction, and does not execute the downloaded file.
-It fails on unsupported Windows architectures, missing assets, no Release, an
-invalid checksum, or an invalid archive layout. Install and verify the runtime
-with the printed path, for example:
-
-```powershell
-& "$HOME\fable-mode\fable-mode.exe" install --yes
-& "$HOME\fable-mode\fable-mode.exe" verify
-```
-
-#### macOS downloader
-
-From a checkout of this repository, run the script in a macOS Terminal:
-
+#### macOS / Linux
 ```sh
 chmod +x ./download-macos.sh
 ./download-macos.sh
-# Or choose an install directory explicitly:
-./download-macos.sh "$HOME/.local/bin/fable-mode-release"
-```
-
-The default destination is `$HOME/.local/bin`. The script detects `x86_64` or
-`arm64`, selects `fable-mode-vX.Y.Z-macos-x86_64.zip` or
-`fable-mode-vX.Y.Z-macos-arm64.zip`, and requires the standard macOS
-`curl`, `unzip`, `shasum`, `plutil`, and related built-ins. It verifies the
-archive against `SHA256SUMS` with `shasum` **before** extraction, sets the
-installed file executable, and prints the installed path plus the next command.
-It does not require Python and never evaluates GitHub response data as shell
-code. Unsupported architectures, missing commands/assets, no Release, bad
-checksums, and unexpected ZIP layouts fail without installing a partial file.
-
-Install and verify with the path printed by the script (the default path is
-shown here):
-
-```sh
+# Install and verify:
 "$HOME/.local/bin/fable-mode" install --yes
 "$HOME/.local/bin/fable-mode" verify
 ```
 
-These downloaders fetch **unsigned binaries**. The workflow publishes
-SHA-256 checksums for transport/integrity verification, but signing,
-certificate validation, and macOS notarization are not included. Review the
-release and its checksums before use; checksum verification is not a
-cryptographic publisher signature.
+### Option B: Source Installation (Python 3.10+)
 
-### Source-mode prerequisites and support boundary
-
-Source mode requires **Python 3.10 or newer** and has no runtime dependencies. Git is optional; a downloaded source archive works too. Windows, macOS, Linux, and WSL are supported when the host can launch a local stdio MCP process. Mobile platforms are not supported.
-
-### Download the repository once (source mode)
-
-With Git:
+From a local checkout of the repository:
 
 ```sh
-git clone https://github.com/REX-codebase/fable-mode.git
-cd fable-mode
+# Install in editable mode
+python -m pip install -e .
+
+# Run server verification test suite
+python fable_engine/test_server.py
 ```
 
-Without Git, download the repository source archive from its hosting page, extract it, and open a terminal in the extracted `fable-mode` directory. Keep this checkout in a stable location; every host can reuse it.
+### Host MCP Integration Guides
 
-### Verify and install
+Configure your MCP host using the standard local stdio configuration:
 
-Run the commands for the environment where the MCP host will launch Fable-Mode. Check that the version printed is 3.10 or newer.
-
-**Windows PowerShell**
-
-```powershell
-py -3 --version
-py -3 -m pip install -e .
-py -3 fable_engine/test_server.py
-```
-
-**macOS, Linux, or WSL**
-
-```sh
-python3 --version
-python3 -m pip install -e .
-python3 fable_engine/test_server.py
-```
-
-The editable install registers the local package and its entry points; it does not add runtime dependencies. The test command verifies the legacy V1 MCP server before you connect a host. Host registration always uses the canonical MCP name `fable-engine`; an older `fable-mode` registration is migrated without touching unrelated servers. To use the same package-aware installer in source mode:
-
-**Windows PowerShell**
-
-```powershell
-py -3 fable_mode_entry.py install --yes
-# optionally register only canonical host commands found on PATH:
-py -3 fable_mode_entry.py install --yes --register-hosts
-```
-
-**macOS, Linux, or WSL**
-
-```sh
-python3 fable_mode_entry.py install --yes
-# optionally register only canonical host commands found on PATH:
-python3 fable_mode_entry.py install --yes --register-hosts
-```
-
-The installer probes only `claude`, `agy`, and `codex` by default; `cc` and `antigravity` require the explicit `--aliases` flag. Existing config keys are preserved. Registration requires a machine-readable `mcp list` response from CLI hosts so prior canonical and legacy entries can be restored safely; human-readable-only hosts are skipped before any host is changed. Use `--dry-run` to preview without probing or changing hosts.
-
-Registration is transactional and ownership-aware.  Automatic host CLI
-probes and mutations run with a least-privilege environment (the selected
-profile paths, trusted system PATH, locale, and temporary/configuration
-locations); arbitrary inherited environment variables and credentials are not
-forwarded.  A pre-existing
-`fable-engine` or legacy `fable-mode` entry is recorded as user state on the
-first install.  On reinstall, an entry that exactly matches the immediately
-prior Fable registration is treated as Fable-owned rather than as new user
-state; the first install's complete baseline is carried forward.  Thus
-reinstalling with or without `--register-hosts`, then uninstalling, does not
-leave a dead Fable entry and restores the original user entries.  Antigravity's
-file-backed configs are written owner-only (`0600`) while touched; the prior
-mode is restored on uninstall.  Global config is
-`~/.gemini/config/mcp_config.json`; an explicitly supplied workspace config is
-`<workspace>/.agents/mcp_config.json`.
-
-### Choose the Fable entry point
-
-The commands below register **legacy V1**, which is the compatibility path:
-
-- `fable-engine` (or its explicit alias `fable-v1`) launches `fable_engine.server` and the legacy `fable_session` MCP server.
-- Experimental **V2** is separate: `fable-v2-broker --workspace <absolute-path>` launches the execution boundary for the portable runtime in `fable_v2/`. It is not a drop-in alias for the V1 `fable_session` server; hosts must route V2 execution through the broker. See the existing [V1/V2 migration guide](docs/fable-v1-v2-migration.md) and [V2 architecture](docs/fable-v2-architecture.md) before selecting it.
-
-### Connect a host over local stdio MCP
-
-Use an **absolute path** to the checkout in host configuration. The examples invoke `fable_engine/server.py` directly so the host uses the Python environment you verified above. Substitute your real checkout path; keep the host and Python installation in the same environment.
-
-#### Claude Code
-
-Claude Code's official local-stdio form puts the server command after `--`:
-
+#### 1. Claude Code
 ```powershell
 # Windows PowerShell
-claude mcp add --transport stdio fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+claude mcp add --transport stdio fable-engine -- py -3 "C:\path	oable-modeable_engine\server.py"
+
+# macOS / Linux
+claude mcp add --transport stdio fable-engine -- python3 "/path/to/fable-mode/fable_engine/server.py"
 ```
 
-```sh
-# macOS, Linux, or WSL
-claude mcp add --transport stdio fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
-```
-
-Verify with:
-
-```sh
-claude mcp list
-```
-
-See the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp).
-
-#### Codex CLI
-
-Use Codex's official stdio form, with the server command after `--`:
-
+#### 2. OpenAI Codex CLI
 ```powershell
 # Windows PowerShell
-codex mcp add fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+codex mcp add fable-engine -- py -3 "C:\path	oable-modeable_engine\server.py"
+
+# macOS / Linux
+codex mcp add fable-engine -- python3 "/path/to/fable-mode/fable_engine/server.py"
 ```
 
-```sh
-# macOS, Linux, or WSL
-codex mcp add fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
-```
-
-For file-based configuration, add the server to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.fable-engine]
-command = "python3"
-args = ["/absolute/path/to/fable-mode/fable_engine/server.py"]
-cwd = "/absolute/path/to/fable-mode"
-```
-
-On Windows, use `command = "py"` with `args = ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]` and set `cwd` to the checkout path. Verify with:
-
-```sh
-codex mcp list
-```
-
-See the [Codex MCP documentation](https://developers.openai.com/codex/mcp).
-
-#### Antigravity
-
-Antigravity accepts local stdio servers in either its global `~/.gemini/config/mcp_config.json` or the active workspace's `.agents/mcp_config.json`. Add this entry to the file you choose:
+#### 3. Antigravity
+Add the server entry to your global configuration (`~/.gemini/config/mcp_config.json`) or workspace configuration (`.agents/mcp_config.json`):
 
 ```json
 {
@@ -577,239 +433,78 @@ Antigravity accepts local stdio servers in either its global `~/.gemini/config/m
   }
 }
 ```
-
-For a Windows entry, use `"command": "py"`, `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`, and a Windows checkout path for `cwd`. Open `/mcp` in Antigravity to inspect the connection and use its reload control after editing configuration, as supported by your Antigravity client.
-
-See the [Antigravity MCP documentation](https://antigravity.google/docs/mcp/).
-
-#### Other MCP-compatible hosts (generic JSON)
-
-For a host that accepts the conventional `mcpServers` JSON shape, adapt this local-stdio entry to that host's documented configuration file:
-
-```json
-{
-  "mcpServers": {
-    "fable-engine": {
-      "command": "python3",
-      "args": [
-        "/absolute/path/to/fable-mode/fable_engine/server.py"
-      ]
-    }
-  }
-}
-```
-
-On Windows, replace the command and arguments with `"command": "py"` and `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`. Configuration file names and reload steps are host-specific; do not assume this JSON belongs at a particular path.
-
-### Optional instructions and rules
-
-Instruction files, skills, and rules are **optional and host-specific**. If your host documents a project- or user-level instruction/rules location, add the guidance you want there manually and follow that host's naming and scope rules. MCP registration does not automatically install a skill or rules; omit this step when the host has no documented mechanism.
-
-### OS and host matrix
-
-| Environment | Python command | Example stdio hosts | Notes |
-| :--- | :--- | :--- | :--- |
-| Windows | `py -3` | Claude Code, Codex CLI, Antigravity | Use PowerShell paths and `py -3`. |
-| macOS | `python3` | Claude Code, Codex CLI, Antigravity | Use an absolute checkout path. |
-| Linux | `python3` | Claude Code, Codex CLI, Antigravity | Native stdio process launch required. |
-| WSL | `python3` | A host that can launch WSL processes | Keep the host, Python, and checkout in the same environment when possible. |
-| Mobile | — | — | Not supported. |
-
-## 🛠️ MCP Tool Reference & API
-
-The `fable-engine` exposes a single, high-performance JSON-RPC 2.0 tool: `fable_session`.
-
-### Supported Actions Table
-
-| Action | Description | Key Parameters |
-| :--- | :--- | :--- |
-| `create_session` | Initializes a new Fable System 2 session, arms the time-lock, and writes the initial WAL state. | `session_name` (str), `objective` (str), `time_budget_minutes` (float) |
-| `set_timer` | Sets an internal agent pacing timer; never changes the immutable authority deadline. | `session_name` (str), `time_budget_minutes` (float) |
-| `get_status` | Returns real-time session telemetry, pacing ratio, remaining time, active phase, and gate status. | `session_name` (str) |
-| `advance_phase` | Transitions the session to a subsequent engineering phase (Phases 1 through 6). | `session_name` (str), `target_phase` (str), `rationale` (str) |
-| `log_epistemic_item` | Records an epistemic fact (`[PROVEN]` requires evidence), hypothesis (`[HYPOTHESIS]`), or ambiguity (`[UNKNOWN]`). | `session_name` (str), `tag` (str), `claim` (str), `evidence` (required for PROVEN) |
-| `record_invariant` | Registers a formal mathematical invariant proof across architecture, design, or coding domains. | `session_name` (str), `invariant_name` (str), `formal_statement` (str), `proof_or_rationale` (str), `domain` (opt) |
-| `log_refinement_cycle` | Logs a continuous rethink-refine cycle (archetype mutation, benchmark, invariant stress test). | `session_name` (str), `refinement_type` (str), `focus_area` (str), `critique_or_bottleneck` (str), `architectural_refinement` (str), `terminal_probe_results` (opt), `artifact_path` (opt) |
-| `unlock_execution` | Anti-rush gatekeeper: validates the immutable authority deadline, evidence-backed facts, a proved invariant, and Phase $\ge 3$. | `session_name` (str), `rationale` (str) |
-| `checkpoint_session` | Performs an atomic Write-Ahead Log (WAL) snapshot and persists session state to disk. | `session_name` (str) |
+*(On Windows, use `"command": "py"`, `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`, and Windows-style paths for `cwd`.)*
 
 ---
 
-## 📋 Reusable System 2 Deliberation Scaffolds
+## ?? Benchmarks & Test Verification
 
-Deploy these battle-tested cognitive scaffolds to prime your agent for maximum depth:
+The repository maintains an automated regression and verification suite covering the core MCP server, session lifecycle, token compression, and System 3 meta-cognitive engines.
 
-### 1. Epistemic Ledger Ledger Scaffold
-
-```markdown
-## 🧠 System 2 Epistemic Ledger & Invariant Extraction
-
-### 1. Epistemic Calibration
-- [PROVEN] (epi_001): Target CPU is x86-64 with AVX-512 support (`run_command: lscpu | grep avx512`).
-- [PROVEN] (epi_002): Ring buffer power-of-two capacity (65,536) allows bitwise wrapping `(idx & (CAP - 1))`.
-- [HYPOTHESIS] (epi_003): Single-CAS head progression eliminates consumer lock contention under 16 threads.
-- [UNKNOWN] (epi_004): Measured L3 cache miss penalty under NUMA node cross-socket memory traffic.
-
-### 2. Formal Invariants
-- **INV-01 (Boundedness)**: $\forall t \ge 0, \quad 0 \le (\text{head}(t) - \text{tail}(t)) \le \text{CAPACITY}$
-  - *Proof*: Atomically validated via SeqLock compare-and-swap with acquire-release barriers.
-- **INV-02 (Memory Model)**: $\text{Read}(\text{Slot}_i) \prec \text{Commit}(\text{Tail})$
-  - *Proof*: Enforced by `std::atomic_thread_fence(std::memory_order_release)` prior to tail update.
-```
-
-### 2. Continuous Refinement Cycle Trace Scaffold
-
-```markdown
-## 🔄 Refinement Cycle #03: Cache Line Contention & Topology
-- **Refinement Type**: `cache_line_alignment`
-- **Focus Area**: Multi-Producer Contention on Sequence Tail
-- **Critique / Bottleneck**: High false-sharing invalidations on shared `tail_sequence` cache line.
-- **Architectural Refinement**: Injected `alignas(64)` padding and partitioned tail sequences per producer thread.
-- **Terminal Probe (run_command)**: `cargo bench --bench throughput` showed latency drop: 84.1ns -> 11.2ns.
-- **Artifact Written**: `C:/Users/hp1/.gemini/antigravity/brain/session_id/numa_benchmarks.md`
-```
-
----
-
-## 🏆 Benchmarks & Test Verification
-
-`fable-mode` uses the Python standard library at runtime and has no declared runtime dependencies. The test suite provides regression coverage; performance and crash-recovery properties still require validation on each target platform.
-
-### Automated Test Suite
-
-Run the canonical V1 suite and the V2/packaging/security suite with:
+### Running the Test Suites
 
 ```sh
+# 1. Run canonical V1 MCP server tests
 python fable_engine/test_server.py
-python -m unittest discover -s tests -p 'test_*.py' -v
+
+# 2. Run full regression and System 3 verification suite
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
-
-The test counts are intentionally not duplicated here because regression tests
-are added between releases.  The commands above are the authoritative way to
-obtain the current V1 and V2/packaging/security counts.  The release workflow
-also performs isolated artifact smoke checks. These tests do not constitute a
-universal guarantee of security, crash recovery, or host behavior on every
-operating system.
-
-### Performance and recovery notes
-
-Runtime dependencies are limited to the Python standard library. No fixed latency,
-crash-recovery, or supply-chain-risk guarantee is claimed; measure those properties
-in the deployment environment and review the host's process-management behavior.
 
 ---
 
-## 📂 Repository Directory Layout
+## ?? Repository Directory Layout
 
 ```
 fable-mode/
-├── build_scripts/
-│   └── build_release.py                    # Version-checked PyInstaller release build
-├── fable_mode/
-│   ├── launcher.py                          # Package-aware CLI, verify, and smoke checks
-│   ├── installer.py                         # Allowlisted transactional installer
-│   ├── adapters.py                          # Safe probes and transactional host registration
-│   └── resources.json                       # Canonical packaged runtime manifest
-├── fable_engine/
-│   ├── fable_session.json                   # MCP JSON-RPC 2.0 tool declaration schema
-│   ├── server.py                            # Pure-stdlib V1 MCP server implementation
-│   └── test_server.py                       # Canonical V1 unit/integration suite
-├── fable_v2/                                # V2 runtime and execution broker
-├── tests/                                   # Runtime, packaging, and security regressions
-├── rules/                                   # Runtime instruction resources
-├── docs/                                    # Architecture and migration documentation
-├── packaging/fable_mode.spec                # Reviewed PyInstaller resource list
-├── install.sh, install.ps1                  # Source-mode installer helpers
-├── install-antigravity.ps1                  # Antigravity helper
-├── LICENSE                                  # MIT License
-├── pyproject.toml, setup.py                 # Consistent package metadata
-└── README.md                                # Project documentation
+??? build_scripts/
+?   ??? build_release.py                 # PyInstaller release packaging script
+??? fable_mode/
+?   ??? launcher.py                       # CLI entry point and verification harness
+?   ??? installer.py                      # Transactional host installer
+?   ??? adapters.py                       # Host adapter definitions & discovery
+?   ??? resources.json                    # Package resource manifest
+??? fable_engine/
+?   ??? fable_session.json                # MCP JSON-RPC 2.0 tool declaration schema
+?   ??? server.py                         # Pure Python stdlib MCP server implementation
+?   ??? test_server.py                    # Canonical V1 unit and integration suite
+??? fable_v2/
+?   ??? execution_broker.py               # Workspace sandboxing and execution boundary
+?   ??? runtime.py                        # Portable candidate search & verification runtime
+?   ??? protocol.py                       # V2 event sourcing protocol
+?   ??? system3/                          # System 3 Meta-Cognitive Subsystem
+?       ??? causal.py                     # Pearl Causal DAGs & do-calculus simulation
+?       ??? kripke.py                     # Kripke modal model checker (CTL*)
+?       ??? dialectical.py                # TRIZ contradiction resolution matrix
+?       ??? free_energy.py                # Friston Active Inference & variational free energy
+?       ??? oracle.py                     # G?delian proof oracle (Curry-Howard isomorphism)
+?       ??? hyperbolic.py                 # Poincar? disk hyperbolic tree embeddings
+?       ??? evolution.py                  # Genetic evolutionary paradigm search
+??? fable_compressor.py                   # Token Compression (CAS store, Grammar333 bytecode)
+??? skills/
+?   ??? fable-mode/                       # Fable-Mode Cognitive Skill Definitions & References
+?       ??? SKILL.md                      # Core cognitive protocol instructions
+?       ??? references/
+?           ??? cinematic-design-engine.md
+?           ??? design-tokens-and-typographies.md
+?           ??? system3-meta-cognition.md
+?           ??? weak-model-frontier-uplift.md
+??? tests/                                # Full regression and verification test suite
+??? docs/                                 # Architectural specifications and migration guides
+??? LICENSE                               # MIT License
+??? pyproject.toml, setup.py              # Package configuration metadata
+??? README.md                             # Project documentation
 ```
 
-Session files are stored under the private data directory (the installed
-`fable-mode` launcher uses `~/.local/share/fable-mode/data/sessions/` on POSIX;
-the direct legacy `fable-engine` entry point uses its corresponding
-`~/.local/share/fable-engine/data/sessions/` location). Windows uses the
-corresponding `LOCALAPPDATA` paths. They are not kept inside the repository;
-CAS objects are stored beside the selected data directory.
-
-### CAS verification semantics
-
-CAS reads verify the SHA-256 named by the `cas://` reference by default.
-`FableCASStore.get_bytes(..., verify=False)` and `get_text(..., verify=False)`
-are explicit low-level maintenance/diagnostic escape hatches: they may use a
-cached value and must not be used to supply model-visible or server-facing
-content.  The V1 decompression, composite-frame, slice, and file-path paths
-always request verification explicitly.  This opt-out is not an authenticity
-or authorization mechanism; callers handling untrusted content must retain
-verification.
-
 ---
 
-## 📜 License
+## ?? License
 
-`fable-mode` is open-source software licensed under the [MIT License](./LICENSE).
-
----
+Fable-Mode is open-source software licensed under the [MIT License](./LICENSE).
 
 <div align="center">
 
 **Built independently by REX-codebase.**  
-*Reduce unsupported claims. Deliberate with evidence.*
+*Grounded Epistemic Deliberation ? Deterministic Systems Engineering*
 
 </div>
-
-
-
-## 🧭 Fable V2 Portable Runtime (Experimental)
-
-Fable V2 evolves the project from a cognitive prompt and session manager into
-an evidence-gated, model-agnostic runtime. Its goal is to improve weak and
-frontier models through structured task contracts, diverse candidate search,
-real tool receipts, independent verification, targeted repair, adaptive
-compute, and portable host adapters.
-
-MCP is used as a tool interface, not as the intelligence itself. The portable
-core lives in `fable_v2/`; see [`docs/fable-v2-architecture.md`](docs/fable-v2-architecture.md)
-for the architecture, enforcement model, adapter contract, and benchmark
-criteria.
-
-The 10x/50x uplift figures are ambitious hypotheses for measured task classes,
-not universal guarantees. Results must be established on held-out benchmarks
-with success, error reduction, cost, latency, and verifier-quality metrics.
-
-### V1 versus V2 entry points
-
-The existing `fable-engine` command and the repository's legacy MCP schema
-launch **V1** (`fable_engine.server`). `fable-v1` is an explicit alias for the
-same legacy server; existing installers remain V1-compatible.
-
-The portable V2 runtime lives in `fable_v2/`. Its execution boundary is
-launched with `fable-v2-broker --workspace <path>`. The broker is a separate
-process that owns allowlisted command execution and workspace writes; hosts
-must route V2 execution through it rather than granting models direct file
-access. `fable-v2-broker` is the V2 broker entry point, not a drop-in alias for
-the legacy `fable_session` MCP server.
-
-The V2 migration path is documented in
-[`docs/fable-v1-v2-migration.md`](docs/fable-v1-v2-migration.md) and
-`docs/fable-v2-architecture.md`: installers that still register `fable-engine`
-deliberately run V1 until a host adapter is configured for the V2 runtime and
-broker.
-
-### Host probe process scope
-
-Host discovery and MCP smoke probes use `argv` with `shell=False`, bounded output,
-a fresh session/process group where supported, and a minimal environment. POSIX
-probes can terminate the process group on timeout. Windows uses a new process
-group and terminates the direct child; Python's standard library does not provide
-a portable descendant/job-tree kill guarantee, so child cleanup on Windows remains
-best-effort and should be validated in CI. CLI registration is fail-closed when a
-host exposes only human-readable listing output. Probes use safe system PATH
-entries and add a script's shebang interpreter directory when it can be resolved;
-private interpreters available only through a user's secret-bearing PATH are not
-probed automatically. Installer cleanup retains an ownership/inode capability and
-revalidates it immediately before deletion, but Python has no portable
-descriptor-relative recursive-delete primitive, so a replacement race cannot be
-eliminated completely.
-

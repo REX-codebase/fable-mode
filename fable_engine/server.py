@@ -1740,7 +1740,15 @@ class FableSession:
             "timestamp": self._wall_clock(),
         }
 
-        # Update Causal DAG nodes if a causal graph exists
+        # Update Causal DAG nodes (initialize default DAG if none exists)
+        if not self.system3_causal_graphs:
+            self.system3_causal_graphs.append({
+                "dag": {"name": f"Session_{self.session_name}_DAG", "nodes": [], "edges": []},
+                "nodes": [],
+                "edges": [],
+                "topological_order": [],
+                "timestamp": self._wall_clock(),
+            })
         if self.system3_causal_graphs:
             causal_node_id = f"refine_cycle_{cycle_num}"
             causal_node_data = {
@@ -1756,6 +1764,9 @@ class FableSession:
                 }
             }
             latest_graph = self.system3_causal_graphs[-1]
+            if "nodes" in latest_graph and isinstance(latest_graph["nodes"], list):
+                if not any(n.get("node_id") == causal_node_id for n in latest_graph["nodes"] if isinstance(n, dict)):
+                    latest_graph["nodes"].append(causal_node_data)
             inner_dag = latest_graph.get("dag", latest_graph)
             nodes = inner_dag.setdefault("nodes", [])
             if isinstance(nodes, list):
@@ -1765,9 +1776,12 @@ class FableSession:
                 nodes[causal_node_id] = causal_node_data
             if cycle_num > 1:
                 prev_id = f"refine_cycle_{cycle_num - 1}"
+                edge_data = {"source": prev_id, "target": causal_node_id, "weight": 1.0, "mechanism": "refinement_evolution"}
+                if "edges" in latest_graph and isinstance(latest_graph["edges"], list):
+                    latest_graph["edges"].append(edge_data)
                 edges = inner_dag.setdefault("edges", [])
                 if isinstance(edges, list):
-                    edges.append({"source": prev_id, "target": causal_node_id, "weight": 1.0, "mechanism": "refinement_evolution"})
+                    edges.append(edge_data)
 
         return entry
 
@@ -2732,14 +2746,20 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 brittleness_rep = dag.evaluate_brittleness(target_metric)
 
             session = get_or_load_session(session_name)
-            session.system3_causal_graphs.append({
+            new_graph_entry = {
                 "dag": dag.to_dict(),
+                "nodes": dag.to_dict().get("nodes", []),
+                "edges": dag.to_dict().get("edges", []),
                 "topological_order": topo_order,
                 "factual_values": factual_values,
                 "intervention": interv_res.to_dict() if interv_res else None,
                 "brittleness": brittleness_rep.to_dict() if brittleness_rep else None,
                 "timestamp": time.time(),
-            })
+            }
+            if len(session.system3_causal_graphs) == 1 and session.system3_causal_graphs[0].get("dag", {}).get("name") == f"Session_{session.session_name}_DAG":
+                session.system3_causal_graphs[0] = new_graph_entry
+            else:
+                session.system3_causal_graphs.append(new_graph_entry)
             session.save()
 
             lines = [
