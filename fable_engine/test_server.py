@@ -1095,9 +1095,93 @@ class TestFableSystem3ActionsDispatch(unittest.TestCase):
         session = ACTIVE_SESSIONS[self.session_name]
         self.assertEqual(len(session.system3_orchestrations), 1)
 
+    def test_system3_hyperbolic_embed_dispatch(self):
+        """Verifies system3_hyperbolic_embed action with Poincaré tree embedding."""
+        tree = {
+            "root": ["agent", "runtime"],
+            "agent": ["planner", "memory"],
+            "runtime": ["broker", "verifier"],
+        }
+        res = handle_fable_session({
+            "action": "system3_hyperbolic_embed",
+            "session_name": self.session_name,
+            "tree": tree,
+            "root_id": "root",
+            "dimension": 2,
+            "curvature": 1.0,
+            "base_step": 1.0,
+        })
+        self.assertIn("System 3 Poincaré Hyperbolic Manifold Embedding", res)
+        self.assertIn("Poincaré Ball", res)
+        self.assertIn("Mean Metric Distortion", res)
+        self.assertIn("Hyperbolic Volume Expansion Ratio", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_hyperbolic_embeddings), 1)
+        self.assertTrue(len(session.refinement_cycles) > 0)
+
+    def test_system3_kripke_verify_dispatch(self):
+        """Verifies system3_kripke_verify action with CTL* temporal verification."""
+        worlds = [
+            {"world_id": "w0", "propositions": ["safe", "init"], "is_initial": True},
+            {"world_id": "w1", "propositions": ["safe", "running"]},
+            {"world_id": "w2", "propositions": ["safe", "complete"]},
+        ]
+        transitions = [
+            {"source": "w0", "target": "w1"},
+            {"source": "w1", "target": "w2"},
+            {"source": "w2", "target": "w2"},
+        ]
+        res = handle_fable_session({
+            "action": "system3_kripke_verify",
+            "session_name": self.session_name,
+            "model_name": "ExecutionWorkflowModel",
+            "worlds": worlds,
+            "transitions": transitions,
+            "formula": "AG(safe)",
+            "initial_world": "w0",
+        })
+        self.assertIn("System 3 Kripke Modal Model Verification", res)
+        self.assertIn("SATISFIED", res)
+        self.assertIn("AG(safe)", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_kripke_verifications), 1)
+
+    def test_system3_active_inference_dispatch(self):
+        """Verifies system3_active_inference action with Variational Free Energy minimization."""
+        res = handle_fable_session({
+            "action": "system3_active_inference",
+            "session_name": self.session_name,
+            "observation": "HIGH_THROUGHPUT_CLEAN",
+            "gamma": 16.0,
+        })
+        self.assertIn("System 3 Friston Active Inference & Variational Free Energy", res)
+        self.assertIn("Variational Free Energy (F)", res)
+        self.assertIn("Selected Policy", res)
+        self.assertIn("Evaluated Policy Landscape", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_active_inferences), 1)
+
+    def test_system3_proof_oracle_dispatch(self):
+        """Verifies system3_proof_oracle action with Curry-Howard constructive verification."""
+        res = handle_fable_session({
+            "action": "system3_proof_oracle",
+            "session_name": self.session_name,
+            "claim": "safe == safe",
+        })
+        self.assertIn("System 3 Gödelian Auto-Formalizing Proof Oracle", res)
+        self.assertIn("DECIDABLE_PROVED", res)
+        self.assertIn("Soundness Verified", res)
+
+        session = ACTIVE_SESSIONS[self.session_name]
+        self.assertEqual(len(session.system3_proof_oracle_verifications), 1)
+        self.assertTrue(len(session.invariants) > 0)
+
     def test_system3_session_roundtrip_persistence(self):
         """Verifies full roundtrip serialization & disk saving of all System 3 state fields."""
-        # Execute synthesis and causal simulation
+        # Execute synthesis, causal, hyperbolic, kripke, free energy, and oracle
         handle_fable_session({
             "action": "system3_dialectical_synthesis",
             "session_name": self.session_name,
@@ -1111,16 +1195,46 @@ class TestFableSystem3ActionsDispatch(unittest.TestCase):
             "nodes": [{"node_id": "X", "value": 1.0}],
             "edges": []
         })
+        handle_fable_session({
+            "action": "system3_hyperbolic_embed",
+            "session_name": self.session_name,
+            "tree": {"root": ["a", "b"]},
+        })
+        handle_fable_session({
+            "action": "system3_kripke_verify",
+            "session_name": self.session_name,
+            "worlds": [{"world_id": "w0", "propositions": ["p"]}],
+            "transitions": [{"source": "w0", "target": "w0"}],
+            "formula": "p",
+        })
+        handle_fable_session({
+            "action": "system3_active_inference",
+            "session_name": self.session_name,
+            "observation": "HIGH_THROUGHPUT_CLEAN",
+        })
+        handle_fable_session({
+            "action": "system3_proof_oracle",
+            "session_name": self.session_name,
+            "claim": "safe == safe",
+        })
 
         session = ACTIVE_SESSIONS[self.session_name]
         d = session.to_dict()
         self.assertEqual(len(d["system3_syntheses"]), 1)
         self.assertEqual(len(d["system3_causal_graphs"]), 1)
+        self.assertEqual(len(d["system3_hyperbolic_embeddings"]), 1)
+        self.assertEqual(len(d["system3_kripke_verifications"]), 1)
+        self.assertEqual(len(d["system3_active_inferences"]), 1)
+        self.assertEqual(len(d["system3_proof_oracle_verifications"]), 1)
 
         # Restore from dict
         restored = FableSession.from_dict(d)
         self.assertEqual(len(restored.system3_syntheses), 1)
         self.assertEqual(len(restored.system3_causal_graphs), 1)
+        self.assertEqual(len(restored.system3_hyperbolic_embeddings), 1)
+        self.assertEqual(len(restored.system3_kripke_verifications), 1)
+        self.assertEqual(len(restored.system3_active_inferences), 1)
+        self.assertEqual(len(restored.system3_proof_oracle_verifications), 1)
         self.assertEqual(restored.session_name, self.session_name)
 
 

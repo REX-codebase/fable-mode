@@ -124,6 +124,56 @@ from fable_v2.system3 import (
     SearchHeuristicConfig,
     TriLevelArbitrator,
     System3Executive,
+    # System 3 Hyperbolic
+    PoincareBall,
+    HyperbolicPoint,
+    HyperbolicTreeEmbedder,
+    TreeEmbeddingNode,
+    TreeEmbeddingResult,
+    HyperbolicGeometryError,
+    # System 3 Kripke
+    KripkeStructure,
+    KripkeWorld,
+    KripkeModelChecker,
+    ModelCheckResult,
+    CTLOperator,
+    FormulaNode,
+    FormulaParser,
+    # System 3 Free Energy
+    ActiveInferenceEngine,
+    GenerativeModel,
+    Policy,
+    PolicyEvaluation,
+    FreeEnergyReport,
+    create_default_architecture_pomdp,
+    # System 3 Oracle
+    ProofOracle,
+    CurryHowardVerifier,
+    UndecidabilityDetector,
+    TacticsEngine,
+    FormalProofResult,
+    ProofStatus,
+    Type,
+    Term,
+    Prop,
+    Unit,
+    Void,
+    Implies,
+    And,
+    Or,
+    Not,
+    Eq,
+    Var,
+    Lam,
+    App,
+    Pair,
+    Fst,
+    Snd,
+    Inl,
+    Inr,
+    Case,
+    Refl,
+    Abort,
 )
 
 # Standard Fable Phases
@@ -1303,6 +1353,10 @@ class FableSession:
         self.system3_axioms: List[Dict[str, Any]] = []
         self.system3_reflections: List[Dict[str, Any]] = []
         self.system3_orchestrations: List[Dict[str, Any]] = []
+        self.system3_hyperbolic_embeddings: List[Dict[str, Any]] = []
+        self.system3_kripke_verifications: List[Dict[str, Any]] = []
+        self.system3_active_inferences: List[Dict[str, Any]] = []
+        self.system3_proof_oracle_verifications: List[Dict[str, Any]] = []
 
     @property
     def pacing_deadline_time(self) -> float:
@@ -1680,7 +1734,11 @@ class FableSession:
             "system3_gene_pools": self.system3_gene_pools,
             "system3_axioms": self.system3_axioms,
             "system3_reflections": self.system3_reflections,
-            "system3_orchestrations": self.system3_orchestrations
+            "system3_orchestrations": self.system3_orchestrations,
+            "system3_hyperbolic_embeddings": self.system3_hyperbolic_embeddings,
+            "system3_kripke_verifications": self.system3_kripke_verifications,
+            "system3_active_inferences": self.system3_active_inferences,
+            "system3_proof_oracle_verifications": self.system3_proof_oracle_verifications
         }
 
     @classmethod
@@ -1711,6 +1769,10 @@ class FableSession:
         session.system3_axioms = data.get("system3_axioms", [])
         session.system3_reflections = data.get("system3_reflections", [])
         session.system3_orchestrations = data.get("system3_orchestrations", [])
+        session.system3_hyperbolic_embeddings = data.get("system3_hyperbolic_embeddings", [])
+        session.system3_kripke_verifications = data.get("system3_kripke_verifications", [])
+        session.system3_active_inferences = data.get("system3_active_inferences", [])
+        session.system3_proof_oracle_verifications = data.get("system3_proof_oracle_verifications", [])
         return session
 
     def save(self, target_path: Optional[Path] = None) -> Path:
@@ -2739,6 +2801,328 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
+        # 25. SYSTEM 3: HYPERBOLIC MANIFOLD TREE EMBEDDING
+        elif action in ("system3_hyperbolic_embed", "hyperbolic_embed", "poincare_embed", "hyperbolic_tree"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_hyperbolic_embed'."
+            tree_input = arguments.get("tree")
+            if tree_input is None:
+                return "Error: 'tree' is required for action 'system3_hyperbolic_embed'."
+            if isinstance(tree_input, str):
+                try:
+                    tree_input = json.loads(tree_input)
+                except Exception:
+                    return "Error: Failed to parse 'tree' as JSON."
+
+            root_id = arguments.get("root_id")
+            dimension = int(arguments.get("dimension", 2))
+            curvature = float(arguments.get("curvature", 1.0))
+            base_step = float(arguments.get("base_step", 1.0))
+            node_labels = arguments.get("node_labels")
+            if isinstance(node_labels, str):
+                try:
+                    node_labels = json.loads(node_labels)
+                except Exception:
+                    node_labels = None
+
+            embedder = HyperbolicTreeEmbedder(dimension=dimension, curvature=curvature, base_step_distance=base_step)
+            result = embedder.embed_hierarchy(tree=tree_input, root_id=root_id, node_labels=node_labels)
+
+            session = get_or_load_session(session_name)
+            session.system3_hyperbolic_embeddings.append(result.to_dict())
+
+            session.log_refinement_cycle(
+                refinement_type="system3_hyperbolic_embedding",
+                focus_area=f"Hierarchical Poincaré Manifold Embedding ({result.total_nodes} nodes, depth {result.tree_depth})",
+                critique_or_bottleneck=f"Embedded hierarchy into {dimension}D Poincaré ball with curvature c={curvature:.2f}.",
+                architectural_refinement=(
+                    f"Manifold tree embedding verified: avg_distortion={result.average_distortion:.4f}, "
+                    f"max_distortion={result.max_distortion:.4f}, stress={result.stress:.4f}, "
+                    f"exponential capacity ratio={result.hierarchical_capacity_ratio:.2f}x."
+                ),
+            )
+            session.save()
+
+            node_table = []
+            for nid, node in list(result.nodes.items())[:10]:
+                coords_str = f"({', '.join([f'{c:.4f}' for c in node.coords])})"
+                node_table.append(
+                    f"| `{node.node_id}` | **{node.label[:20]}** | `{node.depth}` | `{node.subtree_size}` | `{coords_str}` |"
+                )
+            node_table_str = "\n".join(node_table)
+
+            return (
+                f"### 🌐 System 3 Poincaré Hyperbolic Manifold Embedding\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Manifold**: Poincaré Ball $\\mathbb{{B}}^{{{result.dimension}}}_{{c={result.curvature:.2f}}}$\n"
+                f"- **Hierarchy**: Root `{result.root_id}` ({result.total_nodes} nodes, max depth `{result.tree_depth}`)\n"
+                f"- **Mean Metric Distortion**: `{result.average_distortion:.4f}` (Max: `{result.max_distortion:.4f}`)\n"
+                f"- **Metric Stress Metric**: `{result.stress:.4f}`\n"
+                f"- **Hyperbolic Volume Expansion Ratio**: `{result.hierarchical_capacity_ratio:.2f}x` vs Euclidean $\\mathbb{{R}}^{{{result.dimension}}}$\n\n"
+                f"#### 📍 Top Embedded Nodes in $\\mathbb{{B}}^{{{result.dimension}}}$:\n"
+                f"| Node ID | Label | Depth | Subtree | Poincaré Coordinates |\n"
+                f"|---|---|---|---|---|\n"
+                f"{node_table_str}\n"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 26. SYSTEM 3: KRIPKE MODAL MODEL CHECKING & CTL* VERIFICATION
+        elif action in ("system3_kripke_verify", "kripke_verify", "modal_verify", "ctl_check"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_kripke_verify'."
+            formula = arguments.get("formula", "").strip()
+            if not formula:
+                return "Error: 'formula' is required for action 'system3_kripke_verify'."
+            model_name = arguments.get("model_name", "System3KripkeModel")
+            worlds_input = arguments.get("worlds", [])
+            transitions_input = arguments.get("transitions", [])
+            initial_world = arguments.get("initial_world")
+
+            if isinstance(worlds_input, str):
+                try:
+                    worlds_input = json.loads(worlds_input)
+                except Exception:
+                    worlds_input = []
+            if isinstance(transitions_input, str):
+                try:
+                    transitions_input = json.loads(transitions_input)
+                except Exception:
+                    transitions_input = []
+
+            structure = KripkeStructure(name=model_name)
+            for w in worlds_input:
+                if isinstance(w, dict):
+                    structure.add_world(
+                        world_id=w.get("world_id", w.get("id")),
+                        propositions=w.get("propositions", w.get("props", [])),
+                        name=w.get("name", ""),
+                        is_initial=w.get("is_initial", False),
+                        metadata=w.get("metadata", {}),
+                    )
+                elif isinstance(w, str):
+                    structure.add_world(world_id=w)
+
+            if isinstance(transitions_input, dict):
+                for src, targets in transitions_input.items():
+                    for tgt in (targets if isinstance(targets, list) else [targets]):
+                        structure.add_transition(src, tgt)
+            elif isinstance(transitions_input, list):
+                for t in transitions_input:
+                    if isinstance(t, dict) and "source" in t and "target" in t:
+                        structure.add_transition(t["source"], t["target"])
+                    elif isinstance(t, (list, tuple)) and len(t) >= 2:
+                        structure.add_transition(str(t[0]), str(t[1]))
+
+            checker = KripkeModelChecker(structure)
+            res = checker.check(formula=formula, initial_world=initial_world)
+
+            session = get_or_load_session(session_name)
+            session.system3_kripke_verifications.append(res.to_dict())
+
+            session.log_refinement_cycle(
+                refinement_type="system3_kripke_verification",
+                focus_area=f"Modal / CTL Verification: {res.formula}",
+                critique_or_bottleneck=f"Evaluated Kripke model '{structure.name}' ({res.total_worlds} worlds).",
+                architectural_refinement=(
+                    f"Model checking result: {'✅ SATISFIED' if res.is_satisfied else '❌ VIOLATED'}. "
+                    f"Satisfied worlds: {len(res.satisfied_worlds)}/{res.total_worlds}. "
+                    f"Witness/Counterexample: {res.witness_path or res.counterexample_path}."
+                ),
+            )
+            session.save()
+
+            trace_block = ""
+            if res.counterexample_path:
+                trace_block = f"\n#### ❌ Counterexample Violation Trace:\n`{' -> '.join(res.counterexample_path)}`\n"
+            elif res.witness_path:
+                trace_block = f"\n#### ✅ Witness Path:\n`{' -> '.join(res.witness_path)}`\n"
+
+            return (
+                f"### 🛡️ System 3 Kripke Modal Model Verification\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Model**: `{structure.name}` ({res.total_worlds} worlds)\n"
+                f"- **Formula**: `{res.formula}`\n"
+                f"- **Status**: `{'✅ SATISFIED' if res.is_satisfied else '❌ VIOLATED'}` at initial world `{res.initial_world}`\n"
+                f"- **Satisfied Worlds**: `{', '.join(res.satisfied_worlds) if res.satisfied_worlds else 'None'}`\n"
+                f"- **Violated Worlds**: `{', '.join(res.violated_worlds) if res.violated_worlds else 'None'}`\n"
+                f"{trace_block}\n"
+                f"> [!TIP]\n"
+                f"> {res.details}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 27. SYSTEM 3: FRISTON ACTIVE INFERENCE & VARIATIONAL FREE ENERGY
+        elif action in ("system3_active_inference", "active_inference", "free_energy", "fe_step"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_active_inference'."
+            obs = arguments.get("observation", "HIGH_THROUGHPUT_CLEAN").strip()
+            gamma = float(arguments.get("gamma", 16.0))
+            policies_input = arguments.get("policies")
+            if isinstance(policies_input, str):
+                try:
+                    policies_input = json.loads(policies_input)
+                except Exception:
+                    policies_input = None
+
+            parsed_policies = []
+            if policies_input and isinstance(policies_input, list):
+                for p in policies_input:
+                    if isinstance(p, dict) and "policy_id" in p and "actions" in p:
+                        parsed_policies.append(Policy.from_dict(p))
+                    elif isinstance(p, str):
+                        parsed_policies.append(Policy(policy_id=f"pol_{p}", actions=[p]))
+
+            # Check if custom model components provided
+            states = arguments.get("states")
+            observations = arguments.get("observations")
+            actions = arguments.get("actions")
+            a_mat = arguments.get("a_matrix")
+            b_mats = arguments.get("b_matrices")
+            c_pref = arguments.get("c_preferences")
+            d_prior = arguments.get("d_prior")
+
+            if all(x is not None for x in [states, observations, actions, a_mat, b_mats, c_pref, d_prior]):
+                if isinstance(states, str): states = json.loads(states)
+                if isinstance(observations, str): observations = json.loads(observations)
+                if isinstance(actions, str): actions = json.loads(actions)
+                if isinstance(a_mat, str): a_mat = json.loads(a_mat)
+                if isinstance(b_mats, str): b_mats = json.loads(b_mats)
+                if isinstance(c_pref, str): c_pref = json.loads(c_pref)
+                if isinstance(d_prior, str): d_prior = json.loads(d_prior)
+                gen_model = GenerativeModel(
+                    states=states,
+                    observations=observations,
+                    actions=actions,
+                    a_matrix=a_mat,
+                    b_matrices=b_mats,
+                    c_preferences=c_pref,
+                    d_prior=d_prior,
+                )
+            else:
+                gen_model = create_default_architecture_pomdp()
+
+            engine = ActiveInferenceEngine(generative_model=gen_model, policy_precision_gamma=gamma)
+            report = engine.select_action(observation=obs, candidate_policies=parsed_policies)
+
+            session = get_or_load_session(session_name)
+            session.system3_active_inferences.append(report.to_dict())
+
+            session.log_refinement_cycle(
+                refinement_type="system3_active_inference",
+                focus_area=f"Free Energy Minimization for observation '{obs}'",
+                critique_or_bottleneck=(
+                    f"Variational Free Energy F={report.variational_free_energy_f:.4f} "
+                    f"(Complexity KL={report.complexity_kl:.4f}, Accuracy={report.accuracy_log_likelihood:.4f})."
+                ),
+                architectural_refinement=(
+                    f"Selected optimal policy '{report.selected_policy.policy_id}' ({report.selected_action}) "
+                    f"with Expected Free Energy G={report.selected_policy.expected_free_energy_g:.4f}, "
+                    f"Information Gain={report.selected_policy.epistemic_information_gain:.4f}, "
+                    f"Goal Utility={report.selected_policy.pragmatic_goal_utility:.4f}."
+                ),
+            )
+            session.save()
+
+            policy_table = []
+            for p in report.evaluated_policies:
+                opt_mark = "🏆 OPTIMAL" if p.is_optimal else ""
+                policy_table.append(
+                    f"| `{p.policy_id}` | `{p.actions}` | `{p.expected_free_energy_g:.4f}` | "
+                    f"`{p.risk_pragmatic_divergence:.4f}` | `{p.ambiguity_expected_entropy:.4f}` | "
+                    f"`{p.epistemic_information_gain:.4f}` | `{p.pragmatic_goal_utility:.4f}` | "
+                    f"`{p.probability * 100:.1f}%` | {opt_mark} |"
+                )
+            pol_table_str = "\n".join(policy_table)
+
+            belief_table = "\n".join([f"- **{k}**: `{v * 100:.1f}%`" for k, v in report.belief_state.items()])
+
+            return (
+                f"### ⚡ System 3 Friston Active Inference & Variational Free Energy\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Ingested Observation**: `{report.current_observation}`\n"
+                f"- **Variational Free Energy (F)**: `{report.variational_free_energy_f:.4f}` (Surprisal Bound)\n"
+                f"  - *Complexity (KL)*: `{report.complexity_kl:.4f}`\n"
+                f"  - *Accuracy (Log-Likelihood)*: `{report.accuracy_log_likelihood:.4f}`\n"
+                f"- **Selected Policy**: **{report.selected_policy.policy_id}** -> Action: `🎯 {report.selected_action}`\n\n"
+                f"#### 🧠 Updated Hidden State Belief Distribution $q(s)$:\n{belief_table}\n\n"
+                f"#### 📊 Evaluated Policy Landscape ($G(\\pi) = \\text{{Risk}} + \\text{{Ambiguity}}$):\n"
+                f"| Policy ID | Actions | EFE ($G$) | Risk | Ambiguity | Epistemic Info Gain | Goal Utility | Prob | Status |\n"
+                f"|---|---|---|---|---|---|---|---|---|\n"
+                f"{pol_table_str}\n"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 28. SYSTEM 3: GODELIAN PROOF ORACLE & CURRY-HOWARD VERIFICATION
+        elif action in ("system3_proof_oracle", "proof_oracle", "curry_howard", "formal_prove"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'system3_proof_oracle'."
+            claim = arguments.get("claim")
+            if not claim:
+                return "Error: 'claim' is required for action 'system3_proof_oracle'."
+
+            context = arguments.get("context")
+            if isinstance(context, str):
+                try:
+                    context = json.loads(context)
+                except Exception:
+                    context = None
+
+            axioms = arguments.get("axioms")
+            if isinstance(axioms, str):
+                try:
+                    axioms = json.loads(axioms)
+                except Exception:
+                    axioms = None
+
+            oracle = ProofOracle()
+            res = oracle.verify_proposition(claim=claim, context=context, axioms=axioms)
+
+            session = get_or_load_session(session_name)
+            session.system3_proof_oracle_verifications.append(res.to_dict())
+
+            # Auto-record invariant if proved and sound
+            if res.status == ProofStatus.DECIDABLE_PROVED and res.is_sound:
+                inv_name = f"INV-ORACLE: {str(claim)[:32]}"
+                if not any(i.get("name") == inv_name for i in session.invariants):
+                    session.record_invariant(
+                        invariant_name=inv_name,
+                        formal_statement=res.proposition,
+                        proof_or_rationale=f"Curry-Howard Constructive Proof Term: {res.proof_term_repr}",
+                        domain="architecture",
+                    )
+
+            session.log_refinement_cycle(
+                refinement_type="system3_proof_oracle",
+                focus_area=f"Curry-Howard Constructive Proof: {res.proposition}",
+                critique_or_bottleneck=f"Evaluated status: {res.status.value.upper()}.",
+                architectural_refinement=(
+                    f"Proof Oracle verdict: {res.status.value.upper()} (Sound: {res.is_sound}). "
+                    f"Proof Term: {res.proof_term_repr or 'None'}."
+                ),
+            )
+            session.save()
+
+            steps_str = "\n".join([f"- {s}" for s in res.verification_steps])
+            undec_str = ""
+            if res.undecidability_diagnostics:
+                undec_str = (
+                    f"\n#### 🛑 Gödelian Boundary Diagnostics:\n"
+                    f"- **Boundary Type**: `{res.undecidability_diagnostics.get('boundary_type')}`\n"
+                    f"- **Explanation**: {res.undecidability_diagnostics.get('explanation')}\n"
+                )
+
+            return (
+                f"### 📜 System 3 Gödelian Auto-Formalizing Proof Oracle\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Proposition**: `{res.proposition}`\n"
+                f"- **Decision Status**: `{'✅ ' if res.status == ProofStatus.DECIDABLE_PROVED else '⚡ ' if res.status == ProofStatus.DECIDABLE_REFUTED else '🛑 '}{res.status.value.upper()}`\n"
+                f"- **Soundness Verified**: `{'✅ TRUE' if res.is_sound else '❌ UNVERIFIED'}`\n"
+                + (f"- **Constructive Proof Term**: `{res.proof_term_repr}`\n" if res.proof_term_repr else "")
+                + f"{undec_str}\n"
+                f"#### 🔍 Verification Trace:\n{steps_str}\n"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -2746,7 +3130,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'log_epistemic_item', 'record_invariant', 'log_refinement_cycle', 'unlock_execution', "
                 f"'checkpoint_session', 'restore_session', 'list_sessions', 'compile_delegation_contract', "
                 f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
-                f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate'."
+                f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
+                f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -2795,7 +3180,11 @@ TOOL_SCHEMA = {
                     "system3_evolve_paradigms",
                     "system3_induce_axioms",
                     "system3_meta_reflect",
-                    "system3_tri_level_orchestrate"
+                    "system3_tri_level_orchestrate",
+                    "system3_hyperbolic_embed",
+                    "system3_kripke_verify",
+                    "system3_active_inference",
+                    "system3_proof_oracle"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -3005,6 +3394,94 @@ TOOL_SCHEMA = {
             "epistemic_uncertainty": {
                 "type": "number",
                 "description": "Epistemic uncertainty index [0.0, 1.0] for arbitration."
+            },
+            "tree": {
+                "description": "Tree hierarchy adjacency list or nested dict for hyperbolic embedding.",
+                "type": ["object", "array", "string"]
+            },
+            "root_id": {
+                "type": "string",
+                "description": "Root node ID for hyperbolic tree embedding or initial world."
+            },
+            "dimension": {
+                "type": "integer",
+                "description": "Dimension of Poincaré ball manifold (default 2)."
+            },
+            "curvature": {
+                "type": "number",
+                "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0)."
+            },
+            "base_step": {
+                "type": "number",
+                "description": "Base geodesic step distance for hyperbolic tree embedding (default 1.0)."
+            },
+            "node_labels": {
+                "description": "Optional mapping of node IDs to readable labels.",
+                "type": ["object", "string"]
+            },
+            "worlds": {
+                "description": "List of world/state definitions for Kripke structure.",
+                "type": ["array", "string"]
+            },
+            "transitions": {
+                "description": "List of transitions or adjacency dictionary for Kripke structure.",
+                "type": ["array", "object", "string"]
+            },
+            "formula": {
+                "type": "string",
+                "description": "CTL / modal formula string to verify against Kripke structure (e.g. 'AG(safe)', 'EF(goal)')."
+            },
+            "initial_world": {
+                "type": "string",
+                "description": "Initial world ID for Kripke model checking."
+            },
+            "observation": {
+                "type": "string",
+                "description": "Current sensory observation for Active Inference belief updating."
+            },
+            "policies": {
+                "description": "List of candidate action sequence policies for Expected Free Energy evaluation.",
+                "type": ["array", "string"]
+            },
+            "gamma": {
+                "type": "number",
+                "description": "Policy precision inverse temperature gamma for Active Inference softmax (default 16.0)."
+            },
+            "states": {
+                "description": "List of hidden state identifiers for Active Inference POMDP.",
+                "type": ["array", "string"]
+            },
+            "observations": {
+                "description": "List of observation identifiers for Active Inference POMDP.",
+                "type": ["array", "string"]
+            },
+            "actions": {
+                "description": "List of control action identifiers for Active Inference POMDP.",
+                "type": ["array", "string"]
+            },
+            "a_matrix": {
+                "description": "Observation likelihood matrix A [O x S] for Active Inference.",
+                "type": ["array", "string"]
+            },
+            "b_matrices": {
+                "description": "State transition matrices B [Action -> S x S] for Active Inference.",
+                "type": ["object", "string"]
+            },
+            "c_preferences": {
+                "description": "Prior preference distribution C over observations for Active Inference.",
+                "type": ["array", "string"]
+            },
+            "d_prior": {
+                "description": "Prior initial state belief distribution D for Active Inference.",
+                "type": ["array", "string"]
+            },
+            "context": {
+                "description": "Hypothesis typing context dictionary {name: type} for proof oracle.",
+                "type": ["object", "string"]
+            },
+            "axioms": {
+                "description": "List of reference axiom names or strings for proof oracle.",
+                "type": ["array", "string"]
             }
         },
         "required": ["action"]

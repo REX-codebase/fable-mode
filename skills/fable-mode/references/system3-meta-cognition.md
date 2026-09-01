@@ -1,6 +1,6 @@
-# System 3 Meta-Cognitive Deliberation, Causal SCM & Dialectical Evolutionary Architecture
+# System 3 Meta-Cognitive Deliberation, Causal SCM & Frontier Transcendence Architecture
 
-This reference provides exhaustive operational directives, formal algorithms, and cognitive protocols for **System 3 Meta-Cognition** in Fable Mode.
+This reference provides exhaustive operational directives, formal algorithms, and cognitive protocols for **System 3 Meta-Cognition & Frontier Transcendence Engine** in Fable Mode.
 
 --------------------------------------------------------------------------------
 
@@ -8,20 +8,34 @@ This reference provides exhaustive operational directives, formal algorithms, an
 
 System 3 operates as the **meta-cognitive governor** above intuitive System 1 code generation and deliberative System 2 MCTS search. While System 2 deliberates *within* a solution space, System 3:
 1. **Evaluates the Structure of the Problem Space**: Models causal dependencies using Pearl's Structural Causal Models (SCM) and Directed Acyclic Graphs (DAG).
-2. **Transcends Engineering Contradictions**: Replaces weak compromise averaging with Dialectical Synthesis powered by the 40 TRIZ Inventive Principles.
-3. **Optimizes Across 10-Dimensional Pareto Frontiers**: Uses multi-objective genetic algorithms (NSGA-II) with non-dominated sorting and crowding distance diversity.
-4. **Induces and Proves Invariants**: Formulates formal neuro-symbolic axioms from tool receipts and evidence, verified against empirical falsification harnesses.
-5. **Audits Cognitive Biases**: Detects confirmation bias, anchoring, sunk cost fallacies, and circular reasoning in real time.
+2. **Embeds Hierarchies into Hyperbolic Manifolds**: Maps complex trees and ASTs into the Poincaré Ball $\mathbb{B}^n_c$ with zero geometric distortion.
+3. **Formally Checks Multi-World Temporal Semantics**: Validates CTL/CTL* branching temporal properties ($AG, EF, AF, AX, EU, AU$) over Kripke structures.
+4. **Minimizes Variational Free Energy via Active Inference**: Optimizes perception ($F = \text{Complexity} - \text{Accuracy}$) and policy selection ($G(\pi) = \text{Risk} + \text{Ambiguity}$).
+5. **Auto-Formalizes Constructive Proofs via Proof Oracle**: Verifies type terms via the Curry-Howard Isomorphism and isolates Gödelian incompleteness boundaries.
+6. **Transcends Engineering Contradictions**: Replaces weak compromise averaging with Dialectical Synthesis powered by the 40 TRIZ Inventive Principles.
+7. **Optimizes Across 10-Dimensional Pareto Frontiers**: Uses multi-objective genetic algorithms (NSGA-II) with non-dominated sorting and crowding distance diversity.
+8. **Induces and Proves Invariants**: Formulates formal neuro-symbolic axioms from tool receipts and evidence, verified against empirical falsification harnesses.
+9. **Audits Cognitive Biases**: Detects confirmation bias, anchoring, sunk cost fallacies, and circular reasoning in real time.
 
 ```mermaid
 graph TD
-    S3["System 3: Meta-Cognitive Governor"] -->|Pearl Do-Calculus & Causal Interventions| DAG["Causal DAG Surgery"]
+    S3["System 3: Meta-Cognitive Governor & Transcendence Engine"]
+    
+    S3 -->|Poincaré Ball Metric & Gyrovectors| Hyp["Hyperbolic Manifold Embedding"]
+    S3 -->|CTL* Temporal & Modal Logic| Kripke["Kripke Model Checker"]
+    S3 -->|F = Complexity - Accuracy & EFE G| ActiveInf["Friston Active Inference"]
+    S3 -->|Curry-Howard Isomorphism| Oracle["Gödelian Proof Oracle"]
+    S3 -->|Pearl Do-Calculus & Causal Interventions| DAG["Causal DAG Surgery"]
     S3 -->|40 TRIZ Inventive Principles| Dialectic["Dialectical Triad (Thesis vs Antithesis)"]
     S3 -->|10D Pareto NSGA-II Evolution| Genetic["Cognitive Gene Pool"]
     S3 -->|Empirical Falsification| NeuroSymbolic["Neuro-Symbolic Axiom Induction"]
     S3 -->|Diagnostic Audit| Bias["Cognitive Bias Detector & Heuristic Rewriter"]
 
-    DAG -->|Informs| S2["System 2 Deliberative Engine"]
+    Hyp -->|Informs| S2["System 2 Deliberative Engine"]
+    Kripke -->|Informs| S2
+    ActiveInf -->|Informs| S2
+    Oracle -->|Informs| S2
+    DAG -->|Informs| S2
     Dialectic -->|Informs| S2
     Genetic -->|Informs| S2
     NeuroSymbolic -->|Informs| S2
@@ -32,15 +46,114 @@ graph TD
 
 --------------------------------------------------------------------------------
 
-## 2. Pearl's Do-Calculus & Counterfactual Causal Modeling
+## 2. Poincaré Hyperbolic Manifold Embeddings
 
-When analyzing complex architectures, distributed systems, or performance bottlenecks, the agent must construct a `CausalDAG` using `system3_causal_simulate`:
+Embeds hierarchical trees into the Poincaré open ball $\mathbb{B}^n_c = \{x \in \mathbb{R}^n : c \|x\|^2 < 1\}$ using exact Riemannian metrics and Möbius gyrovector arithmetic:
 
 ### Key Capabilities
-- **Topological Sorting & Acyclicity Validation**: Detects and rejects circular feedback loops in causal dependency graphs.
-- **Pearl's Graph Surgery (`do(X=x)`)**: Simulates interventions by cutting incoming causal edges to intervened nodes, fixing their values, and propagating downstream consequences.
-- **Counterfactual Delta Calculation**: Quantifies the exact causal impact $\Delta = S_{\text{counterfactual}} - S_{\text{factual}}$.
-- **Structural Brittleness & Single Point of Failure (SPOF) Analysis**: Computes the sensitivity of target metrics under perturbation and identifies hyper-sensitive nodes (sensitivity $\ge 1.5$).
+- **Conformal Metric**: $\lambda_x^c = \frac{2}{1 - c\|x\|^2}, \quad g_{ij}^c(x) = (\lambda_x^c)^2 \delta_{ij}$.
+- **Geodesic Distance**: $d_c(x, y) = \frac{2}{\sqrt{c}} \text{artanh}\left(\sqrt{c} \| -x \oplus_c y \|\right)$.
+- **Sarkar's Hierarchical Embedding**: Maps tree nodes to Poincaré disk coordinates with $< 0.05$ metric distortion.
+
+### MCP Action Example
+```json
+{
+  "action": "system3_hyperbolic_embed",
+  "session_name": "fable_session_01",
+  "tree": {
+    "root": ["agent", "runtime"],
+    "agent": ["planner", "memory"],
+    "runtime": ["broker", "verifier"]
+  },
+  "dimension": 2,
+  "curvature": 1.0
+}
+```
+
+--------------------------------------------------------------------------------
+
+## 3. Kripke Modal Model Checking & CTL* Verification
+
+Formally evaluates multi-world transition systems against Computation Tree Logic (CTL/CTL*) formulas:
+
+### Key Operators
+- `AG(p)`: All paths Globally satisfy $p$ (Safety Invariant).
+- `EF(p)`: Exists path where $p$ is Finally satisfied (Reachability).
+- `AF(p)`: All paths Finally satisfy $p$ (Liveness).
+- `AX(p)`: All Next states satisfy $p$.
+- `E[p U q]`: Exists path where $p$ holds Until $q$ holds.
+- `box(p)`, `diamond(p)`: Modal necessity and possibility.
+
+### MCP Action Example
+```json
+{
+  "action": "system3_kripke_verify",
+  "session_name": "fable_session_01",
+  "worlds": [
+    {"world_id": "w0", "propositions": ["safe", "init"], "is_initial": true},
+    {"world_id": "w1", "propositions": ["safe", "running"]},
+    {"world_id": "w2", "propositions": ["safe", "complete"]}
+  ],
+  "transitions": [
+    {"source": "w0", "target": "w1"},
+    {"source": "w1", "target": "w2"},
+    {"source": "w2", "target": "w2"}
+  ],
+  "formula": "AG(safe)",
+  "initial_world": "w0"
+}
+```
+
+--------------------------------------------------------------------------------
+
+## 4. Friston Active Inference & Variational Free Energy
+
+Implements Karl Friston's Free Energy Principle for optimal perception and action selection:
+
+### Key Metrics
+- **Variational Free Energy**: $F = D_{KL}(q(s) \parallel p(s)) - \mathbb{E}[\ln p(o \mid s)] = \text{Complexity} - \text{Accuracy}$.
+- **Expected Free Energy**: $G(\pi) = \text{Risk (Goal Inconsistency)} + \text{Ambiguity (Expected Uncertainty)}$.
+- **Policy Selection**: $P(\pi) = \sigma(-\gamma G(\pi))$ balances Epistemic Information Gain against Pragmatic Goal Utility.
+
+### MCP Action Example
+```json
+{
+  "action": "system3_active_inference",
+  "session_name": "fable_session_01",
+  "observation": "LOCK_CONTENTION_WARN",
+  "gamma": 16.0
+}
+```
+
+--------------------------------------------------------------------------------
+
+## 5. Gödelian Auto-Formalizing Proof Oracle
+
+Bridges neural specifications to constructive proofs via the Curry-Howard Isomorphism ($\text{Propositions} \simeq \text{Types}, \text{Proofs} \simeq \text{Programs}$):
+
+### Decision Statuses
+- `DECIDABLE_PROVED`: Constructive proof term synthesized and type-checked.
+- `DECIDABLE_REFUTED`: Constructive proof of negation ($P \to \bot$) synthesized and verified.
+- `INDEPENDENT_UNDECIDABLE`: Identified as Liar paradox, Gödel diagonalization sentence, or Halting reduction.
+- `COMPLEXITY_EXCEEDED`: Search budget bounded.
+
+### MCP Action Example
+```json
+{
+  "action": "system3_proof_oracle",
+  "session_name": "fable_session_01",
+  "claim": "A -> (B -> A)"
+}
+```
+
+--------------------------------------------------------------------------------
+
+## 6. Pearl's Do-Calculus & Counterfactual Causal Modeling
+
+- **Topological Sorting & Acyclicity Validation**: Detects and rejects circular feedback loops.
+- **Pearl's Graph Surgery (`do(X=x)`)**: Simulates interventions by severing incoming causal edges to $X$.
+- **Counterfactual Delta**: Quantifies causal impact $\Delta = S_{\text{counterfactual}} - S_{\text{factual}}$.
+- **Structural Brittleness**: Computes target metric sensitivity under ancestor perturbation.
 
 ### MCP Action Example
 ```json
@@ -66,24 +179,9 @@ When analyzing complex architectures, distributed systems, or performance bottle
 
 --------------------------------------------------------------------------------
 
-## 3. Dialectical Synthesis & 40 TRIZ Inventive Principles
+## 7. Dialectical Synthesis & 40 TRIZ Inventive Principles
 
-Engineers frequently settle for compromise trade-offs (e.g. "We chose lower throughput to ensure safety"). System 3 rejects compromise:
-
-### Dialectical Triad
-1. **Thesis Candidate**: The initial proposed solution and its stated strengths.
-2. **Antithesis Critique**: Red-team analysis exposing parameter contradictions and failure modes.
-3. **Emergent Synthesis**: A transcended architecture that eliminates the contradiction entirely.
-
-### TRIZ Contradiction Matrix Lookup
-The engine maps conflicting parameters to optimal TRIZ principles:
-- `(throughput, latency)` $\to$ Principles 1 (Segmentation), 15 (Dynamics), 10 (Prior Action), 24 (Intermediary), 21 (Hurrying).
-- `(consistency, availability)` $\to$ Principles 3 (Local Quality), 4 (Asymmetry), 35 (Parameter Changes), 19 (Periodic Action).
-- `(memory, speed)` $\to$ Principles 2 (Extraction to CAS), 34 (Discarding/Eviction), 35 (Parameter Changes), 1 (Segmentation).
-- `(security, performance)` $\to$ Principles 4 (Asymmetry), 10 (Prior Action), 25 (Self-Service), 1 (Segmentation).
-
-### Monotonic Contradiction Convergence
-`DialecticalSynthesizer` guarantees that each debate round strictly reduces residual contradiction severity ($R_{k+1} \le R_k$).
+Replaces compromise with transcendent synthesis resolving engineering parameter contradictions.
 
 ### MCP Action Example
 ```json
@@ -108,20 +206,9 @@ The engine maps conflicting parameters to optimal TRIZ principles:
 
 --------------------------------------------------------------------------------
 
-## 4. Evolutionary Paradigm Engine (10D Pareto Frontier)
+## 8. Evolutionary Paradigm Engine (10D Pareto Frontier)
 
-System 3 evolves candidate architectures over multiple generations using NSGA-II non-dominated sorting across 10 evaluation dimensions:
-
-1. **Latency**: Sub-millisecond execution response.
-2. **Throughput**: High concurrency and throughput scaling.
-3. **Memory Efficiency**: Low memory footprint and zero leak invariants.
-4. **Fault Tolerance**: Self-healing OODA loop and partition tolerance.
-5. **Modularity**: Decoupled clean architectural boundaries.
-6. **Simplicity**: Low cognitive load and high maintainability.
-7. **Testability**: Fast deterministic unit test verification.
-8. **Security**: Hard process boundaries and least-privilege interfaces.
-9. **Determinism**: 100% reproducible execution traces.
-10. **Token Compaction**: Compaction efficiency ($\le 0.003$ tokens/char).
+Evolves architectures across 10 evaluation dimensions (Latency, Throughput, Memory, Fault Tolerance, Modularity, Simplicity, Testability, Security, Determinism, Token Compaction) using NSGA-II.
 
 ### MCP Action Example
 ```json
@@ -142,12 +229,9 @@ System 3 evolves candidate architectures over multiple generations using NSGA-II
 
 --------------------------------------------------------------------------------
 
-## 5. Neuro-Symbolic Invariant Induction
+## 9. Neuro-Symbolic Invariant Induction
 
-System 3 bridges neural pattern discovery with formal symbolic proofs. `MetaProofInducer` analyzes `ToolReceipt`s and `Evidence` to induce mathematical invariants, verify them against empirical test cases, and compile formal proof sketches.
-
-### Axiom Lifecycle
-`HYPOTHESIZED` $\to$ `INDUCED` $\to$ `PROVEN` (or `FALSIFIED`)
+Induces mathematical invariants from receipts and evidence, verified against empirical falsification harnesses.
 
 ### MCP Action Example
 ```json
@@ -160,16 +244,9 @@ System 3 bridges neural pattern discovery with formal symbolic proofs. `MetaProo
 
 --------------------------------------------------------------------------------
 
-## 6. Cognitive Bias Detection & Heuristic Rewriting
+## 10. Cognitive Bias Detection & Heuristic Rewriting
 
-`CognitiveBiasDetector` constantly protects against reasoning traps:
-
-| Bias | Detection Signature | Automated Mitigation |
-|---|---|---|
-| **Confirmation Bias** | $>3$ hypotheses logged with 0 `[UNKNOWN]` probed | Run adversarial red-teaming with terminal benchmark probes |
-| **Anchoring Bias** | Phase 3+ reached with 0 refinement cycles | Enforce Multi-Archetype Exploration (3-5 candidates across 10D) |
-| **Sunk Cost Fallacy** | Same focus area repeated $>3$ times without progress | Apply TRIZ Inversion (Principle 13) or Mechanics Substitution |
-| **Circular Reasoning** | Invariant proof tautologically restates formal statement | Anchor proof to concrete ToolReceipt hash or inductive proof |
+Audits deliberation records for confirmation, anchoring, sunk cost, and circular reasoning.
 
 ### MCP Action Example
 ```json

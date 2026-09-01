@@ -1,8 +1,16 @@
 {
   "name": "fable_session",
-  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant), and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction).",
+  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant), and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction, Poincaré hyperbolic embeddings, Kripke modal model checking, Friston active inference, and Gödelian constructive proof oracle).",
   "parameters": {
     "properties": {
+      "a_matrix": {
+        "description": "Observation likelihood matrix A [O x S] for Active Inference.",
+        "type": ["array", "string"]
+      },
+      "actions": {
+        "description": "List of control action identifiers for Active Inference POMDP.",
+        "type": ["array", "string"]
+      },
       "action": {
         "description": "The Fable session action to perform.",
         "enum": [
@@ -30,7 +38,11 @@
           "system3_evolve_paradigms",
           "system3_induce_axioms",
           "system3_meta_reflect",
-          "system3_tri_level_orchestrate"
+          "system3_tri_level_orchestrate",
+          "system3_hyperbolic_embed",
+          "system3_kripke_verify",
+          "system3_active_inference",
+          "system3_proof_oracle"
         ],
         "type": "string"
       },
@@ -50,17 +62,37 @@
         "description": "Absolute filesystem path to blueprint artifact, proof, or benchmark script documenting the refinement.",
         "type": "string"
       },
+      "axioms": {
+        "description": "List of reference axiom names or strings for proof oracle.",
+        "type": ["array", "string"]
+      },
+      "b_matrices": {
+        "description": "State transition matrices B [Action -> S x S] for Active Inference.",
+        "type": ["object", "string"]
+      },
+      "base_step": {
+        "description": "Base geodesic step distance for hyperbolic tree embedding (default 1.0).",
+        "type": "number"
+      },
+      "c_preferences": {
+        "description": "Prior preference distribution C over observations for Active Inference.",
+        "type": ["array", "string"]
+      },
       "cas_ref": {
         "description": "CAS reference URI (cas://<sha256_hex>) or 64-char hash to retrieve, slice, or decompress.",
         "type": "string"
       },
       "claim": {
-        "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger.",
+        "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger / proof oracle.",
         "type": "string"
       },
       "content": {
         "description": "Raw text content or payload to store/compress into Content-Addressed Storage (CAS).",
         "type": "string"
+      },
+      "context": {
+        "description": "Hypothesis typing context dictionary {name: type} for proof oracle.",
+        "type": ["object", "string"]
       },
       "contradiction_density": {
         "description": "Contradiction density index [0.0, 1.0] for System 3 cognitive gear shifting.",
@@ -77,6 +109,18 @@
       "crossover_rate": {
         "description": "Genetic crossover rate probability for evolutionary engine (default 0.80).",
         "type": "number"
+      },
+      "curvature": {
+        "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0).",
+        "type": "number"
+      },
+      "d_prior": {
+        "description": "Prior initial state belief distribution D for Active Inference.",
+        "type": ["array", "string"]
+      },
+      "dimension": {
+        "description": "Dimension of Poincaré ball manifold (default 2).",
+        "type": "integer"
       },
       "domain": {
         "description": "Domain boundary for the invariant.",
@@ -123,6 +167,14 @@
         "description": "Mathematical or formal contract specification that must never be violated.",
         "type": "string"
       },
+      "formula": {
+        "description": "CTL / modal formula string to verify against Kripke structure (e.g. 'AG(safe)', 'EF(goal)').",
+        "type": "string"
+      },
+      "gamma": {
+        "description": "Policy precision inverse temperature gamma for Active Inference softmax (default 16.0).",
+        "type": "number"
+      },
       "generations": {
         "description": "Number of evolutionary generations to run (default 3).",
         "type": "integer"
@@ -130,6 +182,10 @@
       "include_line_numbers": {
         "description": "Whether to format line slice with line numbers.",
         "type": "boolean"
+      },
+      "initial_world": {
+        "description": "Initial world ID for Kripke model checking.",
+        "type": "string"
       },
       "interventions": {
         "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
@@ -152,7 +208,7 @@
         "type": "object"
       },
       "model_name": {
-        "description": "Name for the causal DAG model in System 3 simulation.",
+        "description": "Name for the causal DAG / Kripke model in System 3 simulation.",
         "type": "string"
       },
       "mutation_rate": {
@@ -171,6 +227,10 @@
         ],
         "type": "string"
       },
+      "node_labels": {
+        "description": "Optional mapping of node IDs to readable labels.",
+        "type": ["object", "string"]
+      },
       "nodes": {
         "description": "List of node dictionaries for Causal DAG construction.",
         "type": ["array", "string"]
@@ -183,6 +243,14 @@
         "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
         "type": ["object", "string"]
       },
+      "observation": {
+        "description": "Current sensory observation for Active Inference belief updating.",
+        "type": "string"
+      },
+      "observations": {
+        "description": "List of observation identifiers for Active Inference POMDP.",
+        "type": ["array", "string"]
+      },
       "payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"
@@ -190,6 +258,10 @@
       "phase_summary": {
         "description": "Concise summary of findings or deliverables completed in the previous phase.",
         "type": "string"
+      },
+      "policies": {
+        "description": "List of candidate action sequence policies for Expected Free Energy evaluation.",
+        "type": ["array", "string"]
       },
       "population_size": {
         "description": "Population size for evolutionary gene pool (default 12).",
@@ -207,6 +279,10 @@
         "description": "Type of rethink-refine cycle (e.g. 'archetype_exploration', 'triz_resolution', 'adversarial_falsification', 'benchmark_probe', 'failure_mode_analysis').",
         "type": "string"
       },
+      "root_id": {
+        "description": "Root node ID for hyperbolic tree embedding or initial world.",
+        "type": "string"
+      },
       "seed_paradigms": {
         "description": "Optional list of initial paradigm definitions to seed the gene pool.",
         "type": ["array", "string"]
@@ -218,6 +294,10 @@
       "start_line": {
         "description": "Starting line number (1-indexed inclusive) for windowed line slice viewing.",
         "type": "integer"
+      },
+      "states": {
+        "description": "List of hidden state identifiers for Active Inference POMDP.",
+        "type": ["array", "string"]
       },
       "subagent_prompt": {
         "description": "The delegation prompt or contract text for the subagent to validate.",
@@ -259,6 +339,18 @@
       "time_budget_minutes": {
         "description": "Immutable outer authority budget in minutes; set_timer only changes internal pacing.",
         "type": "number"
+      },
+      "transitions": {
+        "description": "List of transitions or adjacency dictionary for Kripke structure.",
+        "type": ["array", "object", "string"]
+      },
+      "tree": {
+        "description": "Tree hierarchy adjacency list or nested dict for hyperbolic embedding.",
+        "type": ["object", "array", "string"]
+      },
+      "worlds": {
+        "description": "List of world/state definitions for Kripke structure.",
+        "type": ["array", "string"]
       }
     },
     "required": [
