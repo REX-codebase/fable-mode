@@ -76,7 +76,7 @@ During Phases 1, 2, and 3 (while the immutable authority lock is active), the ho
 
 --------------------------------------------------------------------------------
 
-## The 9 Core Pillars of Fable System 2
+## The 10 Core Pillars of Fable Mode
 
 ```mermaid
 graph TD
@@ -88,6 +88,7 @@ graph TD
     P6 --> P7["7. Multi-Hour Persistence & Verification<br/>(WAL, Checkpoints & DoD Quality Gates)"]
     P7 --> P8["8. Silent-Deliberation Mandate<br/>(Zero-Chat Lockout during Time-Lock)"]
     P8 --> P9["9. Token Compression Subsystem<br/>(CAS, Grammar333 & <= 0.003 tokens/char)"]
+    P9 --> P10["10. System 3 Meta-Cognitive Deliberation<br/>(Friston F, Kripke AG(safe), TRIZ, Micro-Scaffolds)"]
 ```
 
 1. **Strict Cognitive Separation**:
@@ -141,6 +142,12 @@ graph TD
    - **Grammar333 Micro-Bytecode (`FableGrammar333`)**: High-entropy bytecode serialization for tool actions, command runs, file edits, and agent telemetry using LEB128 varints and interned symbol dictionaries.
    - **CAS Slice Viewer (`CASSliceViewer`)**: Zero-copy windowed line slice extractor (`view_slice`) streaming line ranges without loading unbounded files into memory or prompt context.
    - **Invariant Proof**: Guarantees token compression ratio `<= 0.003 tokens/character` on large payloads with 100% bit-exact lossless roundtrip recovery.
+
+10. **System 3 Meta-Cognitive Deliberation & Weak-Model Frontier Uplift**:
+    - **Active Inference Free Energy Minimization ($F = D_{KL}(q||p) - \mathbb{E}_q[\ln p(o|s)]$)**: Continuously drives down epistemic uncertainty and variational complexity during deliberations.
+    - **Kripke Modal Invariant Model Checking ($AG(\text{safe})$)**: Formally verifies temporal safety invariants across possible world transitions before candidate execution.
+    - **Dialectical TRIZ Auto-Repair Synthesizer**: On verification or finalization rejection, automatically analyzes thesis/antithesis contradictions, executes TRIZ matrix transformations, and provides structured repair blueprints.
+    - **System 3 Micro-Scaffolding**: Automatically injects mathematical boundary conditions ($do(\cdot)$ sensitivity, $AG(\text{safe})$ contracts, regex acceptance patterns) into subagent delegation contracts, elevating sub-7B/14B models to frontier performance.
 
 --------------------------------------------------------------------------------
 

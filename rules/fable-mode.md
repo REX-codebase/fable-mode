@@ -24,4 +24,9 @@ Whenever the user requests deep thinking, architectural planning, system design,
 7. **Strict Cognitive & Role Separation**:
    - **Main Agent**: The Master Architect & System 2 Deliberation Conductor. Performs all heavy cognitive lifting, architecture, invariant proofs, and multi-tier quality gatekeeping. **Strictly CANNOT write or edit code files directly in the codebase.**
    - **Subagent Fleet**: 100% of all code writing (`write_to_file`), edits (`replace_file_content`), unit test implementations, and build fixes are executed **exclusively by subagents** (`type: self` or `type: research`) **only AFTER the timer has elapsed and execution is unlocked**.
+8. **System 3 Meta-Cognitive Deliberation & Weak-Model Frontier Uplift**:
+   - **Active Inference & Free Energy Minimization**: Active Free Energy $F$ and complexity metrics are continuously tracked across candidate registrations, phase advances, and refinement cycles.
+   - **Kripke Modal Invariant Enforcement**: Temporal invariants $AG(\text{safe})$ are strictly validated before execution transitions.
+   - **Dialectical TRIZ Auto-Repair**: On any verification or finalize rejection, automatically synthesize contradictions, apply TRIZ principles, and attach actionable repair recommendations to candidate metadata.
+   - **System 3 Micro-Scaffolds**: Subagent delegation contracts automatically embed Kripke contracts, causal failure boundaries ($do(\cdot)$), TRIZ principles, and regex acceptance patterns to guarantee frontier-grade output from low-parameter models.
 

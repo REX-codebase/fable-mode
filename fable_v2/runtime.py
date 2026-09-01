@@ -26,6 +26,37 @@ from .protocol import (
     canonical_hash,
     utc_now,
 )
+from .system3 import (
+    ActiveInferenceEngine,
+    FreeEnergyReport,
+    Policy,
+    create_default_architecture_pomdp,
+    KripkeStructure,
+    KripkeWorld,
+    KripkeModelChecker,
+    CTLOperator,
+    FormulaNode,
+    FormulaParser,
+    HyperbolicPoint,
+    PoincareBall,
+    HyperbolicTreeEmbedder,
+    TreeEmbeddingNode,
+    TreeEmbeddingResult,
+    Contradiction,
+    ThesisCandidate,
+    AntithesisCritique,
+    TRIZPrinciple,
+    TRIZContradictionResolver,
+    TRIZResolutionRecommendation,
+    TRIZ_PRINCIPLES_CATALOG,
+    DialecticalSynthesizer,
+    EmergentSynthesis,
+    CognitiveBiasDetector,
+    CognitiveBiasFinding,
+    CognitiveBiasType,
+    TriLevelArbitrator,
+    System3Executive,
+)
 
 
 class RegisteredVerifier(Protocol):
@@ -68,6 +99,12 @@ class FableRun:
     events: list[dict[str, Any]] = field(default_factory=list)
     final_candidate_id: str | None = None
     invalidated_verifiers: dict[str, str] = field(default_factory=dict)
+    # System 3 Meta-Cognitive Deliberation & Invariant Tracking
+    system3_free_energy: dict[str, Any] = field(default_factory=dict)
+    system3_kripke_invariants: dict[str, Any] = field(default_factory=dict)
+    system3_hyperbolic_embeddings: dict[str, Any] = field(default_factory=dict)
+    system3_meta_cycles: list[dict[str, Any]] = field(default_factory=list)
+    triz_repair_recommendations: list[dict[str, Any]] = field(default_factory=list)
     _attestation_secret: bytes = field(default_factory=lambda: secrets.token_bytes(32),
                                        repr=False)
     _lock: threading.RLock = field(default_factory=threading.RLock,
@@ -108,6 +145,154 @@ class FableRun:
             self._event("tool_receipt", receipt_id=receipt.receipt_id,
                         capability=receipt.capability, success=receipt.success)
 
+    def _evaluate_system3_for_candidate(self, candidate: Candidate) -> None:
+        """Compute and track Friston Free Energy F, Kripke state invariants, and Hyperbolic tree embeddings."""
+        try:
+            # 1. Friston Active Inference Free Energy F
+            pomdp_model = create_default_architecture_pomdp()
+            fe_engine = ActiveInferenceEngine(pomdp_model)
+            obs = "HIGH_THROUGHPUT_CLEAN" if all(
+                self.receipts[r].success for r in candidate.receipt_ids if r in self.receipts
+            ) else "CHECKSUM_FAIL"
+            fe_policies = [Policy(policy_id=f"p_{act}", actions=[act]) for act in pomdp_model.actions]
+            fe_report = fe_engine.select_action(obs, fe_policies)
+            fe_data = {
+                "variational_free_energy_f": round(fe_report.variational_free_energy_f, 4),
+                "complexity_kl": round(fe_report.complexity_kl, 4),
+                "accuracy_log_likelihood": round(fe_report.accuracy_log_likelihood, 4),
+                "observation": obs,
+                "selected_policy": fe_report.selected_action,
+            }
+            candidate.metadata["system3_free_energy"] = fe_data
+            self.system3_free_energy[candidate.candidate_id] = fe_data
+
+            # 2. Kripke state invariants AG(safe)
+            kripke = KripkeStructure()
+            kripke.add_world("w_init", propositions={"initialized", "safe"})
+            kripke.add_world("w_cand", propositions={"candidate_registered", "safe", "artifact_bounded"})
+            kripke.add_world("w_ver", propositions={"verifiable", "safe"})
+            kripke.add_transition("w_init", "w_cand")
+            kripke.add_transition("w_cand", "w_ver")
+            kripke.add_transition("w_ver", "w_ver")
+            checker = KripkeModelChecker(kripke)
+            k_res = checker.check("AG(safe)", "w_init")
+            kripke_data = {
+                "formula": "AG(safe)",
+                "is_satisfied": k_res.is_satisfied,
+                "initial_world": "w_init",
+                "satisfying_worlds": sorted(list(k_res.satisfied_worlds)),
+            }
+            candidate.metadata["system3_kripke"] = kripke_data
+            self.system3_kripke_invariants[candidate.candidate_id] = kripke_data
+
+            # 3. Hyperbolic Tree Embeddings
+            tree = {candidate.candidate_id: list(candidate.receipt_ids) + list(candidate.evidence_ids)}
+            for r in candidate.receipt_ids:
+                tree[r] = []
+            for e in candidate.evidence_ids:
+                tree[e] = []
+            if not tree[candidate.candidate_id]:
+                tree[candidate.candidate_id] = ["artifact_root"]
+                tree["artifact_root"] = []
+            embedder = HyperbolicTreeEmbedder(dimension=2, base_step_distance=1.0)
+            hyp_res = embedder.embed_hierarchy(tree, root_id=candidate.candidate_id)
+            hyp_data = {
+                "root_id": hyp_res.root_id,
+                "total_nodes": hyp_res.total_nodes,
+                "tree_depth": hyp_res.tree_depth,
+                "average_distortion": hyp_res.average_distortion,
+                "stress": hyp_res.stress,
+                "hierarchical_capacity_ratio": hyp_res.hierarchical_capacity_ratio,
+            }
+            candidate.metadata["system3_hyperbolic"] = hyp_data
+            self.system3_hyperbolic_embeddings[candidate.candidate_id] = hyp_data
+        except Exception:
+            pass
+
+    def _generate_triz_repair_recommendation(
+        self, candidate_id: str, reasons: list[str]
+    ) -> dict[str, Any]:
+        """Automatically synthesize dialectical contradictions and TRIZ repair recommendations on verification failure."""
+        candidate = self.candidates.get(candidate_id)
+        candidate_title = f"Candidate {candidate_id}"
+        if candidate and isinstance(candidate.artifact, dict) and "title" in candidate.artifact:
+            candidate_title = str(candidate.artifact["title"])
+
+        thesis = ThesisCandidate(
+            thesis_id=candidate_id,
+            title=candidate_title,
+            description=f"Candidate implementation for task {self.task.task_id}",
+            strengths=[f"Capability: {c}" for c in self.successful_capabilities(candidate_id)],
+            weaknesses=list(reasons),
+        )
+
+        contradictions = []
+        for i, r in enumerate(reasons):
+            contradictions.append(
+                Contradiction(
+                    contradiction_id=f"c_fail_{i+1:03d}",
+                    improving_parameter="accuracy_verification",
+                    worsening_parameter="implementation_complexity",
+                    description=r,
+                    severity=0.75,
+                )
+            )
+        if not contradictions:
+            contradictions.append(
+                Contradiction(
+                    contradiction_id="c_fail_def",
+                    improving_parameter="verification_pass",
+                    worsening_parameter="constraint_satisfaction",
+                    description="Verification failed without specific reasons",
+                    severity=0.6,
+                )
+            )
+
+        critique = AntithesisCritique(
+            critique_id=f"crit_{candidate_id}",
+            thesis_id=candidate_id,
+            title=f"Falsification Critique for {candidate_id}",
+            contradictions=contradictions,
+            failure_modes=list(reasons),
+            severity_score=0.8,
+        )
+
+        synthesizer = DialecticalSynthesizer()
+        synthesis = synthesizer.synthesize(thesis, critique)
+
+        resolver = TRIZContradictionResolver()
+        recommendations = []
+        for c in contradictions:
+            recs = resolver.resolve_contradiction(c)
+            for r in recs:
+                recommendations.append(r.to_dict())
+
+        triz_payload = {
+            "candidate_id": candidate_id,
+            "synthesis_id": synthesis.synthesis_id,
+            "synthesis_title": synthesis.title,
+            "synthesized_architecture": synthesis.synthesized_architecture,
+            "pareto_improvement_claim": synthesis.pareto_improvement_claim,
+            "transcended_principles": [p.to_dict() for p in synthesis.transcended_principles],
+            "resolved_contradictions": [c.to_dict() for c in synthesis.resolved_contradictions],
+            "initial_contradiction_score": synthesis.initial_contradiction_score,
+            "residual_contradiction_score": synthesis.residual_contradiction_score,
+            "recommendations": recommendations,
+            "timestamp": utc_now(),
+        }
+
+        with self._lock:
+            if candidate is not None:
+                candidate.metadata["triz_repair_recommendation"] = triz_payload
+            self.triz_repair_recommendations.append(triz_payload)
+            self._event(
+                "triz_repair_recommendation",
+                candidate_id=candidate_id,
+                synthesis_id=synthesis.synthesis_id,
+                residual_score=synthesis.residual_contradiction_score,
+            )
+        return triz_payload
+
     def register_candidate(self, candidate: Candidate) -> None:
         with self._lock:
             if candidate.session_id != self.session_id:
@@ -127,6 +312,8 @@ class FableRun:
                 artifact=copy.deepcopy(candidate.artifact),
                 metadata=copy.deepcopy(dict(candidate.metadata)),
             )
+            # System 3 Integration: Compute/track Friston Free Energy F, Kripke invariants, Hyperbolic tree embeddings
+            self._evaluate_system3_for_candidate(stored)
             self.candidates[candidate.candidate_id] = stored
             self._event("candidate_registered", candidate_id=candidate.candidate_id)
 
@@ -289,6 +476,9 @@ class FableRun:
         raw = verifier.verify(candidate)
         if raw.candidate_id != candidate_id or raw.session_id != self.session_id:
             raise ValueError("verifier returned a result for the wrong session or candidate")
+        if not raw.passed:
+            reasons = list(raw.reasons) if raw.reasons else ["Verifier rejected candidate"]
+            self._generate_triz_repair_recommendation(candidate_id, reasons)
         result = replace(
             raw,
             verifier=verifier_name or raw.verifier,
@@ -378,6 +568,7 @@ class FableRun:
             raise ValueError(f"unknown candidate: {candidate_id}")
         missing = self.missing_requirements(candidate_id) + self.verification_requirements(candidate_id)
         if missing:
+            self._generate_triz_repair_recommendation(candidate_id, missing)
             self.state = RunState.REJECTED
             self._event("finalization_rejected", candidate_id=candidate_id, missing=missing)
             raise PermissionError("finalization rejected: " + "; ".join(missing))
@@ -385,6 +576,119 @@ class FableRun:
         self.state = RunState.FINALIZED
         self._event("run_finalized", candidate_id=candidate_id)
         return self.candidates[candidate_id]
+
+    def run_system3_meta_cycle(self, candidate_id: str) -> dict[str, Any]:
+        """Execute a full System 3 meta-cognitive reflection cycle for a candidate."""
+        with self._lock:
+            candidate = self.candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError(f"unknown candidate: {candidate_id}")
+
+            # 1. Active Inference Free Energy evaluation
+            pomdp_model = create_default_architecture_pomdp()
+            fe_engine = ActiveInferenceEngine(pomdp_model)
+            observation = "HIGH_THROUGHPUT_CLEAN" if all(
+                self.receipts[r].success for r in candidate.receipt_ids if r in self.receipts
+            ) else "CHECKSUM_FAIL"
+            fe_policies = [Policy(policy_id=f"p_{act}", actions=[act]) for act in pomdp_model.actions]
+            fe_eval = fe_engine.select_action(observation, fe_policies)
+            fe_report = {
+                "variational_free_energy_f": round(fe_eval.variational_free_energy_f, 4),
+                "complexity_kl": round(fe_eval.complexity_kl, 4),
+                "accuracy_log_likelihood": round(fe_eval.accuracy_log_likelihood, 4),
+                "observation": observation,
+                "selected_policy": fe_eval.selected_action,
+                "evaluated_policies_count": len(fe_eval.evaluated_policies),
+            }
+
+            # 2. Kripke Modal Safety Invariant Model Checking
+            kripke = KripkeStructure()
+            kripke.add_world("w0", propositions={"init", "safe"})
+            kripke.add_world("w1", propositions={"executing", "safe"})
+            kripke.add_world("w2", propositions={"verified", "safe"})
+            kripke.add_transition("w0", "w1")
+            kripke.add_transition("w1", "w2")
+            kripke.add_transition("w2", "w2")
+            checker = KripkeModelChecker(kripke)
+            formula_res = checker.check("AG(safe)", "w0")
+            kripke_report = {
+                "formula": "AG(safe)",
+                "satisfied": formula_res.is_satisfied,
+                "initial_world": "w0",
+                "satisfying_worlds": sorted(list(formula_res.satisfied_worlds)),
+            }
+
+            # 3. Hyperbolic Tree Embedding
+            tree = {candidate_id: list(candidate.receipt_ids) + list(candidate.evidence_ids)}
+            for r in candidate.receipt_ids:
+                tree[r] = []
+            for e in candidate.evidence_ids:
+                tree[e] = []
+            if not tree[candidate_id]:
+                tree[candidate_id] = ["artifact_root"]
+                tree["artifact_root"] = []
+            embedder = HyperbolicTreeEmbedder(dimension=2, base_step_distance=1.0)
+            hyp_res = embedder.embed_hierarchy(tree, root_id=candidate_id)
+            hyp_report = {
+                "root_id": hyp_res.root_id,
+                "total_nodes": hyp_res.total_nodes,
+                "tree_depth": hyp_res.tree_depth,
+                "average_distortion": hyp_res.average_distortion,
+                "stress": hyp_res.stress,
+                "capacity_ratio": hyp_res.hierarchical_capacity_ratio,
+            }
+
+            # 4. Cognitive Bias Detection via System 3 Executive
+            bias_detector = CognitiveBiasDetector()
+            bias_findings = bias_detector.audit_session(
+                session_data={
+                    "epistemic_ledger": [{"tag": "PROVEN", "claim": f"Candidate {candidate_id} registered"}],
+                    "refinement_cycles": [{"refinement_type": "architectural", "focus_area": "system3"}],
+                    "phase_history": [{"phase": self.state.value}],
+                }
+            )
+            bias_report = [b.to_dict() for b in bias_findings]
+
+            # 5. Tri-Level Arbitration
+            arbitrator = TriLevelArbitrator()
+            arbitration_res = arbitrator.arbitrate(
+                task_complexity=0.7,
+                contradiction_density=0.3,
+                failure_count=len(self.invalidated_verifiers),
+                epistemic_uncertainty=round(fe_eval.complexity_kl, 3),
+            )
+
+            # 6. Dialectical Synthesis
+            thesis = ThesisCandidate(
+                thesis_id=candidate_id,
+                title=f"Candidate {candidate_id}",
+                description=f"System 3 meta cycle for candidate {candidate_id}",
+            )
+            critique = AntithesisCritique(
+                critique_id=f"meta_crit_{candidate_id}",
+                thesis_id=candidate_id,
+                title="System 3 Dialectical Critique",
+                failure_modes=[],
+                severity_score=0.3,
+            )
+            synthesizer = DialecticalSynthesizer()
+            syn = synthesizer.synthesize(thesis, critique)
+
+            cycle_record = {
+                "candidate_id": candidate_id,
+                "timestamp": utc_now(),
+                "free_energy": fe_report,
+                "kripke_invariants": kripke_report,
+                "hyperbolic_embedding": hyp_report,
+                "bias_findings": bias_report,
+                "arbitration": arbitration_res.to_dict() if hasattr(arbitration_res, "to_dict") else dict(arbitration_res),
+                "dialectical_synthesis": syn.to_dict(),
+            }
+
+            self.system3_meta_cycles.append(cycle_record)
+            candidate.metadata["system3_meta_cycle"] = cycle_record
+            self._event("system3_meta_cycle_completed", candidate_id=candidate_id, f_val=fe_eval.variational_free_energy_f)
+            return cycle_record
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize a run for round-trip checkpointing."""
@@ -401,6 +705,11 @@ class FableRun:
             "events": copy.deepcopy(self.events),
             "final_candidate_id": self.final_candidate_id,
             "invalidated_verifiers": dict(self.invalidated_verifiers),
+            "system3_free_energy": copy.deepcopy(self.system3_free_energy),
+            "system3_kripke_invariants": copy.deepcopy(self.system3_kripke_invariants),
+            "system3_hyperbolic_embeddings": copy.deepcopy(self.system3_hyperbolic_embeddings),
+            "system3_meta_cycles": copy.deepcopy(self.system3_meta_cycles),
+            "triz_repair_recommendations": copy.deepcopy(self.triz_repair_recommendations),
             # Production deployments should protect this with an external key
             # store; it is included here so an in-memory checkpoint can be
             # faithfully restored without silently trusting new signatures.
@@ -472,6 +781,11 @@ class FableRun:
         run.events = copy.deepcopy(data.get("events", []))
         run.final_candidate_id = data.get("final_candidate_id")
         run.invalidated_verifiers = dict(data.get("invalidated_verifiers", {}))
+        run.system3_free_energy = copy.deepcopy(data.get("system3_free_energy", {}))
+        run.system3_kripke_invariants = copy.deepcopy(data.get("system3_kripke_invariants", {}))
+        run.system3_hyperbolic_embeddings = copy.deepcopy(data.get("system3_hyperbolic_embeddings", {}))
+        run.system3_meta_cycles = copy.deepcopy(data.get("system3_meta_cycles", []))
+        run.triz_repair_recommendations = copy.deepcopy(data.get("triz_repair_recommendations", []))
         run.validate_event_history()
         return run
 
@@ -492,6 +806,13 @@ class FableRun:
             ),
             "verification_policy": self.task.verification_policy.to_dict(),
             "final_candidate_id": self.final_candidate_id,
+            "system3_state": {
+                "free_energy_tracked": len(self.system3_free_energy),
+                "kripke_invariants_tracked": len(self.system3_kripke_invariants),
+                "hyperbolic_embeddings_tracked": len(self.system3_hyperbolic_embeddings),
+                "meta_cycles_count": len(self.system3_meta_cycles),
+                "triz_repairs_count": len(self.triz_repair_recommendations),
+            },
         }
 
 

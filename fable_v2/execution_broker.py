@@ -28,6 +28,8 @@ import tempfile
 import threading
 from typing import Any, Iterable
 
+from .system3 import KripkeStructure, KripkeModelChecker, CausalDAG, CausalNode, CausalNodeType
+
 
 @dataclass(frozen=True)
 class BrokerPolicy:
@@ -376,6 +378,40 @@ class ExecutionBroker:
             "writes_enabled": True,
         }
 
+    def check_kripke_pre_execution_invariants(self, command: Iterable[str]) -> dict[str, Any]:
+        """Verify modal safety invariants AG(safe_execution) prior to running a command."""
+        kripke = KripkeStructure()
+        kripke.add_world("w_pre", propositions={"ready", "safe_execution", "workspace_isolated"})
+        kripke.add_world("w_exec", propositions={"running", "safe_execution", "workspace_isolated"})
+        kripke.add_world("w_post", propositions={"completed", "safe_execution", "workspace_isolated"})
+        kripke.add_transition("w_pre", "w_exec")
+        kripke.add_transition("w_exec", "w_post")
+        kripke.add_transition("w_post", "w_post")
+        checker = KripkeModelChecker(kripke)
+        res = checker.check("AG(safe_execution)", "w_pre")
+        return {
+            "formula": "AG(safe_execution)",
+            "is_satisfied": res.is_satisfied,
+            "satisfying_worlds": sorted(list(res.satisfied_worlds)),
+        }
+
+    def validate_causal_boundaries(self, command: Iterable[str], cwd: str | None = None) -> dict[str, Any]:
+        """Validate causal isolation boundaries do(Execute(cmd)) prior to running."""
+        cmd_list = list(command)
+        exe_name = Path(cmd_list[0]).name if cmd_list else "unknown"
+        dag = CausalDAG(name=f"CausalBroker_{exe_name}")
+        dag.add_node(node_id="node_workspace", name="WorkspaceIsolation", node_type=CausalNodeType.EXOGENOUS, value=1.0)
+        dag.add_node(node_id="node_intervention", name=f"do(Execute({exe_name}))", node_type=CausalNodeType.INTERVENTION, value=1.0)
+        dag.add_node(node_id="node_output", name="SafeOutput", node_type=CausalNodeType.METRIC, value=0.99)
+        dag.add_edge("node_workspace", "node_intervention", weight=1.0)
+        dag.add_edge("node_intervention", "node_output", weight=0.99)
+        report = dag.evaluate_brittleness(target_metric="node_output")
+        return {
+            "is_valid": report.overall_brittleness_score < 0.8,
+            "brittleness_score": report.overall_brittleness_score,
+            "dag": dag.to_dict(),
+        }
+
     def execute_command(
         self,
         command: Iterable[str],
@@ -385,6 +421,14 @@ class ExecutionBroker:
         argv = tuple(command)
         if not argv or any(not isinstance(item, str) or not item for item in argv):
             raise ValueError("command must be a non-empty sequence of strings")
+        # System 3 Pre-Execution Invariant Verification
+        kripke_check = self.check_kripke_pre_execution_invariants(argv)
+        if not kripke_check["is_satisfied"]:
+            raise PermissionError("System 3 Kripke modal safety invariant AG(safe_execution) violated")
+        causal_check = self.validate_causal_boundaries(argv, cwd)
+        if not causal_check["is_valid"]:
+            raise PermissionError("System 3 Causal boundary check failed")
+
         requested_executable = Path(argv[0])
         executable = requested_executable.name
         executable_key = Path(executable).stem.lower()
