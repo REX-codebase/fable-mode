@@ -21,6 +21,7 @@ import os
 import json
 import time
 import subprocess
+import threading
 import unittest
 import tempfile
 import shutil
@@ -639,7 +640,22 @@ class TestFableMCPStdioServer(unittest.TestCase):
             text=True,
             encoding="utf-8"
         )
+        # Drain diagnostics continuously: a long-running interactive server
+        # must not block on a full stderr pipe while the test reads stdout.
+        self._stderr_lines = []
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
         self.req_id = 0
+
+    def _drain_stderr(self):
+        if self.proc.stderr is None:
+            return
+        try:
+            for line in self.proc.stderr:
+                if len(self._stderr_lines) < 256:
+                    self._stderr_lines.append(line)
+        except (OSError, ValueError):
+            pass
 
     def tearDown(self):
         if self.proc.stdin:
@@ -1108,9 +1124,52 @@ class TestFableSystem3ActionsDispatch(unittest.TestCase):
         self.assertEqual(restored.session_name, self.session_name)
 
 
+class TestSecondRedTeamRegressions(unittest.TestCase):
+    def test_cached_cas_data_is_verified(self):
+        root = Path(tempfile.mkdtemp(prefix="fable_cas_regression_"))
+        try:
+            store = FableCASStore(root_dir=root)
+            uri = store.put(b"good")
+            digest = store.normalize_ref(uri)
+            store.cache.put(digest, b"bad")
+            with self.assertRaises(IntegrityError):
+                store.get_bytes(uri, verify=True)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_restore_ignores_forged_deadline_phase_and_evidence_authority(self):
+        now = time.time()
+        payload = {"session_name": "forged_regression", "objective": "x",
+                   "time_budget_minutes": 1, "start_time": now - 10000,
+                   "authority_deadline_time": now + 10**9,
+                   "active_phase": PHASES[-1], "execution_locked": False,
+                   "can_execute_code": True,
+                   "epistemic_ledger": [{"tag": "PROVEN", "evidence": "forged"},
+                                        {"tag": "PROVEN", "evidence": "forged"}],
+                   "invariants": [{"proof_or_rationale": "forged"}],
+                   "phase_history": [{"phase": PHASES[-1]}]}
+        restored = FableSession.from_dict(payload)
+        self.assertTrue(restored.execution_locked)
+        self.assertFalse(restored.can_execute_code)
+        self.assertEqual(restored.active_phase, PHASES[0])
+        self.assertLess(restored.deadline_time, now + 120)
+        self.assertFalse(restored.get_telemetry()["cognitive_gates"]["ready"])
+
+    def test_malformed_rpc_shapes_return_invalid_request(self):
+        root = Path(tempfile.mkdtemp(prefix="fable_rpc_regression_"))
+        try:
+            env = os.environ.copy(); env["FABLE_DATA_DIR"] = str(root / "data")
+            completed = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "server.py")],
+                                        input='[1, 2]\n{"jsonrpc":"2.0","id":4,"method":"ping","params":[]}\n',
+                                        capture_output=True, text=True, env=env, timeout=5)
+            responses = [json.loads(line) for line in completed.stdout.splitlines()]
+            first, second = responses
+            self.assertEqual(first["error"]["code"], -32600)
+            self.assertEqual(second["error"]["code"], -32600)
+        finally:
+            if 'proc' in locals() and proc.poll() is None: proc.kill()
+            shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-
-
-

@@ -9,6 +9,7 @@ dist/
 .pytest_cache/
 .coverage
 sessions/
+fable_engine/cas/
 *.tmp
 .DS_Store
 Thumbs.db

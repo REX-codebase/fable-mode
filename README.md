@@ -12,7 +12,7 @@
 
 **An independent REX-codebase cognitive engine and fleet orchestrator for MCP-compatible language-model hosts.**
 
-[Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Quickstart](#-1-click-quickstart) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
+[Why Fable-Mode?](#-the-why-fable-mode-paradigm-shift) • [Core Pillars](#-the-6-core-pillars-of-fable-mode) • [Lifecycle & State Machine](#-visual-architecture-diagrams) • [Installation & downloads](#-installation--downloads) • [MCP Reference](#-mcp-tool-reference--api) • [Cognitive Scaffolds](#-reusable-system-2-deliberation-scaffolds) • [Benchmarks](#-benchmarks--test-verification)
 
 </div>
 
@@ -58,7 +58,7 @@ Previous attempts at advanced AI reasoning adapted Monte Carlo Tree Search (MCTS
 | **Pacing Guarantee** | 🔴 AI can oppose or argue against long-running tasks. | 🟢 **Zero-Bypass Mechanical Lock**: Engine throws hard exception if early unlock is attempted. |
 | **Cognitive Architecture** | 🔴 Monolithic agent mixes reasoning and code typing in the same context window. | 🟢 **Strict Separation**: Master Architect (System 2) orchestrates Subagent Fleet (Coders). |
 
-$$\boxed{\text{System 1 Proposal} \xrightarrow{\quad\text{Epistemic Grounding}\quad} \text{Invariant Proofs} \xrightarrow{\quad\text{Adversarial Red-Teaming}\quad} \text{Mechanical Unlock} \implies \text{Zero Defects}}$$
+$$\boxed{\text{System 1 Proposal} \xrightarrow{\quad\text{Epistemic Grounding}\quad} \text{Invariant Proofs} \xrightarrow{\quad\text{Adversarial Red-Teaming}\quad} \text{Mechanical Unlock} \implies \text{evidence-backed execution}}$$
 
 ---
 
@@ -313,61 +313,284 @@ stateDiagram-v2
 
 ---
 
-## 🚀 1-Click Quickstart
+## 📦 Installation & downloads
 
-### Option A: Windows 1-Click Automated Installer (Recommended)
+Fable-Mode is distributed as a self-contained console runtime. It installs Fable first, then can register the installed executable with detected host CLIs. The runtime needs no Python, Git, pip, Node, network service, or GUI.
 
-**Fastest path — no Git required:** open PowerShell and run this single line:
+### Quick downloads
+
+The downloader scripts are available from the `main` branch now. The release
+links become available only after a tagged release has completed successfully;
+until then, GitHub will return no release asset for those URLs. All links below
+are explicit GitHub-hosted download URLs and download files only.
+
+**Downloaders (available now):**
+
+- [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
+- [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
+
+**Latest release artifacts (after a successful tagged release):**
+
+- [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
+- [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
+- [macOS arm64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip)
+- [Linux x86_64 tar.gz](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz)
+- [SHA256SUMS](https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS)
+
+### Release artifacts and trust status
+
+**Corrective release 1.2.3:** This patch release carries the Windows frozen
+uninstall fix and aligned package and server version metadata from `main`,
+together with the corrected downloader/stable-alias and macOS runner workflow
+logic. The immutable `v1.2.2` tag and its passed build artifacts remain
+unchanged; do not use or retag that tag. The `v1.2.3` artifacts become trusted
+only after its tagged workflow completes successfully.
+
+Artifacts are **not available until a version tag build succeeds**. When a tagged
+workflow completes successfully, it publishes these architecture-specific names
+(the exact version is inserted in the GitHub Release):
+
+- `fable-mode-vX.Y.Z-windows-x86_64.zip` (contains `fable-mode.exe`)
+- `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`)
+- `fable-mode-vX.Y.Z-macos-arm64.zip` (contains `fable-mode`)
+- `fable-mode-vX.Y.Z-linux-x86_64.tar.gz` (contains `fable-mode`)
+- `SHA256SUMS` (one SHA-256 line for each archive)
+
+The macOS x86_64 job uses `macos-13` and the macOS arm64 job uses the
+repository workflow's `macos-14` runner. These are separate archives, not a
+universal2 binary. The Windows and macOS downloaders below select only the
+matching architecture and exact expected asset name.
+
+The release workflow is the source of truth: this README does not promise that
+an artifact or Release exists before a tagged build has completed successfully.
+Both downloaders query the latest GitHub Release. A repository with no Release
+(or a Release missing the matching archive or `SHA256SUMS`) fails clearly rather
+than falling back to a source checkout.
+
+#### Windows x86_64 downloader
+
+From a checkout of this repository, run PowerShell on a 64-bit Windows machine:
 
 ```powershell
-$installer="$env:TEMP\fable-mode-install.ps1"; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/REX-codebase/fable-mode/fc771cca41f24a46a460a5bd291e125558196a8e/install-antigravity.ps1" -OutFile $installer; & $installer
+.\download-windows.ps1
+# Or choose an install directory explicitly:
+.\download-windows.ps1 -InstallDir "$HOME\.local\fable-mode"
 ```
 
-The bootstrap downloads a pinned REX-codebase package, verifies its SHA-256 digest before executing any downloaded installer code, runs the verification suite, installs the skill and MCP server, safely merges `fable-engine` into the host configuration, and keeps a backup of an existing config file. The command is pinned to a reviewed commit rather than mutable `main`; update the commit URL and installer checksum together for a new release. Use `-NoRegisterMcp` if you want to review the generated configuration before registering it.
-
-**From a local clone:**
+The default destination is `$HOME\fable-mode`; the script prints the full path
+to `fable-mode.exe` and a suggested next command. It downloads the exact
+`fable-mode-vX.Y.Z-windows-x86_64.zip` and `SHA256SUMS` assets, checks the
+archive's SHA-256 before extraction, and does not execute the downloaded file.
+It fails on unsupported Windows architectures, missing assets, no Release, an
+invalid checksum, or an invalid archive layout. Install and verify the runtime
+with the printed path, for example:
 
 ```powershell
+& "$HOME\fable-mode\fable-mode.exe" install --yes
+& "$HOME\fable-mode\fable-mode.exe" verify
+```
+
+#### macOS downloader
+
+From a checkout of this repository, run the script in a macOS Terminal:
+
+```sh
+chmod +x ./download-macos.sh
+./download-macos.sh
+# Or choose an install directory explicitly:
+./download-macos.sh "$HOME/.local/bin/fable-mode-release"
+```
+
+The default destination is `$HOME/.local/bin`. The script detects `x86_64` or
+`arm64`, selects `fable-mode-vX.Y.Z-macos-x86_64.zip` or
+`fable-mode-vX.Y.Z-macos-arm64.zip`, and requires the standard macOS
+`curl`, `unzip`, `shasum`, `plutil`, and related built-ins. It verifies the
+archive against `SHA256SUMS` with `shasum` **before** extraction, sets the
+installed file executable, and prints the installed path plus the next command.
+It does not require Python and never evaluates GitHub response data as shell
+code. Unsupported architectures, missing commands/assets, no Release, bad
+checksums, and unexpected ZIP layouts fail without installing a partial file.
+
+Install and verify with the path printed by the script (the default path is
+shown here):
+
+```sh
+"$HOME/.local/bin/fable-mode" install --yes
+"$HOME/.local/bin/fable-mode" verify
+```
+
+These downloaders fetch **unsigned binaries**. The workflow publishes
+SHA-256 checksums for transport/integrity verification, but signing,
+certificate validation, and macOS notarization are not included. Review the
+release and its checksums before use; checksum verification is not a
+cryptographic publisher signature.
+
+### Source-mode prerequisites and support boundary
+
+Source mode requires **Python 3.10 or newer** and has no runtime dependencies. Git is optional; a downloaded source archive works too. Windows, macOS, Linux, and WSL are supported when the host can launch a local stdio MCP process. Mobile platforms are not supported.
+
+### Download the repository once (source mode)
+
+With Git:
+
+```sh
 git clone https://github.com/REX-codebase/fable-mode.git
 cd fable-mode
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -RegisterMcp
 ```
 
-The installer verifies your Python runtime, registers the `fable-engine` MCP server, deploys all cognitive skills and rule directives, and runs the complete verification suite.
+Without Git, download the repository source archive from its hosting page, extract it, and open a terminal in the extracted `fable-mode` directory. Keep this checkout in a stable location; every host can reuse it.
 
----
+### Verify and install
 
-### Option B: MCP Host Configuration
+Run the commands for the environment where the MCP host will launch Fable-Mode. Check that the version printed is 3.10 or newer.
 
-Add the following to the MCP configuration file used by your host. The path shown is an example of a Gemini-style host layout; Fable-Mode itself is host-independent.
+**Windows PowerShell**
+
+```powershell
+py -3 --version
+py -3 -m pip install -e .
+py -3 fable_engine/test_server.py
+```
+
+**macOS, Linux, or WSL**
+
+```sh
+python3 --version
+python3 -m pip install -e .
+python3 fable_engine/test_server.py
+```
+
+The editable install registers the local package and its entry points; it does not add runtime dependencies. The test command verifies the legacy V1 MCP server before you connect a host. Host registration always uses the canonical MCP name `fable-engine`; an older `fable-mode` registration is migrated without touching unrelated servers. To use the same package-aware installer in source mode:
+
+**Windows PowerShell**
+
+```powershell
+py -3 fable_mode_entry.py install --yes
+# optionally register only canonical host commands found on PATH:
+py -3 fable_mode_entry.py install --yes --register-hosts
+```
+
+**macOS, Linux, or WSL**
+
+```sh
+python3 fable_mode_entry.py install --yes
+# optionally register only canonical host commands found on PATH:
+python3 fable_mode_entry.py install --yes --register-hosts
+```
+
+The installer probes only `claude`, `agy`, and `codex` by default; `cc` and `antigravity` require the explicit `--aliases` flag. Existing config keys are preserved. Registration requires a machine-readable `mcp list` response from CLI hosts so prior canonical and legacy entries can be restored safely; human-readable-only hosts are skipped before any host is changed. Use `--dry-run` to preview without probing or changing hosts.
+
+Registration is transactional and ownership-aware.  Automatic host CLI
+probes and mutations run with a least-privilege environment (the selected
+profile paths, trusted system PATH, locale, and temporary/configuration
+locations); arbitrary inherited environment variables and credentials are not
+forwarded.  A pre-existing
+`fable-engine` or legacy `fable-mode` entry is recorded as user state on the
+first install.  On reinstall, an entry that exactly matches the immediately
+prior Fable registration is treated as Fable-owned rather than as new user
+state; the first install's complete baseline is carried forward.  Thus
+reinstalling with or without `--register-hosts`, then uninstalling, does not
+leave a dead Fable entry and restores the original user entries.  Antigravity's
+file-backed configs are written owner-only (`0600`) while touched; the prior
+mode is restored on uninstall.  Global config is
+`~/.gemini/config/mcp_config.json`; an explicitly supplied workspace config is
+`<workspace>/.agents/mcp_config.json`.
+
+### Choose the Fable entry point
+
+The commands below register **legacy V1**, which is the compatibility path:
+
+- `fable-engine` (or its explicit alias `fable-v1`) launches `fable_engine.server` and the legacy `fable_session` MCP server.
+- Experimental **V2** is separate: `fable-v2-broker --workspace <absolute-path>` launches the execution boundary for the portable runtime in `fable_v2/`. It is not a drop-in alias for the V1 `fable_session` server; hosts must route V2 execution through the broker. See the existing [V1/V2 migration guide](docs/fable-v1-v2-migration.md) and [V2 architecture](docs/fable-v2-architecture.md) before selecting it.
+
+### Connect a host over local stdio MCP
+
+Use an **absolute path** to the checkout in host configuration. The examples invoke `fable_engine/server.py` directly so the host uses the Python environment you verified above. Substitute your real checkout path; keep the host and Python installation in the same environment.
+
+#### Claude Code
+
+Claude Code's official local-stdio form puts the server command after `--`:
+
+```powershell
+# Windows PowerShell
+claude mcp add --transport stdio fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+```
+
+```sh
+# macOS, Linux, or WSL
+claude mcp add --transport stdio fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
+```
+
+Verify with:
+
+```sh
+claude mcp list
+```
+
+See the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp).
+
+#### Codex CLI
+
+Use Codex's official stdio form, with the server command after `--`:
+
+```powershell
+# Windows PowerShell
+codex mcp add fable-engine -- py -3 "C:\path\to\fable-mode\fable_engine\server.py"
+```
+
+```sh
+# macOS, Linux, or WSL
+codex mcp add fable-engine -- python3 "/absolute/path/to/fable-mode/fable_engine/server.py"
+```
+
+For file-based configuration, add the server to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.fable-engine]
+command = "python3"
+args = ["/absolute/path/to/fable-mode/fable_engine/server.py"]
+cwd = "/absolute/path/to/fable-mode"
+```
+
+On Windows, use `command = "py"` with `args = ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]` and set `cwd` to the checkout path. Verify with:
+
+```sh
+codex mcp list
+```
+
+See the [Codex MCP documentation](https://developers.openai.com/codex/mcp).
+
+#### Antigravity
+
+Antigravity accepts local stdio servers in either its global `~/.gemini/config/mcp_config.json` or the active workspace's `.agents/mcp_config.json`. Add this entry to the file you choose:
 
 ```json
 {
   "mcpServers": {
     "fable-engine": {
-      "command": "python",
+      "command": "python3",
       "args": [
-        "C:/Users/hp1/Desktop/Documents/fable-mode/fable_engine/server.py"
+        "/absolute/path/to/fable-mode/fable_engine/server.py"
       ],
-      "env": {
-        "PYTHONUNBUFFERED": "1"
-      }
+      "cwd": "/absolute/path/to/fable-mode"
     }
   }
 }
 ```
 
----
+For a Windows entry, use `"command": "py"`, `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`, and a Windows checkout path for `cwd`. Open `/mcp` in Antigravity to inspect the connection and use its reload control after editing configuration, as supported by your Antigravity client.
 
-### Option C: Other MCP-Compatible Clients
+See the [Antigravity MCP documentation](https://antigravity.google/docs/mcp/).
 
-For desktop clients, editors, or other MCP-compatible hosts:
+#### Other MCP-compatible hosts (generic JSON)
+
+For a host that accepts the conventional `mcpServers` JSON shape, adapt this local-stdio entry to that host's documented configuration file:
 
 ```json
 {
   "mcpServers": {
     "fable-engine": {
-      "command": "python",
+      "command": "python3",
       "args": [
         "/absolute/path/to/fable-mode/fable_engine/server.py"
       ]
@@ -376,7 +599,21 @@ For desktop clients, editors, or other MCP-compatible hosts:
 }
 ```
 
----
+On Windows, replace the command and arguments with `"command": "py"` and `"args": ["-3", "C:/path/to/fable-mode/fable_engine/server.py"]`. Configuration file names and reload steps are host-specific; do not assume this JSON belongs at a particular path.
+
+### Optional instructions and rules
+
+Instruction files, skills, and rules are **optional and host-specific**. If your host documents a project- or user-level instruction/rules location, add the guidance you want there manually and follow that host's naming and scope rules. MCP registration does not automatically install a skill or rules; omit this step when the host has no documented mechanism.
+
+### OS and host matrix
+
+| Environment | Python command | Example stdio hosts | Notes |
+| :--- | :--- | :--- | :--- |
+| Windows | `py -3` | Claude Code, Codex CLI, Antigravity | Use PowerShell paths and `py -3`. |
+| macOS | `python3` | Claude Code, Codex CLI, Antigravity | Use an absolute checkout path. |
+| Linux | `python3` | Claude Code, Codex CLI, Antigravity | Native stdio process launch required. |
+| WSL | `python3` | A host that can launch WSL processes | Keep the host, Python, and checkout in the same environment when possible. |
+| Mobile | — | — | Not supported. |
 
 ## 🛠️ MCP Tool Reference & API
 
@@ -436,42 +673,29 @@ Deploy these battle-tested cognitive scaffolds to prime your agent for maximum d
 
 ## 🏆 Benchmarks & Test Verification
 
-`fable-mode` is built with extreme engineering rigor. The core engine is implemented in **100% pure Python standard library** with zero external dependencies, zero supply-chain risk, and sub-millisecond execution overhead.
+`fable-mode` uses the Python standard library at runtime and has no declared runtime dependencies. The test suite provides regression coverage; performance and crash-recovery properties still require validation on each target platform.
 
-### Automated Test Suite Results
+### Automated Test Suite
 
-```text
-================================================================================
-FABLE-ENGINE INVARIANT & MCP PROTOCOL VERIFICATION SUITE
-================================================================================
-test_edge_cases_and_error_handling           ... OK [0.04s]
-test_full_workflow_via_handler               ... OK [0.18s]
-test_refinement_cycle_dispatch               ... OK [0.09s]
-test_mcp_handshake_and_tool_call             ... OK [0.32s]
-test_anti_rush_lockout_enforcement           ... OK [0.06s]
-test_epistemic_ledger_logging                ... OK [0.03s]
-test_hard_time_lock_enforcement              ... OK [0.05s]
-test_initialization_defaults                 ... OK [0.02s]
-test_invariant_recording                     ... OK [0.03s]
-test_phase_transitions                       ... OK [0.04s]
-test_refinement_cycle_logging                ... OK [0.05s]
-test_serialization_and_atomic_save           ... OK [0.12s]
-test_timer_adjustment                        ... OK [0.02s]
---------------------------------------------------------------------------------
-Ran 13 tests in 1.412s
+Run the canonical V1 suite and the V2/packaging/security suite with:
 
-OK (13/13 Suites Passed, 100% Invariant Compliance)
-================================================================================
+```sh
+python fable_engine/test_server.py
+python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-### Performance & Overhead Matrix
+The test counts are intentionally not duplicated here because regression tests
+are added between releases.  The commands above are the authoritative way to
+obtain the current V1 and V2/packaging/security counts.  The release workflow
+also performs isolated artifact smoke checks. These tests do not constitute a
+universal guarantee of security, crash recovery, or host behavior on every
+operating system.
 
-| Benchmark Vector | Metric | Industry Standard | Fable-Mode Advantage |
-| :--- | :---: | :---: | :---: |
-| **External Dependencies** | **0 (Pure Stdlib)** | 12–25 packages | **Zero supply chain attack surface** |
-| **Test Execution Duration** | **1.41s** | 15–45s | **Instant validation & test cycles** |
-| **JSON-RPC Dispatch Latency** | **< 0.8ms** | 15–50ms | **Negligible token/deliberation overhead** |
-| **WAL Snapshot Atomicity** | **100% (ACID Safe)** | Non-atomic | **Zero state corruption on crash/reboot** |
+### Performance and recovery notes
+
+Runtime dependencies are limited to the Python standard library. No fixed latency,
+crash-recovery, or supply-chain-risk guarantee is claimed; measure those properties
+in the deployment environment and review the host's process-management behavior.
 
 ---
 
@@ -479,37 +703,46 @@ OK (13/13 Suites Passed, 100% Invariant Compliance)
 
 ```
 fable-mode/
-├── assets/
-│   └── hero-banner.svg                     # High-res animated cybernetic SVG banner
+├── build_scripts/
+│   └── build_release.py                    # Version-checked PyInstaller release build
+├── fable_mode/
+│   ├── launcher.py                          # Package-aware CLI, verify, and smoke checks
+│   ├── installer.py                         # Allowlisted transactional installer
+│   ├── adapters.py                          # Safe probes and transactional host registration
+│   └── resources.json                       # Canonical packaged runtime manifest
 ├── fable_engine/
-│   ├── fable_session.json                  # MCP JSON-RPC 2.0 tool declaration schema
-│   ├── server.py                           # Pure stdlib Python MCP server implementation
-│   ├── test_server.py                      # 13 comprehensive unit/integration test suites
-│   └── sessions/                           # Persistent JSON session stores and WAL logs
-├── rules/
-│   └── fable-mode.md                       # Fable-Mode architecture & role directives
-├── skills/
-│   └── fable-mode/
-│       ├── SKILL.md                        # Master cognitive skill configuration & protocols
-│       ├── references/
-│       │   ├── agentic-execution.md        # Long-running autonomy & time pacing telemetry
-│       │   ├── architectural-blueprinting.md # First-principles 10D trade-off matrices
-│       │   ├── cognitive-protocol.md       # System 1/2 dual-process & epistemic calibration
-│       │   ├── deepthink-mode.md           # 8-pass recursive <thinking> deliberation chain
-│       │   ├── innovation-engine.md        # TRIZ contradiction resolution matrices
-│       │   ├── interleaved-verification.md # Glasswing v2 adversarial red-teaming
-│       │   ├── prompt-scaffolds.md         # Reusable System 2 deliberation templates
-│       │   └── system2-session-engine.md   # Complete fable_session MCP technical manual
-│       └── examples/
-│           ├── autonomous-agentic-migration.md
-│           ├── breakthrough-algorithm-synthesis.md
-│           ├── deepthink-analysis-proof.md
-│           ├── distributed-system-design.md
-│           └── swe-bench-pro-debugging.md
-├── install.ps1                             # 1-Click Windows PowerShell setup script
-├── LICENSE                                 # MIT Open-Source License
-└── README.md                               # Project documentation
+│   ├── fable_session.json                   # MCP JSON-RPC 2.0 tool declaration schema
+│   ├── server.py                            # Pure-stdlib V1 MCP server implementation
+│   └── test_server.py                       # Canonical V1 unit/integration suite
+├── fable_v2/                                # V2 runtime and execution broker
+├── tests/                                   # Runtime, packaging, and security regressions
+├── rules/                                   # Runtime instruction resources
+├── docs/                                    # Architecture and migration documentation
+├── packaging/fable_mode.spec                # Reviewed PyInstaller resource list
+├── install.sh, install.ps1                  # Source-mode installer helpers
+├── install-antigravity.ps1                  # Antigravity helper
+├── LICENSE                                  # MIT License
+├── pyproject.toml, setup.py                 # Consistent package metadata
+└── README.md                                # Project documentation
 ```
+
+Session files are stored under the private data directory (the installed
+`fable-mode` launcher uses `~/.local/share/fable-mode/data/sessions/` on POSIX;
+the direct legacy `fable-engine` entry point uses its corresponding
+`~/.local/share/fable-engine/data/sessions/` location). Windows uses the
+corresponding `LOCALAPPDATA` paths. They are not kept inside the repository;
+CAS objects are stored beside the selected data directory.
+
+### CAS verification semantics
+
+CAS reads verify the SHA-256 named by the `cas://` reference by default.
+`FableCASStore.get_bytes(..., verify=False)` and `get_text(..., verify=False)`
+are explicit low-level maintenance/diagnostic escape hatches: they may use a
+cached value and must not be used to supply model-visible or server-facing
+content.  The V1 decompression, composite-frame, slice, and file-path paths
+always request verification explicitly.  This opt-out is not an authenticity
+or authorization mechanism; callers handling untrusted content must retain
+verification.
 
 ---
 
@@ -563,3 +796,20 @@ The V2 migration path is documented in
 `docs/fable-v2-architecture.md`: installers that still register `fable-engine`
 deliberately run V1 until a host adapter is configured for the V2 runtime and
 broker.
+
+### Host probe process scope
+
+Host discovery and MCP smoke probes use `argv` with `shell=False`, bounded output,
+a fresh session/process group where supported, and a minimal environment. POSIX
+probes can terminate the process group on timeout. Windows uses a new process
+group and terminates the direct child; Python's standard library does not provide
+a portable descendant/job-tree kill guarantee, so child cleanup on Windows remains
+best-effort and should be validated in CI. CLI registration is fail-closed when a
+host exposes only human-readable listing output. Probes use safe system PATH
+entries and add a script's shebang interpreter directory when it can be resolved;
+private interpreters available only through a user's secret-bearing PATH are not
+probed automatically. Installer cleanup retains an ownership/inode capability and
+revalidates it immediately before deletion, but Python has no portable
+descriptor-relative recursive-delete primitive, so a replacement race cannot be
+eliminated completely.
+
