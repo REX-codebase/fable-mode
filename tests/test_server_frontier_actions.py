@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 import json
 import time
 import tempfile
@@ -219,6 +219,50 @@ class TestServerFrontierActions(unittest.TestCase):
         })
         self.assertIn("Error:", res)
         self.assertIn("must not be tautological or generic", res)
+
+    def test_validate_event_history_action(self):
+        handle_fable_session({
+            "action": "create_session",
+            "session_name": self.session_name,
+            "objective": "Test event history audit",
+            "time_budget_minutes": 10.0
+        })
+
+        handle_fable_session({
+            "action": "track_file_change",
+            "session_name": self.session_name,
+            "file_path": "src/unified.py",
+            "change_type": "modified",
+            "diff_summary": "+ unified event tracking",
+        })
+
+        audit_res = handle_fable_session({
+            "action": "validate_event_history",
+            "session_name": self.session_name,
+        })
+        self.assertIn("Cryptographic Event Chain Audit", audit_res)
+        self.assertIn("VALID & INTACT", audit_res)
+
+    def test_cross_process_session_mtime_synchronization(self):
+        from fable_engine.server import get_or_load_session, SESSIONS_DIR
+        handle_fable_session({
+            "action": "create_session",
+            "session_name": self.session_name,
+            "objective": "Concurrency test",
+            "time_budget_minutes": 10.0
+        })
+        session1 = get_or_load_session(self.session_name)
+        file_path = SESSIONS_DIR / f"{self.session_name}.json"
+        
+        # Simulate external process update by loading, modifying, and saving to disk
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        data["objective"] = "Updated by external worker process"
+        time.sleep(0.02)
+        file_path.write_text(json.dumps(data), encoding="utf-8")
+
+        # get_or_load_session should detect disk mtime delta and refresh in-memory session
+        session2 = get_or_load_session(self.session_name)
+        self.assertEqual(session2.objective, "Updated by external worker process")
 
 
 if __name__ == "__main__":

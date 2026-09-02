@@ -181,10 +181,29 @@ class FableRun:
             self.system3_free_energy[candidate.candidate_id] = fe_data
 
             # 2. Kripke state invariants AG(safe)
+            is_clean = all(
+                self.receipts[r].success for r in candidate.receipt_ids if r in self.receipts
+            )
             kripke = KripkeStructure()
-            kripke.add_world("w_init", propositions={"initialized", "safe"})
-            kripke.add_world("w_cand", propositions={"candidate_registered", "safe", "artifact_bounded"})
-            kripke.add_world("w_ver", propositions={"verifiable", "safe"})
+            w_init_props = {"initialized"}
+            if is_clean:
+                w_init_props.add("safe")
+            kripke.add_world("w_init", propositions=w_init_props)
+
+            w_cand_props = {"candidate_registered", "artifact_bounded"}
+            if is_clean:
+                w_cand_props.add("safe")
+            else:
+                w_cand_props.add("unsafe")
+            kripke.add_world("w_cand", propositions=w_cand_props)
+
+            w_ver_props = {"verifiable"}
+            if is_clean and not self.invalidated_verifiers:
+                w_ver_props.add("safe")
+            else:
+                w_ver_props.add("unsafe")
+            kripke.add_world("w_ver", propositions=w_ver_props)
+
             kripke.add_transition("w_init", "w_cand")
             kripke.add_transition("w_cand", "w_ver")
             kripke.add_transition("w_ver", "w_ver")

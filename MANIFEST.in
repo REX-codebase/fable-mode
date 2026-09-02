@@ -1,0 +1,7 @@
+include LICENSE
+include fable_compressor.py
+include fable_engine/fable_session.json
+include fable_mode/resources.json
+recursive-include skills *
+recursive-include rules *
+recursive-include docs *

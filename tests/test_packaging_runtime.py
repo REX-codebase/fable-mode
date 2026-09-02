@@ -184,9 +184,9 @@ class RemediationRegressionTests(unittest.TestCase):
     def test_wheel_lifecycle_from_outside_checkout(self):
         checkout = Path(__file__).resolve().parents[1]
         source = self.root / "src"; source.mkdir()
-        for name in ("fable_mode", "fable_engine", "fable_v2", "rules", "docs"):
+        for name in ("fable_mode", "fable_engine", "fable_v2", "rules", "docs", "skills"):
             shutil.copytree(checkout / name, source / name)
-        for name in ("fable_mode_entry.py", "LICENSE", "README.md", "pyproject.toml", "setup.py"):
+        for name in ("fable_mode_entry.py", "fable_compressor.py", "LICENSE", "README.md", "pyproject.toml", "setup.py", "MANIFEST.in"):
             shutil.copy2(checkout / name, source / name)
         dist, site, outside = self.root / "dist", self.root / "site", self.root / "outside"
         dist.mkdir(); site.mkdir(); outside.mkdir()
@@ -197,4 +197,5 @@ class RemediationRegressionTests(unittest.TestCase):
         env = os.environ.copy(); env["PIP_USER"] = "0"
         subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(site), *map(str, dist.glob("*.whl"))], env=env, check=True, capture_output=True)
         env["PYTHONPATH"] = str(site); env["FABLE_INSTALL_DIR"] = str(self.root / "install")
-        probe = subprocess.run([sys.executable, "-c", "from fable_mode.installer import Installer,verify_installation; r=Installer().install(); r.transaction.commit(); assert verify_installation(r.install_dir)[0]"], cwd=outside, env=env, check=True, capture_output=True, text=True)
+        probe = subprocess.run([sys.executable, "-c", "from fable_mode.installer import Installer,verify_installation; r=Installer().install(); r.transaction.commit(); assert verify_installation(r.install_dir)[0]"], cwd=outside, env=env, check=False, capture_output=True, text=True)
+        self.assertEqual(probe.returncode, 0, f"probe failed:\nstdout:\n{probe.stdout}\nstderr:\n{probe.stderr}")

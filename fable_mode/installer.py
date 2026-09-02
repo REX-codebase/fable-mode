@@ -85,10 +85,12 @@ def _matches_capability(path: Path, expected: tuple[int, ...], *, directory: boo
             and (len(expected) < 4 or (st.st_uid, st.st_gid) == tuple(expected[2:4])))
 
 
-# Documentation is intentionally optional in a wheel, but all executable
-# runtime resources and the license are mandatory in source-mode installs.
-_OPTIONAL_SOURCE_FILES = {"rules/AGENTS.md", "rules/GEMINI.md", "rules/fable-mode.md",
-                         "docs/fable-v2-architecture.md", "docs/fable-v1-v2-migration.md"}
+# Documentation, rules, and skills are intentionally optional in a wheel, but all
+# executable runtime resources and the license are mandatory in source-mode installs.
+_OPTIONAL_SOURCE_FILES = {
+    rel for rel in ALLOWED_FILES
+    if rel.startswith("rules/") or rel.startswith("docs/") or rel.startswith("skills/")
+}
 _REQUIRED_SOURCE_FILES = tuple(rel for rel in ALLOWED_FILES if rel not in _OPTIONAL_SOURCE_FILES)
 
 

@@ -47,7 +47,8 @@
           "get_session_lineage",
           "inspect_plan",
           "verify_proof",
-          "record_visual_mockups"
+          "record_visual_mockups",
+          "validate_event_history"
         ],
         "type": "string"
       },

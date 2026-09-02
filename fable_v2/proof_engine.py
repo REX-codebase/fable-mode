@@ -121,6 +121,49 @@ TAUTOLOGICAL_PATTERNS = [
 ]
 
 
+def _extract_polyglot_symbols(code_str: str, file_path_hint: str = "") -> Tuple[str, Set[str]]:
+    """Extract top-level symbols for TypeScript/JavaScript, Rust, Go, and C++ using lexical AST matching."""
+    hint = file_path_hint.lower()
+    symbols: Set[str] = set()
+    lang = "unknown"
+
+    # TypeScript / JavaScript
+    if hint.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")) or any(
+        kw in code_str for kw in ("export interface ", "export type ", "export const ", "export function ", "export default ", "interface ")
+    ):
+        lang = "typescript" if (hint.endswith((".ts", ".tsx")) or "interface " in code_str or ": " in code_str) else "javascript"
+        for m in re.finditer(r"(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*(\*?\s*[A-Za-z0-9_$]+)", code_str):
+            name = m.group(1).lstrip("*").strip()
+            if name:
+                symbols.add(name)
+        for m in re.finditer(r"(?:export\s+)?(?:default\s+)?class\s+([A-Za-z0-9_$]+)", code_str):
+            symbols.add(m.group(1))
+        for m in re.finditer(r"(?:export\s+)?(?:interface|type|enum)\s+([A-Za-z0-9_$]+)", code_str):
+            symbols.add(m.group(1))
+        for m in re.finditer(r"(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=", code_str):
+            symbols.add(m.group(1))
+
+    # Rust
+    elif hint.endswith(".rs") or ("fn " in code_str and ("pub fn " in code_str or "impl " in code_str)):
+        lang = "rust"
+        for m in re.finditer(r"(?:pub(?:\([^)]+\))?\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)", code_str):
+            symbols.add(m.group(1))
+        for m in re.finditer(r"(?:pub(?:\([^)]+\))?\s+)?(?:struct|enum|trait|type|union)\s+([A-Za-z0-9_]+)", code_str):
+            symbols.add(m.group(1))
+        for m in re.finditer(r"impl(?:\s+<[^>]+>)?\s+(?:[A-Za-z0-9_]+\s+for\s+)?([A-Za-z0-9_]+)", code_str):
+            symbols.add(m.group(1))
+
+    # Go
+    elif hint.endswith(".go") or ("package " in code_str and "func " in code_str):
+        lang = "go"
+        for m in re.finditer(r"func\s+(?:\([^)]+\)\s+)?([A-Za-z0-9_]+)", code_str):
+            symbols.add(m.group(1))
+        for m in re.finditer(r"type\s+([A-Za-z0-9_]+)\s+(?:struct|interface)", code_str):
+            symbols.add(m.group(1))
+
+    return lang, symbols
+
+
 class DeterministicProofValidator:
     """Ungameable deterministic validator for claims, invariants, AST symbols, and formal proofs."""
 
@@ -196,7 +239,7 @@ class DeterministicProofValidator:
         required_symbols: Optional[Iterable[str]] = None,
         claim: str = "AST syntax and symbol grounding verification",
     ) -> ProofValidationResult:
-        """Parse Python AST syntax, extract top-level definitions, and verify required symbols exist."""
+        """Parse AST syntax (Python) or polyglot symbols (TS/JS, Rust, Go), and verify required symbols exist."""
         code_str = ""
         target_path_str = ""
         is_file_on_disk = False
@@ -226,30 +269,45 @@ class DeterministicProofValidator:
             target_path_str = "<inline_code>"
             sha_digest = hashlib.sha256(code_str.encode("utf-8")).hexdigest()
 
-        # Parse AST
-        try:
-            tree = ast.parse(code_str)
-        except SyntaxError as se:
-            return ProofValidationResult(
-                passed=False,
-                confidence=0.0,
-                proof_type=ProofType.AST_GROUNDED.value,
-                details=f"AST SyntaxError in '{target_path_str}': {se.msg} (line {se.lineno}, col {se.offset})",
-                metadata={"lineno": se.lineno, "offset": se.offset, "msg": se.msg},
-            )
-
-        # Extract top-level symbols (functions, classes, assignments)
+        # Parse AST or Polyglot Lexical Symbols
+        tree = None
         extracted_symbols: Set[str] = set()
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                extracted_symbols.add(node.name)
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        extracted_symbols.add(target.id)
-            elif isinstance(node, ast.AnnAssign):
-                if isinstance(node.target, ast.Name):
-                    extracted_symbols.add(node.target.id)
+        detected_lang = "python"
+        is_polyglot = False
+
+        if target_path_str.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go")):
+            detected_lang, extracted_symbols = _extract_polyglot_symbols(code_str, target_path_str)
+            is_polyglot = True
+        else:
+            try:
+                tree = ast.parse(code_str)
+            except SyntaxError as se:
+                poly_lang, poly_symbols = _extract_polyglot_symbols(code_str, target_path_str)
+                if poly_symbols:
+                    detected_lang = poly_lang
+                    extracted_symbols = poly_symbols
+                    is_polyglot = True
+                else:
+                    return ProofValidationResult(
+                        passed=False,
+                        confidence=0.0,
+                        proof_type=ProofType.AST_GROUNDED.value,
+                        details=f"AST SyntaxError in '{target_path_str}': {se.msg} (line {se.lineno}, col {se.offset})",
+                        metadata={"lineno": se.lineno, "offset": se.offset, "msg": se.msg},
+                    )
+
+        if not is_polyglot and tree is not None:
+            # Extract top-level symbols (functions, classes, assignments)
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    extracted_symbols.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            extracted_symbols.add(target.id)
+                elif isinstance(node, ast.AnnAssign):
+                    if isinstance(node.target, ast.Name):
+                        extracted_symbols.add(node.target.id)
 
         # Verify required symbols
         missing_symbols: List[str] = []
@@ -263,11 +321,11 @@ class DeterministicProofValidator:
                 passed=False,
                 confidence=0.5,
                 proof_type=ProofType.AST_GROUNDED.value,
-                details=f"AST parsed successfully but required symbol(s) missing: {missing_symbols}",
-                metadata={"extracted_symbols": sorted(extracted_symbols), "missing_symbols": missing_symbols},
+                details=f"AST/symbol analysis parsed ({detected_lang}) but required symbol(s) missing: {missing_symbols}",
+                metadata={"extracted_symbols": sorted(extracted_symbols), "missing_symbols": missing_symbols, "language": detected_lang},
             )
 
-        node_count = len(list(ast.walk(tree)))
+        node_count = len(list(ast.walk(tree))) if tree is not None else len(extracted_symbols)
         now = utc_now()
         receipt_id = f"rcpt_ast_{hashlib.sha256(f'{target_path_str}:{sha_digest}:{now}'.encode()).hexdigest()[:16]}"
         receipt = ProofReceipt(
@@ -282,6 +340,8 @@ class DeterministicProofValidator:
                 "symbols_count": len(extracted_symbols),
                 "symbols": sorted(extracted_symbols),
                 "is_file": is_file_on_disk,
+                "language": detected_lang,
+                "is_polyglot": is_polyglot,
             },
         )
 
@@ -289,9 +349,9 @@ class DeterministicProofValidator:
             passed=True,
             confidence=1.0,
             proof_type=ProofType.AST_GROUNDED.value,
-            details=f"AST syntax and {len(extracted_symbols)} top-level symbol(s) successfully verified ({node_count} nodes).",
+            details=f"AST/symbol syntax ({detected_lang}) and {len(extracted_symbols)} top-level symbol(s) successfully verified ({node_count} nodes).",
             proof_receipt=receipt,
-            metadata={"symbols": sorted(extracted_symbols), "node_count": node_count},
+            metadata={"symbols": sorted(extracted_symbols), "node_count": node_count, "language": detected_lang, "is_polyglot": is_polyglot},
         )
 
     # -------------------------------------------------------------------------
@@ -399,34 +459,12 @@ class DeterministicProofValidator:
             rid = receipt.strip()
             if session_receipts and rid in session_receipts:
                 actual_receipt = session_receipts[rid]
-            elif any(kw in rid.lower() for kw in [
-                "stdout", "stderr", "command output", "exit code", "python --version",
-                "cargo test", "pytest", "benchmark", "probe", "cli", "run_command", "git ", "diff", "sha256:"
-            ]):
-                now = utc_now()
-                receipt_id = f"rcpt_cmd_{hashlib.sha256(rid.encode()).hexdigest()[:16]}"
-                rcpt = ProofReceipt(
-                    receipt_id=receipt_id,
-                    claim=claim,
-                    proof_type=ProofType.EMPIRICAL_RECEIPT.value,
-                    target_resource="command_execution",
-                    sha256_digest=hashlib.sha256(rid.encode()).hexdigest(),
-                    verified_at=now,
-                    verifier_details={"evidence": rid},
-                )
-                return ProofValidationResult(
-                    passed=True,
-                    confidence=1.0,
-                    proof_type=ProofType.EMPIRICAL_RECEIPT.value,
-                    details=f"Empirical command execution receipt verified ({rid[:40]}...).",
-                    proof_receipt=rcpt,
-                )
             else:
                 return ProofValidationResult(
                     passed=False,
                     confidence=0.0,
                     proof_type=ProofType.EMPIRICAL_RECEIPT.value,
-                    details=f"Receipt ID '{rid}' not found in active session receipts.",
+                    details=f"Receipt ID '{rid}' not found in active session receipts. Genuine registered receipt required.",
                 )
         elif isinstance(receipt, ToolReceipt):
             actual_receipt = receipt
@@ -605,17 +643,49 @@ class DeterministicProofValidator:
         kripke_structure: Optional[KripkeStructure] = None,
         initial_world: str = "w_init",
         claim: str = "CTL Temporal Logic Model Check",
+        context: Optional[Mapping[str, Any]] = None,
     ) -> ProofValidationResult:
-        """Verify CTL modal/temporal logic invariant (AG, EF, AF, AX, EU, AU, Box, Diamond)."""
+        """Verify CTL modal/temporal logic invariant (AG, EF, AF, AX, EU, AU, Box, Diamond) with dynamic argument analysis."""
         now = utc_now()
         ks = kripke_structure
         if ks is None:
-            # Default standard state machine
-            ks = KripkeStructure(name="DefaultSystem3Protocol")
-            ks.add_world("w_init", {"initialized", "safe", "ready"}, is_initial=True)
-            ks.add_world("w_active", {"safe", "locked", "deliberating"})
-            ks.add_world("w_verified", {"safe", "verifiable", "unlocked"})
-            ks.add_world("w_final", {"safe", "complete"})
+            # Dynamic state machine reflecting real context arguments
+            ks = KripkeStructure(name="DynamicSystem3Protocol")
+            is_clean = True
+            if context:
+                if context.get("has_failures") or context.get("tainted") or context.get("safe") is False:
+                    is_clean = False
+                if context.get("invalidated_verifiers") or context.get("missing_requirements"):
+                    is_clean = False
+            elif any(neg in claim.lower() for neg in ("violation", "failure", "unsafe", "flaw", "corrupt", "tamper")):
+                is_clean = False
+
+            w_init_props = {"initialized", "ready"}
+            if is_clean:
+                w_init_props.add("safe")
+            ks.add_world("w_init", w_init_props, is_initial=True)
+
+            w_active_props = {"locked", "deliberating"}
+            if is_clean:
+                w_active_props.add("safe")
+            else:
+                w_active_props.add("unsafe")
+            ks.add_world("w_active", w_active_props)
+
+            w_verified_props = {"verifiable", "unlocked"}
+            if is_clean:
+                w_verified_props.add("safe")
+            else:
+                w_verified_props.add("unsafe")
+            ks.add_world("w_verified", w_verified_props)
+
+            w_final_props = {"complete"}
+            if is_clean:
+                w_final_props.add("safe")
+            else:
+                w_final_props.add("unsafe")
+            ks.add_world("w_final", w_final_props)
+
             ks.add_transition("w_init", "w_active")
             ks.add_transition("w_active", "w_verified")
             ks.add_transition("w_verified", "w_final")
@@ -660,7 +730,7 @@ class DeterministicProofValidator:
             )
 
     # -------------------------------------------------------------------------
-    # Vector / Layout Coordinates
+    # Vector / Layout Coordinates & SVG Precision
     # -------------------------------------------------------------------------
 
     def validate_vector_coordinates(
@@ -668,9 +738,50 @@ class DeterministicProofValidator:
         coordinates_data: Any,
         claim: str = "Vector coordinate bounds verification",
     ) -> ProofValidationResult:
-        """Validate layout coordinates, bounding boxes, or spatial vectors."""
+        """Validate layout coordinates, bounding boxes, spatial vectors, or SVG viewports and paths."""
         now = utc_now()
         parsed_data = coordinates_data
+        details = ""
+
+        # Check for SVG content
+        if isinstance(coordinates_data, str) and ("<svg" in coordinates_data.lower() or "viewbox" in coordinates_data.lower()):
+            svg_text = coordinates_data
+            vb_match = re.search(r'viewBox=["\']\s*([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)\s*["\']', svg_text, re.IGNORECASE)
+            if vb_match:
+                min_x, min_y, vb_w, vb_h = (float(vb_match.group(i)) for i in range(1, 5))
+                if vb_w <= 0 or vb_h <= 0:
+                    return ProofValidationResult(
+                        passed=False,
+                        confidence=0.0,
+                        proof_type=ProofType.VECTOR_COORDINATE.value,
+                        details=f"Invalid SVG viewBox dimensions: width={vb_w}, height={vb_h} must be strictly positive.",
+                    )
+                if "nan" in svg_text.lower() or "infinity" in svg_text.lower():
+                    return ProofValidationResult(
+                        passed=False,
+                        confidence=0.0,
+                        proof_type=ProofType.VECTOR_COORDINATE.value,
+                        details="SVG coordinates contain invalid NaN or Infinity values.",
+                    )
+                aspect = round(vb_w / vb_h, 4)
+                receipt = ProofReceipt(
+                    receipt_id=f"rcpt_svg_{hashlib.sha256(f'{svg_text[:100]}:{now}'.encode()).hexdigest()[:16]}",
+                    claim=claim,
+                    proof_type=ProofType.VECTOR_COORDINATE.value,
+                    target_resource="svg_viewbox_coordinates",
+                    sha256_digest=hashlib.sha256(svg_text.encode()).hexdigest(),
+                    verified_at=now,
+                    verifier_details={"viewBox": [min_x, min_y, vb_w, vb_h], "aspect_ratio": aspect},
+                )
+                return ProofValidationResult(
+                    passed=True,
+                    confidence=1.0,
+                    proof_type=ProofType.VECTOR_COORDINATE.value,
+                    details=f"Valid SVG viewBox [{min_x}, {min_y}, {vb_w}, {vb_h}] with aspect ratio {aspect}.",
+                    proof_receipt=receipt,
+                    metadata={"viewBox": [min_x, min_y, vb_w, vb_h], "aspect_ratio": aspect},
+                )
+
         if isinstance(coordinates_data, str):
             try:
                 parsed_data = json.loads(coordinates_data)
@@ -681,7 +792,6 @@ class DeterministicProofValidator:
                     parsed_data = [float(x) for x in m]
 
         valid = False
-        details = ""
 
         if isinstance(parsed_data, dict):
             # Check bounding box format
@@ -694,6 +804,9 @@ class DeterministicProofValidator:
             if len(parsed_data) >= 2 and all(isinstance(x, (int, float)) for x in parsed_data):
                 valid = True
                 details = f"Valid vector point: {parsed_data}"
+            elif len(parsed_data) > 0 and all(isinstance(x, (dict, list, tuple)) for x in parsed_data):
+                valid = True
+                details = f"Valid sequence of {len(parsed_data)} coordinate elements."
             elif len(parsed_data) > 0 and all(isinstance(x, (dict, list, tuple)) for x in parsed_data):
                 valid = True
                 details = f"Valid sequence of {len(parsed_data)} coordinate elements."
@@ -767,11 +880,14 @@ class DeterministicProofValidator:
             )
 
         elif ptype_str in (ProofType.EMPIRICAL_RECEIPT.value, "empirical_receipt", "receipt", "tool_receipt"):
-            return self.validate_tool_receipt(
-                receipt=evidence,
-                session_receipts=session_receipts,
-                claim=claim,
-            )
+            if isinstance(evidence, (ToolReceipt, Mapping)) or (isinstance(evidence, str) and session_receipts and evidence in session_receipts):
+                return self.validate_tool_receipt(
+                    receipt=evidence,
+                    session_receipts=session_receipts,
+                    claim=claim,
+                )
+            # String evidence fallback to empirical claim validation
+            return self.validate_proven_claim_result(claim, str(evidence))
 
         elif ptype_str in (ProofType.FORMAL_LOGIC.value, "formal_logic", "logic", "curry_howard"):
             return self.validate_formal_logic(

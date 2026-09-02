@@ -138,6 +138,63 @@ class TestDeterministicProofValidator(unittest.TestCase):
         )
         self.assertTrue(res.passed)
 
+    def test_polyglot_ast_typescript_and_rust(self):
+        ts_code = "export interface UserProfile {\n  id: string;\n}\n\nexport function fetchUserProfile(id: string): UserProfile {\n  return { id };\n}\n"
+        res_ts = self.validator.validate_ast(
+            code_or_path=ts_code,
+            required_symbols=['UserProfile', 'fetchUserProfile'],
+            claim='Verify TypeScript interface and function export',
+        )
+        self.assertTrue(res_ts.passed)
+        self.assertEqual(res_ts.metadata.get('language'), 'typescript')
+
+        rs_code = "pub struct CausalGraph {\n  nodes: usize,\n}\n\npub fn create_graph() -> CausalGraph {\n  CausalGraph { nodes: 0 }\n}\n"
+        res_rs = self.validator.validate_ast(
+            code_or_path=rs_code,
+            required_symbols=['CausalGraph', 'create_graph'],
+            claim='Verify Rust struct and function',
+        )
+        self.assertTrue(res_rs.passed)
+        self.assertEqual(res_rs.metadata.get('language'), 'rust')
+
+    def test_unregistered_tool_receipt_rejected(self):
+        res = self.validator.validate_tool_receipt(
+            receipt="stdout: Fake execution output without registration",
+            session_receipts={},
+            claim="Fake claim with stdout substring",
+        )
+        self.assertFalse(res.passed)
+        self.assertIn("not found in active session receipts", res.details)
+
+    def test_kripke_safety_fails_on_tainted_context(self):
+        clean_res = self.validator.validate_temporal_invariant(
+            formula="AG(safe)",
+            context={"safe": True, "has_failures": False},
+        )
+        self.assertTrue(clean_res.passed)
+
+        tainted_res = self.validator.validate_temporal_invariant(
+            formula="AG(safe)",
+            context={"safe": False, "has_failures": True},
+        )
+        self.assertFalse(tainted_res.passed)
+
+    def test_svg_viewbox_coordinate_validation(self):
+        valid_svg = '<svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="20" width="100" height="50" /></svg>'
+        res = self.validator.validate_vector_coordinates(
+            coordinates_data=valid_svg,
+            claim="Valid SVG viewport check",
+        )
+        self.assertTrue(res.passed)
+        self.assertEqual(res.metadata["viewBox"], [0.0, 0.0, 800.0, 600.0])
+
+        invalid_svg = '<svg viewBox="0 0 -100 600"></svg>'
+        res_inv = self.validator.validate_vector_coordinates(
+            coordinates_data=invalid_svg,
+            claim="Invalid SVG viewport check",
+        )
+        self.assertFalse(res_inv.passed)
+
 
 class TestProtocolDataclasses(unittest.TestCase):
     def test_proof_receipt_to_dict(self):

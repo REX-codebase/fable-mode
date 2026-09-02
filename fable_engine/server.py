@@ -25,6 +25,7 @@ import threading
 import stat
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union, Iterator
+from contextlib import contextmanager
 
 # Reconfigure UTF-8 for Windows stdio
 if sys.stdout.encoding != 'utf-8':
@@ -1467,6 +1468,20 @@ class FableSession:
         self.active_free_energy: Optional[Dict[str, Any]] = None
         self.active_kripke_safety: Optional[Dict[str, Any]] = None
         self.active_biases: List[Dict[str, Any]] = []
+        self._disk_mtime: float = 0.0
+
+        # Unified Fable V2 Runtime instance
+        try:
+            from fable_v2.runtime import new_run
+            from fable_v2.protocol import TaskSpec
+            task = TaskSpec(
+                task_id=f"task_{self.session_id}",
+                objective=self.objective or "Fable Mode Deliberation",
+                definition_of_done=("Epistemic evidence verified",),
+            )
+            self.fable_run: Optional[Any] = new_run(session_id=self.session_id, task=task)
+        except Exception:
+            self.fable_run = None
 
     @property
     def pacing_deadline_time(self) -> float:
@@ -2083,6 +2098,7 @@ class FableSession:
             "active_free_energy": self.active_free_energy,
             "active_kripke_safety": self.active_kripke_safety,
             "active_biases": self.active_biases,
+            "fable_run": self.fable_run.to_dict() if getattr(self, "fable_run", None) else None,
         }
 
     @classmethod
@@ -2123,63 +2139,118 @@ class FableSession:
         session.active_free_energy = data.get("active_free_energy")
         session.active_kripke_safety = data.get("active_kripke_safety")
         session.active_biases = data.get("active_biases", [])
+        fable_run_data = data.get("fable_run")
+        if fable_run_data and isinstance(fable_run_data, dict):
+            try:
+                from fable_v2.runtime import FableRun
+                session.fable_run = FableRun.from_dict(fable_run_data)
+            except Exception:
+                pass
         return session
 
     def save(self, target_path: Optional[Path] = None) -> Path:
-        """Atomically save a session using a unique no-follow temporary file."""
+        """Atomically save a session using a unique no-follow temporary file and cross-process lock."""
         path = Path(target_path or (SESSIONS_DIR / f"{self.session_name}.json")).expanduser().absolute()
-        parent = path.parent
-        _assert_private_path(parent)
-        parent.mkdir(parents=True, exist_ok=True)
-        _assert_private_path(parent)
-        if parent.is_symlink() or not parent.is_dir() or path.is_symlink():
-            raise OSError("session path or parent is a symlink/reparse point")
-        os.chmod(parent, 0o700)
-        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
-            parent_fd = _open_directory_nofollow(parent, create=True)
-            temp_name = f".{path.name}.{os.getpid()}-{os.urandom(8).hex()}.tmp"
-            fd = None
-            try:
-                fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent_fd)
-                os.fchmod(fd, 0o600)
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    fd = None
-                    json.dump(self.to_dict(), handle, indent=2)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temp_name, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        with session_file_lock(path):
+            parent = path.parent
+            _assert_private_path(parent)
+            parent.mkdir(parents=True, exist_ok=True)
+            _assert_private_path(parent)
+            if parent.is_symlink() or not parent.is_dir() or path.is_symlink():
+                raise OSError("session path or parent is a symlink/reparse point")
+            os.chmod(parent, 0o700)
+            if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+                parent_fd = _open_directory_nofollow(parent, create=True)
+                temp_name = f".{path.name}.{os.getpid()}-{os.urandom(8).hex()}.tmp"
+                fd = None
                 try:
-                    os.fsync(parent_fd)
-                except OSError:
-                    # Linux O_PATH directory descriptors are suitable for
-                    # descriptor-relative publication but not fsync targets.
-                    pass
-            finally:
-                if fd is not None:
-                    os.close(fd)
-                try:
-                    os.unlink(temp_name, dir_fd=parent_fd)
-                except OSError:
-                    pass
-                os.close(parent_fd)
-        else:
-            fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(parent))
-            temp_path = Path(temporary)
-            try:
-                if hasattr(os, "fchmod"):
+                    fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent_fd)
                     os.fchmod(fd, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                        fd = None
+                        json.dump(self.to_dict(), handle, indent=2)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp_name, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                    try:
+                        os.fsync(parent_fd)
+                    except OSError:
+                        # Linux O_PATH directory descriptors are suitable for
+                        # descriptor-relative publication but not fsync targets.
+                        pass
+                finally:
+                    if fd is not None:
+                        os.close(fd)
+                    try:
+                        os.unlink(temp_name, dir_fd=parent_fd)
+                    except OSError:
+                        pass
+                    os.close(parent_fd)
+            else:
+                fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(parent))
+                temp_path = Path(temporary)
+                try:
+                    if hasattr(os, "fchmod"):
+                        os.fchmod(fd, 0o600)
+                    else:
+                        os.chmod(temporary, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                        json.dump(self.to_dict(), handle, indent=2)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp_path, path)
+                finally:
+                    if temp_path.exists() or temp_path.is_symlink():
+                        temp_path.unlink()
+            try:
+                self._disk_mtime = path.stat().st_mtime
+            except OSError:
+                pass
+            logger.info(f"Fable session '{self.session_name}' saved to {path}")
+            return path
+
+
+@contextmanager
+def session_file_lock(session_path: Path, timeout: float = 5.0):
+    """Cross-process file lock using msvcrt on Windows and fcntl on POSIX."""
+    lock_file = session_path.parent / f".{session_path.name}.lock"
+    start = time.time()
+    handle = None
+    try:
+        handle = open(lock_file, "a+b")
+        acquired = False
+        while time.time() - start < timeout:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
-                    os.chmod(temporary, 0o600)
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump(self.to_dict(), handle, indent=2)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temp_path, path)
-            finally:
-                if temp_path.exists() or temp_path.is_symlink():
-                    temp_path.unlink()
-        logger.info(f"Fable session '{self.session_name}' saved to {path}")
-        return path
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except (OSError, BlockingIOError):
+                time.sleep(0.02)
+        if not acquired:
+            logger.warning(f"Session lock acquisition timed out for {session_path}")
+        yield
+    finally:
+        if handle is not None:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                handle.close()
+            except OSError:
+                pass
 
 
 # In-Memory Active Sessions Table
@@ -2199,20 +2270,40 @@ def _safe_session_file(path: Path) -> None:
 
 
 def get_or_load_session(session_name: str) -> FableSession:
-    """Retrieves session from memory or loads from disk if exists."""
+    """Retrieves session from memory or loads from disk if exists, checking mtime for cross-process synchronization."""
     clean_name = _validate_session_name(session_name)
-    if clean_name in ACTIVE_SESSIONS:
-        return ACTIVE_SESSIONS[clean_name]
-
     file_path = SESSIONS_DIR / f"{clean_name}.json"
+
+    if clean_name in ACTIVE_SESSIONS:
+        session = ACTIVE_SESSIONS[clean_name]
+        if file_path.exists():
+            try:
+                disk_mtime = file_path.stat().st_mtime
+                if disk_mtime > getattr(session, "_disk_mtime", 0.0):
+                    with session_file_lock(file_path):
+                        _safe_session_file(file_path)
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        session = FableSession.from_dict(data)
+                        session._disk_mtime = disk_mtime
+                        ACTIVE_SESSIONS[clean_name] = session
+            except Exception as exc:
+                logger.warning(f"Failed to check disk mtime reload for session {clean_name}: {exc}")
+        return session
+
     if file_path.exists() or file_path.is_symlink():
         try:
-            _safe_session_file(file_path)
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            session = FableSession.from_dict(data)
-            ACTIVE_SESSIONS[clean_name] = session
-            return session
+            with session_file_lock(file_path):
+                _safe_session_file(file_path)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                session = FableSession.from_dict(data)
+                try:
+                    session._disk_mtime = file_path.stat().st_mtime
+                except OSError:
+                    pass
+                ACTIVE_SESSIONS[clean_name] = session
+                return session
         except Exception as e:
             logger.error(f"Failed to load session file {file_path}: {e}")
             raise RuntimeError(f"Corrupt or unreadable session file for '{clean_name}': {e}")
@@ -3526,6 +3617,22 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 
             session = get_or_load_session(session_name)
             entry = session.track_file_change(file_path, change_type, diff_summary, rationale, affected_invariants)
+            if getattr(session, "fable_run", None):
+                try:
+                    from fable_v2.protocol import FileChangeRecord
+                    session.fable_run.record_file_change(
+                        FileChangeRecord(
+                            file_path=file_path,
+                            change_type=change_type,
+                            before_hash=entry.get("before_hash"),
+                            after_hash=entry.get("after_hash", ""),
+                            diff_summary=diff_summary,
+                            rationale=rationale or "",
+                            affected_invariants=tuple(affected_invariants or []),
+                        )
+                    )
+                except Exception:
+                    pass
             session.save()
 
             inv_str = f"\n- **Affected Invariants**: `{', '.join(entry['affected_invariants'])}`" if entry.get("affected_invariants") else ""
@@ -3687,6 +3794,20 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 try:
                     session = get_or_load_session(session_name)
                     session.proof_receipts.append(result)
+                    if getattr(session, "fable_run", None):
+                        try:
+                            from fable_v2.protocol import ToolReceipt
+                            session.fable_run.record_receipt(
+                                ToolReceipt(
+                                    tool_name=f"proof_{proof_type}",
+                                    args={"claim": claim, "target_resource": target_resource},
+                                    output=result,
+                                    success=bool(result.get("verified")),
+                                    session_id=session.session_id,
+                                )
+                            )
+                        except Exception:
+                            pass
                     session.save()
                 except Exception:
                     pass
@@ -3716,6 +3837,27 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 
             session = get_or_load_session(session_name)
             vm = session.record_visual_mockups(mockups, selected_concept)
+            if getattr(session, "fable_run", None):
+                try:
+                    from fable_v2.protocol import VisualMockupSpec
+                    mockups_list = mockups if isinstance(mockups, list) else [mockups]
+                    for idx, m in enumerate(mockups_list):
+                        if isinstance(m, dict):
+                            spec = VisualMockupSpec(
+                                mockup_id=m.get("mockup_id", f"mockup_{len(session.fable_run.visual_mockups)+1}"),
+                                concept_name=m.get("concept_name", f"Concept {idx+1}"),
+                                aesthetic_archetype=m.get("aesthetic_archetype", "editorial"),
+                                prompt=m.get("prompt", ""),
+                                image_url=m.get("image_url"),
+                                coordinates_data=m.get("coordinates_data"),
+                                palette=tuple(m.get("palette", [])) if isinstance(m.get("palette"), (list, tuple)) else (),
+                                typography=m.get("typography", {}) if isinstance(m.get("typography"), dict) else {},
+                                status=m.get("status", "draft"),
+                                selected_by_user=bool(selected_concept and m.get("concept_name") == selected_concept),
+                            )
+                            session.fable_run.record_visual_mockup(spec)
+                except Exception:
+                    pass
             session.save()
 
             concept_lines = []
@@ -3741,6 +3883,35 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
+        # 35. VALIDATE EVENT HISTORY / AUDIT EVENT CHAIN
+        elif action in ("validate_event_history", "validate_event_chain", "audit_events"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'validate_event_history'."
+            session = get_or_load_session(session_name)
+            if not getattr(session, "fable_run", None):
+                return f"### ⚠️ Fable V2 Event History\n\nSession `{session.session_name}` does not have an active FableRun instance."
+            try:
+                session.fable_run.validate_event_history()
+                valid = True
+                details = "Cryptographic event chain is intact and verified against genesis root."
+            except Exception as ex:
+                valid = False
+                details = str(ex)
+
+            status_badge = "✅ VALID & INTACT" if valid else "❌ COMPROMISED / INVALID"
+            events = getattr(session.fable_run, "events", [])
+            genesis_hash = events[0].get("event_hash", "0"*64) if events else "None"
+            terminal_hash = events[-1].get("event_hash", "0"*64) if events else "None"
+            return (
+                f"### 🔗 Fable V2 Cryptographic Event Chain Audit\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Chain Status**: `{status_badge}`\n"
+                f"- **Total Events**: `{len(events)}`\n"
+                f"- **Genesis Hash**: `{str(genesis_hash)[:16]}...`\n"
+                f"- **Terminal Chain Hash**: `{str(terminal_hash)[:16]}...`\n"
+                f"- **Audit Summary**: {details}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -3750,7 +3921,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
                 f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
                 f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle', "
-                f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups'."
+                f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -4180,18 +4351,19 @@ def _bounded_lines(stream, limit: int):
     raw_stream = getattr(stream, "buffer", None)
     if raw_stream is None or not hasattr(raw_stream, "read"):
         raw_stream = stream
+    read_fn = getattr(raw_stream, "read1", raw_stream.read)
     pending = bytearray()
     oversized = False
     while True:
-        unit = raw_stream.read(1)
-        if not unit:
+        chunk = read_fn(4096)
+        if not chunk:
             if pending or oversized:
                 yield bytes(pending).decode("utf-8", "replace"), oversized
             return
-        if isinstance(unit, str):
-            encoded = unit.encode("utf-8", "replace")
+        if isinstance(chunk, str):
+            encoded = chunk.encode("utf-8", "replace")
         else:
-            encoded = bytes(unit)
+            encoded = bytes(chunk)
         for byte in encoded:
             if byte == 0x0A:
                 yield bytes(pending).decode("utf-8", "replace"), oversized

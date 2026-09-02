@@ -133,10 +133,12 @@ def _path_parts(relative_path: str) -> tuple[str, ...]:
     """Return safe lexical components without resolving attacker-controlled paths."""
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ValueError("path must be a non-empty relative path")
-    candidate = Path(relative_path)
+    # Normalize backslashes to forward slashes for Windows and cross-platform compatibility
+    normalized = relative_path.replace("\\", "/")
+    candidate = Path(normalized)
     if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
         raise PermissionError("path must be a normalized relative path")
-    if any("\\" in part or "\x00" in part for part in candidate.parts):
+    if any("\x00" in part or ":" in part for part in candidate.parts):
         raise PermissionError("path contains an unsafe component")
     return tuple(candidate.parts)
 
@@ -232,7 +234,8 @@ class ExecutionBroker:
     def _safe_path(self, relative_path: str) -> Path:
         if not isinstance(relative_path, str) or not relative_path.strip():
             raise ValueError("path must be a non-empty relative path")
-        raw_candidate = self.policy.workspace / relative_path
+        normalized = relative_path.replace("\\", "/")
+        raw_candidate = self.policy.workspace / normalized
         # Resolve only after rejecting links/reparse points in the lexical
         # path; otherwise a symlink could turn strict workspace containment
         # into a pathname illusion.
@@ -656,11 +659,91 @@ def _serve_admin_fd(broker: ExecutionBroker, fd: int) -> None:
                       f"{_bounded_text(exc)}", file=sys.stderr)
 
 
-def serve(broker: ExecutionBroker, admin_fd: int | None = None) -> None:
+def _serve_admin_file(broker: ExecutionBroker, file_path: str | Path) -> None:
+    """Consume admin commands from a private command file (safe token exchange for Windows and POSIX)."""
+    cmd_file = Path(file_path).resolve()
+    while True:
+        try:
+            if cmd_file.exists() and cmd_file.is_file():
+                text = cmd_file.read_text(encoding="utf-8").strip()
+                if text:
+                    for line in text.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            request = json.loads(line)
+                            if isinstance(request, dict) and request.get("action") == "unlock_writes":
+                                broker.unlock_writes(request.get("token", ""))
+                        except Exception as exc:
+                            print(f"admin file control error: {_bounded_text(exc)}", file=sys.stderr)
+                try:
+                    cmd_file.unlink()
+                except OSError:
+                    pass
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+
+def _serve_admin_socket(broker: ExecutionBroker, host_port: str) -> None:
+    """Consume admin commands from a localhost control socket."""
+    import socket
+    parts = host_port.split(":", 1)
+    host = parts[0] if parts[0] else "127.0.0.1"
+    port = int(parts[1]) if len(parts) > 1 else 0
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port))
+    sock.listen(5)
+    actual_port = sock.getsockname()[1]
+    print(f"ADMIN_PORT={actual_port}", file=sys.stderr, flush=True)
+    while True:
+        try:
+            conn, addr = sock.accept()
+            if addr[0] not in ("127.0.0.1", "::1"):
+                conn.close()
+                continue
+            with conn:
+                data = conn.recv(MAX_FRAME_BYTES)
+                if data:
+                    line = data.decode("utf-8", "replace").strip()
+                    try:
+                        req = json.loads(line)
+                        if isinstance(req, dict) and req.get("action") == "unlock_writes":
+                            broker.unlock_writes(req.get("token", ""))
+                            conn.sendall(b'{"ok": true}\n')
+                        else:
+                            conn.sendall(b'{"ok": false, "error": "unsupported action"}\n')
+                    except Exception as exc:
+                        conn.sendall(f'{{"ok": false, "error": "{exc}"}}\n'.encode())
+        except Exception:
+            pass
+
+
+def serve(
+    broker: ExecutionBroker,
+    admin_fd: int | None = None,
+    admin_file: str | Path | None = None,
+    admin_socket: str | None = None,
+) -> None:
+    if admin_file is not None:
+        threading.Thread(target=_serve_admin_file, args=(broker, admin_file), daemon=True).start()
+    if admin_socket is not None:
+        threading.Thread(target=_serve_admin_socket, args=(broker, admin_socket), daemon=True).start()
     if admin_fd is not None:
         if os.name == "nt":
-            raise ValueError("--admin-fd currently requires a POSIX inherited pipe")
-        threading.Thread(target=_serve_admin_fd, args=(broker, admin_fd), daemon=True).start()
+            try:
+                import msvcrt
+                try:
+                    channel_fd = os.dup(admin_fd)
+                except OSError:
+                    channel_fd = msvcrt.open_osfhandle(admin_fd, os.O_RDONLY)
+                threading.Thread(target=_serve_admin_fd, args=(broker, channel_fd), daemon=True).start()
+            except Exception as exc:
+                print(f"admin control warning: Windows handle {admin_fd} could not be opened: {exc}", file=sys.stderr)
+        else:
+            threading.Thread(target=_serve_admin_fd, args=(broker, admin_fd), daemon=True).start()
     # Do not use ``for line in sys.stdin``: TextIOWrapper iteration calls an
     # unbounded readline and can wait for EOF on an otherwise healthy client.
     for raw_line, oversized in _bounded_lines(sys.stdin, MAX_FRAME_BYTES):
@@ -703,6 +786,14 @@ def main(argv: list[str] | None = None) -> int:
         "--admin-fd", type=int,
         help="POSIX inherited one-way admin control FD; never expose to a model",
     )
+    parser.add_argument(
+        "--admin-file", type=Path,
+        help="Admin control token file for Windows and POSIX; never expose to a model",
+    )
+    parser.add_argument(
+        "--admin-socket", type=str,
+        help="Localhost admin control socket (e.g. 127.0.0.1:0); never expose to a model",
+    )
     args = parser.parse_args(argv)
     allowed = tuple(args.allow_executable) or BrokerPolicy.allowed_executables
     policy = BrokerPolicy(
@@ -710,7 +801,9 @@ def main(argv: list[str] | None = None) -> int:
         allowed_executables=allowed,
         write_token_digest=_load_write_token_digest(),
     )
-    serve(ExecutionBroker(policy), admin_fd=args.admin_fd)
+    admin_file = args.admin_file or os.environ.get("FABLE_BROKER_ADMIN_FILE")
+    admin_socket = args.admin_socket or os.environ.get("FABLE_BROKER_ADMIN_SOCKET")
+    serve(ExecutionBroker(policy), admin_fd=args.admin_fd, admin_file=admin_file, admin_socket=admin_socket)
     return 0
 
 

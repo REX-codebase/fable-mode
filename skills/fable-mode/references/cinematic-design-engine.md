@@ -133,3 +133,4 @@ Before finalizing any UI, verify the code passes the strict anti-slop audit:
 3. ❌ **No 3-Card Centered Boilerplates**: Use asymmetric $5/7$ or $8/4$ bento grids or containerless telemetry strips.
 4. ❌ **No Fake Div Screenshots**: Use genuine interactive components or generated photorealistic assets.
 5. ❌ **No LLM Buzzwords**: Zero instances of *"Supercharge your workflow"*, *"Next-gen AI"*, or *"Delve into seamless ecosystems"*.
+6. ❌ **No Ungrounded Vector Slop**: Zero hand-wavy vector coordinates that clip outside the `viewBox`. Apply the [Haute SVG Craft & Vector Design Engine](./svg-craft-and-vector-design.md) for trigonometric coordinate pre-calculation, hairline strokes (`vector-effect="non-scaling-stroke"`), and OKLCH lighting.

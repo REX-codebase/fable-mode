@@ -165,6 +165,68 @@ class ExecutionBrokerTests(unittest.TestCase):
             process.stdout.close()
             process.stderr.close()
 
+    def test_windows_backslash_path_resolution(self):
+        self.broker.unlock_writes("admin-token")
+        (self.workspace / "nested").mkdir(parents=True, exist_ok=True)
+        # Verify writing using Windows backslash
+        res = self.broker.write_file("nested\\win_test.txt", "backslash-content")
+        self.assertTrue(res["writes_enabled"])
+        self.assertEqual((self.workspace / "nested" / "win_test.txt").read_text(), "backslash-content")
+
+        # Verify inspection using Windows backslash
+        ins = self.broker.inspect_files("nested\\win_test.txt")
+        self.assertEqual(ins["content"], "backslash-content")
+
+    def test_broker_admin_file_unlocking(self):
+        """Cross-platform administrative unlocking via --admin-file (Windows and POSIX compatible)."""
+        admin_cmd_file = self.workspace / ".admin_unlock.json"
+        env = os.environ.copy()
+        env["FABLE_BROKER_WRITE_TOKEN_DIGEST"] = hashlib.sha256(
+            b"admin-token"
+        ).hexdigest()
+        process = subprocess.Popen(
+            [sys.executable, "-m", "fable_v2.execution_broker",
+             "--workspace", str(self.workspace),
+             "--allow-executable", self.executable,
+             "--admin-file", str(admin_cmd_file)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=env,
+        )
+        try:
+            # Write token command to admin file
+            admin_cmd_file.write_text(json.dumps({
+                "action": "unlock_writes", "token": "admin-token",
+            }) + "\n", encoding="utf-8")
+
+            response = None
+            for _ in range(50):
+                process.stdin.write(json.dumps({"action": "probe"}) + "\n")
+                process.stdin.flush()
+                line = process.stdout.readline()
+                if line:
+                    response = json.loads(line)
+                    if response["result"].get("writes_enabled"):
+                        break
+                time.sleep(0.05)
+            self.assertTrue(response["ok"])
+            self.assertTrue(response["result"]["writes_enabled"])
+
+            # Verify writes work now
+            process.stdin.write(json.dumps({
+                "action": "write_file", "path": "file_unlocked.txt",
+                "content": "authorized-via-file",
+            }) + "\n")
+            process.stdin.flush()
+            write_response = json.loads(process.stdout.readline())
+            self.assertTrue(write_response["ok"])
+            self.assertEqual((self.workspace / "file_unlocked.txt").read_text(), "authorized-via-file")
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+            process.stdin.close()
+            process.stdout.close()
+            process.stderr.close()
+
 
 if __name__ == "__main__":
     unittest.main()

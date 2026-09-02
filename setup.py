@@ -6,7 +6,7 @@ setup(
     description="Deterministic System 2 Cognitive Engine & Mechanical Time-Lock MCP Server for Antigravity",
     license="MIT",
     packages=find_packages(),
-    py_modules=["fable_mode_entry"],
+    py_modules=["fable_mode_entry", "fable_compressor"],
     package_data={"fable_mode": ["resources.json", "LICENSE"], "fable_engine": ["fable_session.json"]},
     python_requires=">=3.10",
     install_requires=[],
