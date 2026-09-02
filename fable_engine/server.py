@@ -81,8 +81,13 @@ def _assert_private_path(path: Path) -> None:
         # They are not user-controlled state-directory links and must remain
         # usable for temporary CAS/session fixtures and normal system paths.
         trusted_macos_alias = (
-            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
-            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+            sys.platform == "darwin"
+            and (str(part) in {"/var", "/tmp"}
+                 or str(part).startswith(("/var/", "/tmp/")))
+            and (str(part.resolve()) == "/private/var"
+                 or str(part.resolve()).startswith("/private/var/")
+                 or str(part.resolve()) == "/private/tmp"
+                 or str(part.resolve()).startswith("/private/tmp/"))
         )
         if ((attrs & 0x400 or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
             raise RuntimeError("state path contains a symlink, reparse point, or special file")
@@ -303,8 +308,13 @@ def _safe_cas_node(path: Path, *, allow_missing: bool = True) -> None:
             raise FableCASError(f"missing CAS path: {part}")
         attrs = int(getattr(st, "st_file_attributes", 0))
         trusted_macos_alias = (
-            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
-            and str(part.resolve()) in {"/private/var", "/private/tmp"}
+            sys.platform == "darwin"
+            and (str(part) in {"/var", "/tmp"}
+                 or str(part).startswith(("/var/", "/tmp/")))
+            and (str(part.resolve()) == "/private/var"
+                 or str(part.resolve()).startswith("/private/var/")
+                 or str(part.resolve()) == "/private/tmp"
+                 or str(part.resolve()).startswith("/private/tmp/"))
         )
         if (((attrs & 0x400 or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias)
                 or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode)
