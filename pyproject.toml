@@ -32,6 +32,6 @@ fable_mode = ["resources.json", "LICENSE"]
 fable_engine = ["fable_session.json"]
 
 [tool.setuptools]
-py-modules = ["fable_mode_entry"]
+py-modules = ["fable_mode_entry", "fable_compressor"]
 
 
