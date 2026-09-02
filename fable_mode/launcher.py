@@ -105,6 +105,7 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
         "XDG_CONFIG_HOME": str(probe_home / ".config"),
         "FABLE_DATA_DIR": str(data_dir),
         "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
     }
     # Source-mode verification launches the installed runtime from an
     # arbitrary data-directory cwd. Bind imports to that exact runtime copy;
@@ -174,7 +175,11 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
         messages.append(item)
     ids = {m.get("id") for m in messages}
     if {1, 2} - ids:
-        return finish((False, "MCP smoke check did not receive initialize/tools-list responses"))
+        stderr = bytes(captured["err"]).decode("utf-8", "replace").strip()
+        detail = "MCP smoke check did not receive initialize/tools-list responses"
+        if stderr:
+            detail += ": " + stderr[:1024]
+        return finish((False, detail))
     by_id = {m["id"]: m for m in messages}
     if not isinstance(by_id[1]["result"].get("protocolVersion"), str):
         return finish((False, "MCP initialize response is missing protocolVersion"))
