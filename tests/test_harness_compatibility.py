@@ -6,6 +6,7 @@ import pathlib
 import sys
 import tempfile
 import threading
+import os
 import time
 import unittest
 from unittest.mock import patch
@@ -66,6 +67,7 @@ class HarnessCompatibilityTests(unittest.TestCase):
             self.assertIsInstance(responses[2]["error"], dict)
             self.assertEqual(responses[2]["error"]["code"], -32601)
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_request_id_cancellation(self):
         with tempfile.TemporaryDirectory() as tmp:
             broker = ExecutionBroker(BrokerPolicy(pathlib.Path(tmp), allowed_executables=(pathlib.Path(sys.executable).name,), write_token_digest=hashlib.sha256(b"x").hexdigest()))

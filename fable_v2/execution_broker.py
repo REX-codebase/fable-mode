@@ -559,7 +559,8 @@ class ExecutionBroker:
             "available_executables": available,
             "executable_identities": {key: dict(value) for key, value in
                                       self.policy.resolved_executable_identities.items()},
-            "execution_binding": ("posix-open-descriptor" if os.name == "posix"
+            "execution_binding": ("macos-revalidated-path" if sys.platform == "darwin"
+                                   else "posix-open-descriptor" if os.name == "posix"
                                    else "unavailable-on-windows"),
             "writes_enabled": self._writes_unlocked,
             "read_locked_interpreters": sorted(self.READ_LOCKED_INTERPRETERS),
@@ -1118,7 +1119,22 @@ class ExecutionBroker:
         exec_fd: int | None = None
         interpreter_fd: int | None = None
         spawn_argv = (registered_path, *argv[1:])
-        if os.name == "posix":
+        if os.name == "posix" and sys.platform == "darwin":
+            # macOS exposes /dev/fd, but Python's O_RDONLY descriptors are
+            # not executable there. Re-measure immediately before spawning
+            # and report the weaker, explicit binding rather than claiming
+            # descriptor execution. The strict Windows path remains closed.
+            try:
+                executable_identity = _measure_executable_path(registered_path)
+                expected_identity = {k: registered_identity.get(k) for k in
+                                     ("device", "inode", "size", "mode", "sha256")}
+                actual_identity = {k: executable_identity.get(k) for k in expected_identity}
+                if actual_identity != expected_identity:
+                    raise PermissionError("allowlisted executable changed since broker startup")
+                spawn_argv = (registered_path, *argv[1:])
+            except Exception:
+                raise
+        elif os.name == "posix":
             if not hasattr(os, "O_NOFOLLOW"):
                 raise PermissionError("safe descriptor-pinned execution is unavailable")
             try:

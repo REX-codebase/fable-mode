@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -120,6 +121,7 @@ class TrustSystem3RegressionTests(unittest.TestCase):
         self.assertFalse(synthesis.convergence_achieved)
         self.assertIn("UNMEASURED", synthesis.pareto_improvement_claim)
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_broker_emits_structured_measured_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             broker = ExecutionBroker(BrokerPolicy(

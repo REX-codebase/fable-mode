@@ -31,6 +31,7 @@ class BrokerSecondRedTeamTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 BrokerPolicy(root, (str(hard),))
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_receipt_identity_is_measured_and_workspace_is_pinned(self):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
@@ -45,6 +46,7 @@ class BrokerSecondRedTeamTests(unittest.TestCase):
             self.assertEqual(result["receipt"]["workspace_identity"]["inode"],
                              root.stat().st_ino)
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_mcp_handshake_id_propagation_and_notification_cancellation(self):
         with tempfile.TemporaryDirectory() as d:
             broker = ExecutionBroker(BrokerPolicy(
@@ -84,6 +86,7 @@ class BrokerSecondRedTeamTests(unittest.TestCase):
         self.assertEqual(cancellation["method"], "notifications/cancelled")
         self.assertEqual(cancellation["params"]["requestId"], call["id"])
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_cancellation_overtaking_registration_is_not_lost(self):
         with tempfile.TemporaryDirectory() as d:
             broker = ExecutionBroker(BrokerPolicy(
@@ -96,6 +99,7 @@ class BrokerSecondRedTeamTests(unittest.TestCase):
             self.assertTrue(result["cancelled"])
             self.assertFalse(result["success"])
 
+    @unittest.skipIf(os.name == "nt", "Windows broker execution is deliberately fail-closed")
     def test_command_output_quota_is_combined_across_streams(self):
         with tempfile.TemporaryDirectory() as d:
             broker = ExecutionBroker(BrokerPolicy(

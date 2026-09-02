@@ -72,7 +72,7 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertIn("python", response["result"]["available_executables"])
         self.assertNotIn("pytest", response["result"]["available_executables"])
 
-    @unittest.skipIf(os.name == "nt", "descriptor-pinned interpreter test is POSIX-only")
+    @unittest.skipIf(os.name == "nt" or sys.platform == "darwin", "descriptor-pinned interpreter test requires Linux procfs")
     def test_script_uses_pinned_interpreter_after_path_replacement(self):
         """Replacing a shebang path between validation and Popen cannot alter execution."""
         import fable_v2.execution_broker as module
@@ -105,6 +105,7 @@ class ExecutionBrokerTests(unittest.TestCase):
             self.assertTrue(result["success"])
             self.assertIn("pinned", result["stdout"])
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem/process capabilities are fail-closed")
     def test_attempted_write_quota_is_shared_and_persistent(self):
         """Fresh broker instances observe prior replacement attempts via the ledger."""
         token_digest = hashlib.sha256(b"admin-token").hexdigest()
@@ -126,6 +127,7 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertEqual(ledger["attempted_bytes"], 4)
         self.assertEqual(ledger["files"]["replaced.txt"], 4)
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem/process capabilities are fail-closed")
     def test_attempted_write_ledger_has_bounded_entries(self):
         import fable_v2.execution_broker as module
         token_digest = hashlib.sha256(b"admin-token").hexdigest()
@@ -147,6 +149,7 @@ class ExecutionBrokerTests(unittest.TestCase):
             ])
         self.assertFalse((self.workspace / "unauthorized.txt").exists())
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem/process capabilities are fail-closed")
     def test_command_is_allowlisted_and_runs_after_authorization(self):
         with self.assertRaises(PermissionError):
             self.broker.execute_command(["sh", "-c", "echo escaped"])
@@ -157,6 +160,7 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertIn("broker-ok", result["stdout"])
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem/process capabilities are fail-closed")
     def test_inspect_files_is_implemented_and_bounded(self):
         target = self.workspace / "input.txt"
         target.write_text("hello world", encoding="utf-8")
@@ -166,6 +170,7 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertEqual(result["content_hash"], hashlib.sha256(b"hello world").hexdigest())
         self.assertEqual(self.broker.handle({"action": "probe_capabilities"}), self.broker.probe())
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem/process capabilities are fail-closed")
     def test_subprocess_output_is_bounded_before_capture(self):
         limited = ExecutionBroker(BrokerPolicy(
             workspace=self.workspace,
@@ -206,7 +211,10 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertFalse(responses[0]["ok"])
         self.assertLessEqual(len(responses[0]["message"].encode()), MAX_ERROR_TEXT)
         self.assertTrue(responses[1]["ok"])
-        self.assertIn("execute_command", responses[1]["result"]["capabilities"])
+        if os.name == "nt":
+            self.assertNotIn("execute_command", responses[1]["result"]["capabilities"])
+        else:
+            self.assertIn("execute_command", responses[1]["result"]["capabilities"])
 
     def test_mcp_worker_admission_is_bounded_and_completed_workers_release_slots(self):
         """A connection rejects overload and admits a call after cleanup."""
