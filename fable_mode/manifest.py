@@ -35,6 +35,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_v2/system3/kripke.py",
     "fable_v2/system3/oracle.py",
     "fable_v2/verifiers.py",
+    "fable_v2/proof_engine.py",
     "rules/AGENTS.md",
     "rules/GEMINI.md",
     "rules/fable-mode.md",

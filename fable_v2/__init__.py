@@ -5,13 +5,23 @@ from .execution_broker import BrokerPolicy, ExecutionBroker
 from .protocol import (
     Candidate,
     Evidence,
+    FileChangeRecord,
+    ModelVelocityProfile,
+    ProofReceipt,
     TaskSpec,
     ToolReceipt,
     VerificationPolicy,
     VerificationResult,
+    VisualMockupSpec,
 )
 from .runtime import FableRun, RunState, new_run
 from .verifiers import CompositeVerifier, FunctionVerifier
+from .proof_engine import (
+    DeterministicProofValidator,
+    ProofStatus as EngineProofStatus,
+    ProofType,
+    ProofValidationResult,
+)
 from . import system3
 from .system3 import (
     # System 3 Causal
@@ -104,7 +114,7 @@ __all__ = [
     "BrokerPolicy", "Candidate", "CompositeVerifier", "Evidence", "ExecutionBroker", "FableRun",
     "FunctionVerifier", "HOST_PROFILES", "HostCapabilities", "RunState",
     "TaskSpec", "ToolReceipt", "VerificationPolicy", "VerificationResult",
-    "get_profile", "new_run",
+    "get_profile", "new_run", "DeterministicProofValidator",
     "system3",
     # System 3 Causal
     "CausalDAG", "CausalNode", "CausalEdge", "CausalNodeType", "BrittlenessReport", "InterventionResult",

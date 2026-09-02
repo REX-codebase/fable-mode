@@ -2,18 +2,23 @@
 
 ![Fable-Mode Hero](./assets/hero-banner.svg)
 
-# ?? Fable-Mode: Deterministic Deliberative Cognitive Architecture & Fleet Orchestrator
+# ⚡ Fable-Mode: Deterministic Deliberative Cognitive Architecture & Fleet Orchestrator
 
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?logo=python&logoColor=white&style=for-the-badge)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](./LICENSE)
+[![Release](https://img.shields.io/badge/Release-v1.3.0%20Frontier-indigo?style=for-the-badge)](#-version-130-frontier-release)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0-8A2BE2?style=for-the-badge)](https://modelcontextprotocol.io/)
+[![Proof Engine](https://img.shields.io/badge/Proof%20Engine-Ungameable%20Deterministic-red?style=for-the-badge)](#-ungameable-deterministic-proof-engine)
+[![Model Velocity](https://img.shields.io/badge/Velocity-2.5x%20Flash%20Calibration-blueviolet?style=for-the-badge)](#-model-velocity-calibration)
+[![Visual Engine](https://img.shields.io/badge/Imagination-Haute%20Visual%20Mockup-magenta?style=for-the-badge)](#-visual-imagination-engine)
+[![3D / WebGPU](https://img.shields.io/badge/3D%20Graphics-AAA%20Three.js%20%2F%20WebGPU-00d2ff?style=for-the-badge)](#-aaa-threejs-webgl--webgpu-game-grade-architecture)
 [![Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20Stdlib)-brightgreen?style=for-the-badge)](#-zero-dependencies-architecture)
 [![Cognition](https://img.shields.io/badge/Cognition-System%202%20%2B%20System%203-ff69b4?style=for-the-badge)](#-domain-cognitive-gears)
 [![Design](https://img.shields.io/badge/Engine-Cinematic%20Design-orange?style=for-the-badge)](#-3-cinematic-design-engine)
 
 **A deterministic, evidence-gated cognitive architecture and Model Context Protocol (MCP) orchestrator that transforms shallow, rushed AI code generation into verified, deep-deliberation engineering workflows.**
 
-[What Fable-Mode Is](#-what-fable-mode-actually-is-and-what-it-is-not) ? [Core Architecture](#-core-architecture--components) ? [Domain Cognitive Gears](#-domain-cognitive-gears) ? [Lifecycle & State Machine](#-how-it-works-in-practice-the-6-phase-lifecycle) ? [MCP Tool Reference](#-mcp-tool-reference--api) ? [Installation & Downloads](#-installation--downloads) ? [Benchmarks & Tests](#-benchmarks--test-verification)
+[What Fable-Mode Is](#-what-fable-mode-actually-is-and-what-it-is-not) • [Core Architecture](#-core-architecture--components) • [v1.3.0 Capabilities](#-new-v130-frontier-capabilities) • [Domain Cognitive Gears](#-domain-cognitive-gears) • [Lifecycle & State Machine](#-how-it-works-in-practice-the-6-phase-lifecycle) • [MCP Tool Reference](#-mcp-tool-reference--api) • [Installation & Downloads](#-installation--downloads) • [Benchmarks & Tests](#-benchmarks--test-verification)
 
 </div>
 
@@ -52,7 +57,88 @@ $$\boxed{\text{System 1 Proposal} \xrightarrow{\quad\text{Epistemic Grounding}\q
 
 ---
 
-## ??? Core Architecture & Components
+## 🌟 New v1.3.0 Frontier Capabilities
+
+The **v1.3.0 release** introduces groundbreaking capabilities across formal proof verification, anti-idleness pacing, velocity calibration, visual architecture, WebGPU graphics, and omniscient session lineage.
+
+### 🛡️ 1. Ungameable Deterministic Proof Engine (`DeterministicProofValidator`)
+
+In standard LLM workflows, models frequently attempt to bypass evaluation gates with vague tautologies (e.g. asserting `"tested"`, `"it works"`, `"x == x"`). The **Ungameable Deterministic Proof Engine** establishes an unbreachable mathematical barrier:
+
+```mermaid
+graph TD
+    P[Candidate Proposition / Invariant] --> L1[Layer 1: Cryptographic Integrity & File SHA-256 Chain]
+    L1 -->|Valid Hashes| L2[Layer 2: AST Structural Grounding & Symbol Binding]
+    L2 -->|Ground Nodes Bound| L3[Layer 3: ToolReceipt Execution Attestation]
+    L3 -->|Evidence Attested| L4[Layer 4: Anti-Tautology & Circularity Semantic Filter]
+    L4 -->|Non-Tautological| L5[Layer 5: Curry-Howard Proof Oracle & Kripke Model Checker]
+    L5 -->|Q.E.D. Formally Proved| ACCEPT[🛡️ INVARIANT VERIFIED & SEALED]
+
+    L1 -.->|Hash Mismatch| REJ[❌ PROOF REJECTED]
+    L2 -.->|Missing AST Symbol| REJ
+    L3 -.->|Forged/Missing Receipt| REJ
+    L4 -.->|Tautology / Vacuous Claim| REJ
+    L5 -.->|Type Error / Counterexample| REJ
+```
+
+- **5-Layer Proof Pipeline**:
+  1. **Layer 1 (Cryptographic Hashes)**: Automatically computes SHA-256 digests on all target resources. File mutations instantly invalidate downstream proofs.
+  2. **Layer 2 (AST & Symbol Anchoring)**: Binds invariants to exact AST node coordinates (`file_path:Lstart-Lend`, symbol signatures, and node types).
+  3. **Layer 3 (ToolReceipt Attestation)**: Binds empirical evidence to genuine tool outputs (`run_command` exit code 0, test runner logs, benchmark outputs).
+  4. **Layer 4 (Anti-Tautology Filter)**: Structurally rejects empty, generic, or reflexive claims (e.g., `"x == x"`, `"code is working"`, `"implemented successfully"`).
+  5. **Layer 5 (Curry-Howard & Kripke Model Checking)**: Verifies constructive proposition types ($\Gamma \vdash M : T$) and branching-time temporal logic ($AG(\text{safe})$) across state spaces.
+
+### ⏱️ 2. Minimum 2-Minute Budget & Anti-Idleness Mandate (`MIN_TIME_BUDGET_MINUTES = 2.0`)
+
+To permanently eliminate token rushing and zero-think shortcuts:
+- **Enforced Minimum Budget**: The engine rejects any session initialization or pacing timer below `2.0 minutes`.
+- **Anti-Idleness Refinement Formula**: During the deliberation window, models cannot go idle. Unlocking execution requires satisfying:
+  $$\text{min\_refinements} = \max\left(2, \, \left\lceil \frac{T_{\text{budget}}}{5.0} \right\rceil\right)$$
+- **Continuous Rethink-Refine Loop**: The Master Architect continuously mutates candidate archetypes, executes live scratch benchmarks via `run_command`, and tightens invariant proofs using `log_refinement_cycle`.
+
+### ⚡ 3. Model Velocity Calibration (`ModelVelocityProfiler`)
+
+Different LLMs operate at drastically different inference throughputs. Fable-Mode dynamically measures rolling generation speed and classifies models into 3 cognitive tiers:
+
+| Model Tier | Tokens/sec | Cognitive Strategy | Action Multiplier |
+| :--- | :--- | :--- | :--- |
+| **`flash`** | $>80\text{ tok/s}$ | High-Throughput Exploration | **2.5x Multiplier**: Explores 5–6 visual mockups, expanded 10D Pareto frontiers, and rapid parallel scratch probes. |
+| **`pro / heavy`** | $20–80\text{ tok/s}$ | Deep Sequential Reasoning | **1.0x Baseline**: In-depth formal invariant proofs, TRIZ contradiction synthesis, and active inference. |
+| **`local / weak`** | $<20\text{ tok/s}$ | Resource-Constrained | **Micro-Scaffolds Injected**: Automatically injects Kripke $AG(\text{safe})$ contracts, $do(\cdot)$ sensitivity bounds, and regex acceptance templates. |
+
+### 🎨 4. Visual Imagination Engine ("Visualize Before You Build")
+
+For UI, product design, and WebGL/Canvas interfaces:
+- **Mockup-First Protocol**: Mandates generating **5–6 Haute Aesthetic mockups** via `generate_image` *before* modifying frontend code.
+- **2D Coordinate & SVG Spatial Planning**: Maps exact pixel coordinates, flexbox/grid bounding boxes, and fluid typography curves into session memory.
+- **6 Haute Aesthetic Archetypes**:
+  - *Ethereal Editorial*: Minimalist luxury typography with expansive whitespace and subtle line borders.
+  - *Industrial Precision*: High-density data readouts, monospaced metrics, and muted technical grays.
+  - *Swiss Brutalist*: High-contrast typography, sharp grids, architectural discipline, and zero rounded fluff.
+  - *Cybernetic High-Tech*: Deep dark tones with calibrated luminescent accents and real-time telemetry panels.
+  - *Organic Warmth*: Earth-toned OKLCH palettes, natural textures, and rounded tactile geometry.
+  - *Velvet Luxury*: Deep midnight tones, gilded accents, serif headlines, and cinematic backdrop filters.
+
+### 🎮 5. AAA Three.js / WebGL / WebGPU Game-Grade Architecture
+
+Full production standards for 60–120 FPS browser graphics:
+- **120Hz Physics Simulation Loop**: Fixed-timestep accumulator loop (`requestAnimationFrame` with delta clamping and state interpolation) guaranteeing frame-rate independence.
+- **TSL (Three Shading Language) & Shaders**: Native node-based materials (`MeshStandardNodeMaterial`) compatible across WebGL and WebGPU.
+- **GPU Instancing & Zero-Allocation Hot Loops**: Batch rendering via `InstancedMesh` with pre-allocated vector math pools (`Vector3`, `Matrix4`, `Quaternion`) to eliminate GC frame drops.
+- **Cinematic Post-Processing Pipeline**: HDR tone mapping, UnrealBloom, Screen Space Reflections (SSR), Depth of Field (DoF), and viewport analog film grain.
+
+### 🌐 6. Omniscient Session Lineage & Expanded MCP Tool Suite
+
+Full persistent traceability across multi-hour agent trajectories:
+- `track_file_change`: Records modified, created, deleted, and slated file paths with SHA-256 digests and linked invariant tags.
+- `get_session_lineage`: Returns complete session provenance, phase history, epistemic ledger, file mutations, and proof graph.
+- `inspect_plan`: Displays active blueprint status, gate checklists, and slated subagent task boundaries.
+- `verify_proof`: Validates deterministic proofs (AST, receipt, file SHA256, formal logic) via `DeterministicProofValidator`.
+- `record_visual_mockups`: Stores visual mockup concepts, palettes, typography, and coordinate specifications.
+
+---
+
+## 🏗️ Core Architecture & Components
 
 ```mermaid
 flowchart TB
@@ -267,25 +353,45 @@ stateDiagram-v2
 
 ---
 
-## ??? MCP Tool Reference & API
+## 🛠️ MCP Tool Reference & API
 
 The `fable-engine` exposes the unified `fable_session` tool supporting the following actions:
 
-| Action | Purpose | Key Parameters |
-| :--- | :--- | :--- |
-| `create_session` | Initializes a new Fable session, arms the monotonic time-lock, and writes the initial WAL state. | `session_name` (str), `objective` (str), `time_budget_minutes` (float) |
-| `set_timer` | Sets an internal agent pacing sub-timer (cannot modify the immutable authority deadline). | `session_name` (str), `time_budget_minutes` (float) |
-| `get_status` | Returns session state, elapsed time, pacing ratio, active phase, and gate readiness. | `session_name` (str) |
-| `advance_phase` | Transitions the session state machine to a subsequent phase (Phase 1 through Phase 6). | `session_name` (str), `target_phase` (str), `rationale` (str) |
-| `log_epistemic_item` | Records an epistemic fact (`[PROVEN]` requires evidence), hypothesis (`[HYPOTHESIS]`), or ambiguity (`[UNKNOWN]`). | `session_name` (str), `tag` (str), `claim` (str), `evidence` (required for PROVEN) |
-| `record_invariant` | Registers a formal invariant specification and proof (architecture, logic, or design). | `session_name` (str), `invariant_name` (str), `formal_statement` (str), `proof_or_rationale` (str), `domain` (opt) |
-| `log_refinement_cycle` | Logs a rethink-refine cycle (archetype mutation, benchmark result, invariant stress test). | `session_name` (str), `refinement_type` (str), `focus_area` (str), `critique_or_bottleneck` (str), `architectural_refinement` (str) |
-| `unlock_execution` | Anti-rush gatekeeper: verifies the monotonic authority deadline, epistemic evidence, and formal invariants. | `session_name` (str), `rationale` (str) |
-| `checkpoint_session` | Performs an atomic Write-Ahead Log (WAL) snapshot and persists session state to disk. | `session_name` (str) |
-| `system3_causal_simulate` | Runs Pearl causal DAG simulation and counterfactual intervention analysis. | `session_name` (str), `nodes` (list), `edges` (list), `interventions` (dict) |
-| `system3_kripke_verify` | Performs formal temporal logic model checking across Kripke branching worlds. | `session_name` (str), `states` (list), `transitions` (list), `formulas` (list) |
-| `system3_dialectical_synthesis` | Applies TRIZ contradiction resolution matrix to opposing engineering parameters. | `session_name` (str), `improving_param` (str), `worsening_param` (str) |
-| `system3_proof_oracle` | Verifies constructive type-theoretic proofs using the Curry-Howard isomorphism. | `session_name` (str), `term` (dict), `expected_type` (dict) |
+| Action | Category | Purpose | Key Parameters |
+| :--- | :--- | :--- | :--- |
+| `create_session` | Lifecycle | Initializes a session, arms the monotonic time-lock, and initializes WAL state. | `session_name` (str), `objective` (str), `time_budget_minutes` (float $\ge 2.0$) |
+| `set_timer` | Pacing | Sets an internal agent pacing sub-timer (cannot shorten authority deadline). | `session_name` (str), `time_budget_minutes` (float $\ge 2.0$) |
+| `get_status` | Telemetry | Returns session state, elapsed time, velocity profile, active phase, and gate readiness. | `session_name` (str) |
+| `advance_phase` | Lifecycle | Transitions the state machine sequentially (Phase 1 through Phase 6). | `session_name` (str), `next_phase` (str), `phase_summary` (str) |
+| `log_epistemic_item` | Epistemics | Records a fact (`[PROVEN]` requires evidence), hypothesis, or ambiguity. | `session_name` (str), `tag` (str), `claim` (str), `evidence` (str) |
+| `record_invariant` | Invariants | Registers a formal invariant specification and proof (architecture/design/coding). | `session_name` (str), `invariant_name` (str), `formal_statement` (str), `proof_or_rationale` (str), `domain` (opt) |
+| `log_refinement_cycle` | Refinement | Logs a rethink-refine cycle (archetype mutation, benchmark result, invariant stress test). | `session_name` (str), `refinement_type` (str), `focus_area` (str), `critique_or_bottleneck` (str), `architectural_refinement` (str) |
+| `unlock_execution` | Gatekeeper | Anti-rush gatekeeper: verifies monotonic deadline, epistemic evidence, and invariants. | `session_name` (str), `rationale` (str) |
+| `track_file_change` | Lineage | Records file mutations (modified, created, deleted, slated) with SHA256 hashes. | `session_name` (str), `file_path` (str), `change_type` (str), `diff_summary` (str), `affected_invariants` (opt) |
+| `get_session_lineage` | Lineage | Returns complete session provenance, history, file mutation ledger, and proof receipts. | `session_name` (str) |
+| `inspect_plan` | Planning | Retrieves active execution plan, cognitive gate checklist, and slated file targets. | `session_name` (str) |
+| `verify_proof` | Proof Engine| Runs AST, ToolReceipt, SHA256, or formal logic proof verification via validator. | `claim` (str), `proof_type` (str), `evidence` (str), `target_resource` (opt) |
+| `record_visual_mockups`| Visual | Records 5–6 visual concepts, OKLCH palettes, typography, and SVG layout coordinates. | `session_name` (str), `mockups` (list), `selected_concept` (opt) |
+| `compile_delegation_contract`| Delegation | Validates and compiles a bounded subagent prompt with System 3 Micro-Scaffolds. | `session_name` (str), `subagent_prompt` (str) |
+| `checkpoint_session` | Storage | Performs an atomic Write-Ahead Log (WAL) snapshot and persists session state to disk. | `session_name` (str) |
+| `restore_session` | Storage | Restores a session from disk into an untrusted locked state requiring fresh gates. | `session_name` (str) |
+| `list_sessions` | Storage | Lists all available saved session files and metadata in the data directory. | None |
+| `compress_payload` | Compression | Compresses large content string into CAS reference pointer with SHA-256 address. | `content` (str), `label` (opt) |
+| `decompress_payload` | Compression | Decompresses content from CAS reference pointer with SHA-256 verification. | `cas_ref` (str) |
+| `view_slice` | Compression | Extracts precise line range [start_line, end_line] directly from CAS without buffer blowup. | `cas_ref` (str), `start_line` (int), `end_line` (int) |
+| `accumulate_payload` | Compression | Coalesces sub-1000 character micro-payloads into composite frames. | `payload` (str), `metadata` (opt), `force_flush` (opt) |
+| `flush_accumulator` | Compression | Flushes all buffered micro-payloads into a composite CAS frame. | None |
+| `get_compression_stats` | Compression | Returns accumulator telemetry, cache occupancy, and token compression metrics. | None |
+| `system3_causal_simulate` | System 3 | Runs Pearl causal DAG simulation and counterfactual intervention analysis. | `session_name` (str), `nodes` (list), `edges` (list), `interventions` (dict) |
+| `system3_kripke_verify` | System 3 | Performs formal temporal logic model checking across Kripke branching worlds. | `session_name` (str), `formula` (str), `worlds` (list), `transitions` (list) |
+| `system3_dialectical_synthesis` | System 3 | Applies TRIZ contradiction resolution matrix to opposing engineering parameters. | `session_name` (str), `thesis_title` (str), `contradictions` (list) |
+| `system3_proof_oracle` | System 3 | Verifies constructive type-theoretic proofs using the Curry-Howard isomorphism. | `session_name` (str), `claim` (str), `context` (opt), `axioms` (opt) |
+| `system3_active_inference` | System 3 | Computes Variational Free Energy minimization and selects optimal policy. | `session_name` (str), `observation` (str), `gamma` (opt) |
+| `system3_evolve_paradigms` | System 3 | Runs genetic algorithm paradigm search across 10D trade-off frontier. | `session_name` (str), `objective` (str), `generations` (opt) |
+| `system3_induce_axioms` | System 3 | Induces candidate domain axioms from observations and auto-records invariants. | `session_name` (str), `observations` (list) |
+| `system3_meta_reflect` | System 3 | Audits cognitive history for biases and optimizes search heuristics. | `session_name` (str) |
+| `system3_tri_level_orchestrate`| System 3 | Runs tri-level arbitration between intuitive, formal, and meta-cognitive layers. | `session_name` (str), `task_description` (str) |
+| `system3_hyperbolic_embed` | System 3 | Embeds tree hierarchy into 2D Poincaré disk without topological distortion. | `session_name` (str), `nodes` (list) |
 
 ### JSON Request Examples
 

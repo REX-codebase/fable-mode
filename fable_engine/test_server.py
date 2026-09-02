@@ -242,6 +242,13 @@ class TestFableSessionCore(unittest.TestCase):
         self.session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", f"{__file__}:L201")
         self.session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", f"{__file__}:L202")
         self.session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
+        for i in range(9):
+            self.session.log_refinement_cycle(
+                refinement_type="triz_refinement",
+                focus_area=f"Contention Area {i}",
+                critique_or_bottleneck=f"Bottleneck {i}",
+                architectural_refinement=f"Refinement {i}"
+            )
         self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Advanced to Phase 2")
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Advanced to Phase 3")
 
@@ -284,6 +291,13 @@ class TestFableSessionCore(unittest.TestCase):
         new_session.log_epistemic_item("PROVEN", "Fact 1: Lock-free atomic swap verified", f"{__file__}:L229")
         new_session.log_epistemic_item("PROVEN", "Fact 2: Modulo arithmetic holds", f"{__file__}:L230")
         new_session.record_invariant("INV-01", "tail <= head", "CAS inductive proof")
+        for i in range(2):
+            new_session.log_refinement_cycle(
+                refinement_type="triz_refinement",
+                focus_area=f"Area {i}",
+                critique_or_bottleneck=f"Critique {i}",
+                architectural_refinement=f"Refinement {i}"
+            )
         new_session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2 ready")
         new_session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3 ready")
         
@@ -340,6 +354,15 @@ class TestFableSessionCore(unittest.TestCase):
             self.session.unlock_execution("Let me code")
         self.assertIn("at least Phase 3", str(ctx.exception))
 
+        # Log required refinement cycles (9 required for 45m budget)
+        for i in range(9):
+            self.session.log_refinement_cycle(
+                refinement_type="archetype_exploration",
+                focus_area=f"Area {i}",
+                critique_or_bottleneck=f"Critique {i}",
+                architectural_refinement=f"Refinement {i}"
+            )
+
         # Attempt 6: Advance to Phase 3 -> Satisfies ALL gates! Must succeed!
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Passed red team fuzzing")
         res = self.session.unlock_execution(
@@ -355,11 +378,11 @@ class TestFableSessionCore(unittest.TestCase):
 
     def test_pacing_expiry_cannot_unlock(self):
         """A completed internal timer never satisfies the authority lock."""
-        self.session.set_timer(0.1)
+        self.session.set_timer(2.0)
         self.clock.advance(1.0)
-        self.session.log_epistemic_item("PROVEN", "Fact 1", f"{__file__}:L1")
-        self.session.log_epistemic_item("PROVEN", "Fact 2", f"{__file__}:L2")
-        self.session.record_invariant("INV-01", "x == x", "Reflexivity")
+        self.session.log_epistemic_item("PROVEN", "Fact 1: Verified property", f"{__file__}:L1")
+        self.session.log_epistemic_item("PROVEN", "Fact 2: Validated cache line", f"{__file__}:L2")
+        self.session.record_invariant("INV-01", "tail <= head", "CAS monotonic counter guarantee")
         self.session.advance_phase("Phase 2: Invariant Specification & Blueprint", "Phase 2")
         self.session.advance_phase("Phase 3: Adversarial Red-Teaming & Falsification", "Phase 3")
         with self.assertRaises(PermissionError):
@@ -479,7 +502,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "action": "create_session",
             "session_name": self.session_name,
             "objective": "Build zero-copy parser",
-            "time_budget_minutes": 0.1
+            "time_budget_minutes": 2.0
         })
         self.assertIn("Fable Cognitive Session Initialized", res)
         self.assertIn("Anti-Rush Lockout is ACTIVE", res)
@@ -524,7 +547,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
         self.assertIn("Formal Invariant Recorded", res)
         self.assertIn("INV-LIFETIME", res)
 
-        # 5. Log refinement cycle
+        # 5. Log refinement cycles (2 required for 2.0m budget)
         res = handle_fable_session({
             "action": "log_refinement_cycle",
             "session_name": self.session_name,
@@ -535,6 +558,16 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "terminal_probe_results": "Throughput increased from 1.2 GB/s to 9.8 GB/s"
         })
         self.assertIn("Rethink-Refine Cycle #1 Logged", res)
+
+        res2 = handle_fable_session({
+            "action": "log_refinement_cycle",
+            "session_name": self.session_name,
+            "refinement_type": "adversarial_falsification",
+            "focus_area": "Boundary conditions",
+            "critique_or_bottleneck": "Unchecked pointer arithmetic on overflow",
+            "architectural_refinement": "Saturating arithmetic bounds with compile-time assertions"
+        })
+        self.assertIn("Rethink-Refine Cycle #2 Logged", res2)
 
         # 6. Try premature unlock (Phase 1) -> Must fail Hard Time-Lock (or cognitive gate)
         res = handle_fable_session({
@@ -558,7 +591,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
             "phase_summary": "Passed red-teaming checks"
         })
 
-        # 8. Attempt unlock without override token -> Still hits Hard Time-Lock
+        # 8. Attempt unlock without elapsed time -> Still hits Hard Time-Lock
         res = handle_fable_session({
             "action": "unlock_execution",
             "session_name": self.session_name,
@@ -566,12 +599,15 @@ class TestFableHandlerDispatch(unittest.TestCase):
         })
         self.assertIn("HARD TIME-LOCK VIOLATION", res)
 
-        # 9. The immutable authority deadline, not the internal pacing timer, unlocks.
-        time.sleep(6.3)
+        # 9. Simulate elapsed monotonic time for testing unlock
+        session = ACTIVE_SESSIONS[self.session_name]
+        session._authority_deadline_monotonic = time.monotonic() - 1.0
+        session._authority_deadline_wall = time.time() - 1.0
+
         res = handle_fable_session({
             "action": "unlock_execution",
             "session_name": self.session_name,
-            "rationale": "Cognitive gates satisfied with 2 proven facts, 1 invariant, and 1 refinement cycle"
+            "rationale": "Cognitive gates satisfied with 2 proven facts, 1 invariant, and 2 refinement cycles"
         })
         self.assertIn("Execution Lock Lifted Successfully", res)
         self.assertIn("🟢 UNLOCKED", res)
@@ -584,7 +620,7 @@ class TestFableHandlerDispatch(unittest.TestCase):
         })
         self.assertIn("Pacing Timer", res)
         self.assertIn("Authority Budget", res)
-        self.assertIn("0.1", res)
+        self.assertIn("2.0", res)
 
         # 11. Checkpoint and restore
         res = handle_fable_session({
@@ -1254,7 +1290,7 @@ class TestSecondRedTeamRegressions(unittest.TestCase):
     def test_restore_ignores_forged_deadline_phase_and_evidence_authority(self):
         now = time.time()
         payload = {"session_name": "forged_regression", "objective": "x",
-                   "time_budget_minutes": 1, "start_time": now - 10000,
+                   "time_budget_minutes": 2.0, "start_time": now - 10000,
                    "authority_deadline_time": now + 10**9,
                    "active_phase": PHASES[-1], "execution_locked": False,
                    "can_execute_code": True,
@@ -1266,7 +1302,7 @@ class TestSecondRedTeamRegressions(unittest.TestCase):
         self.assertTrue(restored.execution_locked)
         self.assertFalse(restored.can_execute_code)
         self.assertEqual(restored.active_phase, PHASES[0])
-        self.assertLess(restored.deadline_time, now + 120)
+        self.assertLessEqual(restored.deadline_time, now + 130)
         self.assertFalse(restored.get_telemetry()["cognitive_gates"]["ready"])
 
     def test_malformed_rpc_shapes_return_invalid_request(self):

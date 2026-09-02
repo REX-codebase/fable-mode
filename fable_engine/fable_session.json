@@ -42,7 +42,12 @@
           "system3_hyperbolic_embed",
           "system3_kripke_verify",
           "system3_active_inference",
-          "system3_proof_oracle"
+          "system3_proof_oracle",
+          "track_file_change",
+          "get_session_lineage",
+          "inspect_plan",
+          "verify_proof",
+          "record_visual_mockups"
         ],
         "type": "string"
       },
@@ -351,6 +356,40 @@
       "worlds": {
         "description": "List of world/state definitions for Kripke structure.",
         "type": ["array", "string"]
+      },
+      "affected_invariants": {
+        "description": "List or string of invariant names affected by this file change.",
+        "type": ["array", "string"]
+      },
+      "change_type": {
+        "description": "Classification of file change ('modified', 'created', 'deleted', 'slated').",
+        "enum": ["modified", "created", "deleted", "slated"],
+        "type": "string"
+      },
+      "diff_summary": {
+        "description": "Concise summary of file changes, diff, or slated edits.",
+        "type": "string"
+      },
+      "file_path": {
+        "description": "Target file path for file change tracking or proof verification.",
+        "type": "string"
+      },
+      "mockups": {
+        "description": "List of concept dictionaries for visual mockup recording.",
+        "type": ["array", "string"]
+      },
+      "proof_type": {
+        "description": "Deterministic proof type ('ast', 'receipt', 'file_sha256', 'formal_logic', 'vector_coordinates').",
+        "enum": ["ast", "receipt", "file_sha256", "formal_logic", "vector_coordinates"],
+        "type": "string"
+      },
+      "selected_concept": {
+        "description": "Identifier of the selected visual concept archetype.",
+        "type": "string"
+      },
+      "target_resource": {
+        "description": "Target resource (file path, receipt ID) for proof verification.",
+        "type": "string"
       }
     },
     "required": [

@@ -175,6 +175,7 @@ from fable_v2.system3 import (
     Refl,
     Abort,
 )
+from fable_v2.proof_engine import DeterministicProofValidator
 
 # Standard Fable Phases
 PHASES = [
@@ -188,7 +189,7 @@ PHASES = [
 
 PHASE_INDEX_MAP = {phase: i + 1 for i, phase in enumerate(PHASES)}
 
-MIN_TIME_BUDGET_MINUTES = 0.1
+MIN_TIME_BUDGET_MINUTES = 2.0
 MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -213,8 +214,9 @@ def _validate_time_budget(value: Any, field_name: str = "time_budget_minutes") -
         raise ValueError(f"Invalid {field_name}: expected a finite number of minutes.") from exc
     if not math.isfinite(minutes) or not (MIN_TIME_BUDGET_MINUTES <= minutes <= MAX_TIME_BUDGET_MINUTES):
         raise ValueError(
-            f"Invalid {field_name}: must be between {MIN_TIME_BUDGET_MINUTES} and "
-            f"{MAX_TIME_BUDGET_MINUTES} finite minutes."
+            f"Invalid {field_name}: minimum allowed time budget is {MIN_TIME_BUDGET_MINUTES} minutes "
+            f"(must be between {MIN_TIME_BUDGET_MINUTES} and {MAX_TIME_BUDGET_MINUTES} finite minutes to ensure adequate epistemic grounding and deliberation). "
+            f"Provided: {minutes} minutes."
         )
     return minutes
 
@@ -1188,70 +1190,139 @@ class EpistemicEvidenceValidator:
 
     def __init__(self, workspace_root: Optional[Path] = None):
         self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
+        self._validator = DeterministicProofValidator(workspace_root=self.workspace_root)
 
     def parse_evidence_citation(self, evidence_str: str) -> Optional[Dict[str, Any]]:
-        clean_str = evidence_str.strip()
-        if clean_str.startswith("file:///"):
-            clean_str = clean_str[8:]
-        elif clean_str.startswith("file://"):
-            clean_str = clean_str[7:]
-
-        match = re.search(r":L?(\d+)(?:-L?(\d+))?$", clean_str)
-        if match:
-            file_path_str = clean_str[:match.start()]
-            start_line = int(match.group(1))
-            end_line = int(match.group(2)) if match.group(2) else start_line
-        else:
-            file_path_str = clean_str
-            start_line = None
-            end_line = None
-        if not file_path_str:
-            return None
-        return {
-            "file_path": file_path_str,
-            "start_line": start_line,
-            "end_line": end_line
-        }
+        return self._validator._parse_file_citation(evidence_str)
 
     def validate_proven_claim(self, claim: str, evidence: str) -> Tuple[bool, str]:
-        if not evidence or not evidence.strip():
-            return False, "PROVEN claims require an explicit evidence string (file path, line range, command output, or URL)."
+        valid, msg, _ = self._validator.validate_proven_claim(claim, evidence)
+        return valid, msg
 
-        ev_stripped = evidence.strip()
-        if ev_stripped.startswith("http://") or ev_stripped.startswith("https://"):
-            return True, "URL citation verified."
 
-        if any(kw in ev_stripped.lower() for kw in [
-            "stdout", "stderr", "command output", "exit code", "python --version", 
-            "cargo test", "pytest", "benchmark", "probe", "cli", "run_command", "git ", "diff"
-        ]):
-            return True, "Command output citation verified."
+class ModelVelocityProfiler:
+    """
+    Tracks timestamps and character/token volume across incoming tool requests.
+    Computes rolling velocity (chars/sec, est. tokens/sec, tool call frequency).
+    Classifies model tier:
+      - flash (Fast / High Throughput): tokens_per_sec > 80 or rapid successive tool calls. Multiplier = 2.5x
+      - pro / heavy (Deep sequential): tokens_per_sec 20-80. Multiplier = 1.0x
+      - local / weak: tokens_per_sec < 20. Automatically injects micro-scaffold hints.
+    """
 
-        citation = self.parse_evidence_citation(ev_stripped)
-        if not citation:
-            return False, f"Could not parse a valid file path citation from evidence: '{evidence}'."
+    def __init__(self, window_size: int = 20, clock: Optional[Any] = None):
+        self.window_size = window_size
+        self._clock = clock or time.time
+        self.request_history: List[Dict[str, Any]] = []
+        self._lock = threading.Lock()
+        self.total_requests: int = 0
+        self.total_chars: int = 0
+        self.total_estimated_tokens: int = 0
 
-        raw_path = citation["file_path"]
-        p = Path(raw_path)
-        if not p.is_absolute():
-            p = (self.workspace_root / p).resolve()
-
-        if not p.exists():
-            return False, f"Evidence file does not exist on disk: '{raw_path}'."
-
-        if not p.is_file():
-            return False, f"Evidence path is not a file: '{raw_path}'."
-
-        if citation["start_line"] is not None:
+    def record_request(self, action: str, raw_payload: Union[str, Dict[str, Any], int], timestamp: Optional[float] = None) -> None:
+        """Record an incoming tool request's character/token volume and timestamp."""
+        ts = timestamp if timestamp is not None else self._clock()
+        if isinstance(raw_payload, int):
+            char_count = max(0, raw_payload)
+        elif isinstance(raw_payload, str):
+            char_count = len(raw_payload)
+        elif isinstance(raw_payload, dict):
             try:
-                with open(p, "r", encoding="utf-8", errors="replace") as f:
-                    line_count = sum(1 for _ in f)
-                if citation["start_line"] > line_count:
-                    return False, f"Referenced line {citation['start_line']} exceeds total lines ({line_count}) in '{raw_path}'."
-            except Exception as e:
-                return False, f"Failed reading evidence file '{raw_path}': {e}"
+                char_count = len(json.dumps(raw_payload))
+            except Exception:
+                char_count = 100
+        else:
+            char_count = 100
 
-        return True, f"File citation verified ({raw_path})."
+        est_tokens = max(1, char_count // 4)
+        with self._lock:
+            self.total_requests += 1
+            self.total_chars += char_count
+            self.total_estimated_tokens += est_tokens
+            self.request_history.append({
+                "timestamp": ts,
+                "action": action,
+                "chars": char_count,
+                "tokens": est_tokens,
+            })
+            if len(self.request_history) > self.window_size * 2:
+                self.request_history = self.request_history[-self.window_size:]
+
+    def get_velocity_profile(self) -> Dict[str, Any]:
+        """Compute rolling velocity metrics and classify model tier."""
+        with self._lock:
+            history = list(self.request_history)
+            total_reqs = self.total_requests
+            tot_chars = self.total_chars
+            tot_tokens = self.total_estimated_tokens
+
+        if not history:
+            return {
+                "chars_per_sec": 0.0,
+                "tokens_per_sec": 0.0,
+                "tool_call_frequency_cpm": 0.0,
+                "avg_interval_seconds": 0.0,
+                "model_tier": "pro",
+                "tier_multiplier": 1.0,
+                "tier_description": "pro / heavy (Deep sequential reasoning tier)",
+                "total_requests": total_reqs,
+                "total_chars": tot_chars,
+                "total_estimated_tokens": tot_tokens,
+                "requires_micro_scaffolds": False,
+            }
+
+        if len(history) == 1:
+            time_span = 1.0
+            window_chars = history[0]["chars"]
+            window_tokens = history[0]["tokens"]
+            call_count = 1
+            avg_interval = 5.0
+        else:
+            recent = history[-self.window_size:]
+            time_span = max(0.5, recent[-1]["timestamp"] - recent[0]["timestamp"])
+            window_chars = sum(r["chars"] for r in recent)
+            window_tokens = sum(r["tokens"] for r in recent)
+            call_count = len(recent)
+            intervals = [recent[i]["timestamp"] - recent[i-1]["timestamp"] for i in range(1, len(recent))]
+            avg_interval = sum(intervals) / max(1, len(intervals))
+
+        chars_per_sec = round(window_chars / time_span, 2)
+        tokens_per_sec = round(window_tokens / time_span, 2)
+        cpm = round((call_count / time_span) * 60.0, 2)
+
+        if tokens_per_sec > 80.0 or (avg_interval < 2.0 and call_count >= 3) or cpm > 20.0:
+            tier = "flash"
+            multiplier = 2.5
+            desc = "flash (Fast / High Throughput: requires deeper parallel exploration, 5+ mockup concepts, rich coordinate modeling)"
+            micro_scaffolds = False
+        elif tokens_per_sec >= 20.0:
+            tier = "pro"
+            multiplier = 1.0
+            desc = "pro / heavy (Deep sequential reasoning tier)"
+            micro_scaffolds = False
+        else:
+            tier = "local"
+            multiplier = 0.5
+            desc = "local / weak (Resource-constrained tier: automatically injects micro-scaffold hints)"
+            micro_scaffolds = True
+
+        return {
+            "chars_per_sec": chars_per_sec,
+            "tokens_per_sec": tokens_per_sec,
+            "tool_call_frequency_cpm": cpm,
+            "avg_interval_seconds": round(avg_interval, 2),
+            "model_tier": tier,
+            "tier_multiplier": multiplier,
+            "tier_description": desc,
+            "total_requests": total_reqs,
+            "total_chars": tot_chars,
+            "total_estimated_tokens": tot_tokens,
+            "requires_micro_scaffolds": micro_scaffolds,
+        }
+
+
+GLOBAL_VELOCITY_PROFILER = ModelVelocityProfiler()
+
 
 
 class DelegationContractCompiler:
@@ -1369,6 +1440,9 @@ class FableSession:
         self.epistemic_ledger: List[Dict[str, Any]] = []
         self.invariants: List[Dict[str, Any]] = []
         self.refinement_cycles: List[Dict[str, Any]] = []
+        self.file_changes: List[Dict[str, Any]] = []
+        self.visual_mockups: Dict[str, Any] = {"mockups": [], "selected_concept": None}
+        self.proof_receipts: List[Dict[str, Any]] = []
         self.phase_history: List[Dict[str, Any]] = [
             {
                 "phase": self.active_phase,
@@ -1508,6 +1582,10 @@ class FableSession:
             "invariants_count": len(self.invariants),
             "refinement_count": len(self.refinement_cycles),
             "refinement_cycles": self.refinement_cycles,
+            "file_changes_count": len(self.file_changes),
+            "visual_mockups": self.visual_mockups,
+            "proof_receipts_count": len(self.proof_receipts),
+            "velocity_profile": GLOBAL_VELOCITY_PROFILER.get_velocity_profile(),
             "cognitive_gates": self._gate_report(),
             "unlock_details": self.unlock_details,
             "system3_cognitive_state": {
@@ -1640,13 +1718,23 @@ class FableSession:
 
         if not claim or not claim.strip():
             raise ValueError("Claim description cannot be empty.")
+
+        proof_receipt = None
+        validator = DeterministicProofValidator()
         if tag_upper == "PROVEN":
+            if validator.is_tautological(claim):
+                raise ValueError(
+                    f"Invalid claim '{claim}': PROVEN claims must not be tautological or generic (e.g. 'tested', 'it works'). "
+                    f"State a substantive, testable system property or measurement."
+                )
             if not str(evidence or "").strip():
                 raise ValueError("PROVEN claims require concrete evidence (file, command output, test, or URL).")
-            validator = EpistemicEvidenceValidator()
-            valid, reason = validator.validate_proven_claim(claim, str(evidence))
+            valid, reason, rcpt = validator.validate_proven_claim(claim, str(evidence))
             if not valid:
                 raise ValueError(f"Epistemic Evidence Validation Failed: {reason}")
+            proof_receipt = rcpt
+            if rcpt:
+                self.proof_receipts.append(rcpt)
 
         item_id = f"epi_{len(self.epistemic_ledger) + 1:03d}"
         item = {
@@ -1654,6 +1742,7 @@ class FableSession:
             "tag": tag_upper,
             "claim": claim.strip(),
             "evidence": (evidence or "").strip(),
+            "proof_receipt": proof_receipt,
             "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
@@ -1672,12 +1761,10 @@ class FableSession:
         if dom_clean not in ("architecture", "design", "coding"):
             dom_clean = "architecture"
 
-        if not invariant_name or not invariant_name.strip():
-            raise ValueError("Invariant name cannot be empty.")
-        if not formal_statement or not formal_statement.strip():
-            raise ValueError("Formal statement cannot be empty.")
-        if not proof_or_rationale or not proof_or_rationale.strip():
-            raise ValueError("Invariant proof or rationale cannot be empty.")
+        validator = DeterministicProofValidator()
+        valid, reason, rcpt = validator.validate_invariant(invariant_name, formal_statement, proof_or_rationale)
+        if not valid:
+            raise ValueError(f"Invariant Validation Failed: {reason}")
 
         inv_id = f"inv_{len(self.invariants) + 1:03d}"
         inv = {
@@ -1686,11 +1773,88 @@ class FableSession:
             "domain": dom_clean,
             "formal_statement": formal_statement.strip(),
             "proof_or_rationale": (proof_or_rationale or "").strip(),
+            "proof_receipt": rcpt,
             "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
+        if rcpt:
+            self.proof_receipts.append(rcpt)
         self.invariants.append(inv)
         return inv
+
+    def track_file_change(
+        self,
+        file_path: str,
+        change_type: str,
+        diff_summary: str,
+        rationale: Optional[str] = None,
+        affected_invariants: Optional[Union[List[str], str]] = None
+    ) -> Dict[str, Any]:
+        """Tracks file mutations (modified, created, deleted, slated) with automatic SHA256 hashing."""
+        if not file_path or not str(file_path).strip():
+            raise ValueError("file_path cannot be empty.")
+        c_type = str(change_type).strip().lower()
+        if c_type not in ("modified", "created", "deleted", "slated"):
+            raise ValueError(f"Invalid change_type '{change_type}'. Must be 'modified', 'created', 'deleted', or 'slated'.")
+        if not diff_summary or not str(diff_summary).strip():
+            raise ValueError("diff_summary cannot be empty.")
+
+        p = Path(file_path)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        sha256 = None
+        if p.is_file():
+            try:
+                sha256 = hashlib.sha256(p.read_bytes()).hexdigest()
+            except Exception:
+                sha256 = None
+
+        invariants_list: List[str] = []
+        if affected_invariants:
+            if isinstance(affected_invariants, list):
+                invariants_list = [str(x) for x in affected_invariants]
+            else:
+                invariants_list = [str(affected_invariants)]
+
+        entry = {
+            "file_path": str(file_path).strip(),
+            "change_type": c_type,
+            "diff_summary": str(diff_summary).strip(),
+            "rationale": (rationale or "").strip(),
+            "affected_invariants": invariants_list,
+            "sha256": sha256,
+            "timestamp": self._wall_clock(),
+            "phase": self.active_phase,
+        }
+        self.file_changes.append(entry)
+        return entry
+
+    def record_visual_mockups(
+        self,
+        mockups: Union[List[Dict[str, Any]], str],
+        selected_concept: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Records visual mockup concepts, palettes, typography, and layout coordinate data."""
+        if isinstance(mockups, str):
+            try:
+                parsed_mockups = json.loads(mockups)
+            except Exception as e:
+                raise ValueError(f"Failed to parse mockups JSON string: {e}")
+        elif isinstance(mockups, list):
+            parsed_mockups = mockups
+        else:
+            raise ValueError(f"mockups must be a list of concept dictionaries, got {type(mockups).__name__}")
+
+        if not isinstance(parsed_mockups, list) or len(parsed_mockups) == 0:
+            raise ValueError("mockups list cannot be empty. Provide 5-6 architectural concept mockups.")
+
+        self.visual_mockups = {
+            "mockups": parsed_mockups,
+            "selected_concept": (selected_concept or "").strip() if selected_concept else (parsed_mockups[0].get("concept_name") if parsed_mockups else None),
+            "recorded_at": self._wall_clock(),
+            "phase": self.active_phase,
+        }
+        return self.visual_mockups
 
     def log_refinement_cycle(
         self,
@@ -1808,6 +1972,7 @@ class FableSession:
         2. At least 2 evidence-backed PROVEN items are recorded.
         3. At least 1 formal invariant includes a proof or rationale.
         4. Active phase is at least Phase 3 (Phase 3, 4, 5, or 6).
+        5. Anti-Idle check: at least 1 refinement cycle per 5 minutes of budget (minimum 2 cycles).
 
         Emergency overrides are intentionally not exposed through the MCP
         tool schema. A host application may configure an out-of-band secret
@@ -1841,11 +2006,21 @@ class FableSession:
                 f"(currently in {self.active_phase})."
             )
 
+        # Anti-idle check: require minimum refinement cycles (at least 1 cycle per 5 minutes of budget, min 2 cycles)
+        min_refinements = max(2, math.ceil(self.time_budget_minutes / 5.0))
+        valid_refinements = [r for r in self.refinement_cycles if not r.get("_restored_untrusted")]
+        if len(valid_refinements) < min_refinements:
+            errors.append(
+                f"Anti-Idle Requirement Not Satisfied: Requires at least {min_refinements} rethink-refine cycles for a "
+                f"{self.time_budget_minutes}m budget (currently {len(valid_refinements)} recorded). "
+                f"Continuous cognitive refinement is mandatory during deliberation."
+            )
+
         if errors:
             reasons = "\n".join([f"  - {e}" for e in errors])
             raise PermissionError(
                 f"🛑 Anti-Rush Lockout Active! Execution unlock denied due to missing cognitive gates:\n{reasons}\n\n"
-                f"Please log required proven facts, formal invariants, and advance to Phase 3+ before unlocking."
+                f"Please log required proven facts, formal invariants, refinement cycles, and advance to Phase 3+ before unlocking."
             )
 
         self.execution_locked = False
@@ -1871,7 +2046,7 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.2.3",
+            "version": "1.3.0",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,
@@ -1890,6 +2065,9 @@ class FableSession:
             "epistemic_ledger": self.epistemic_ledger,
             "invariants": self.invariants,
             "refinement_cycles": self.refinement_cycles,
+            "file_changes": self.file_changes,
+            "visual_mockups": self.visual_mockups,
+            "proof_receipts": self.proof_receipts,
             "phase_history": self.phase_history,
             "unlock_details": self.unlock_details,
             "system3_causal_graphs": self.system3_causal_graphs,
@@ -1923,6 +2101,9 @@ class FableSession:
         session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
         session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
         session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
+        session.file_changes = data.get("file_changes", [])
+        session.visual_mockups = data.get("visual_mockups", {"mockups": [], "selected_concept": None})
+        session.proof_receipts = data.get("proof_receipts", [])
         session.active_phase = PHASES[0]
         session.phase_history = [{"phase": PHASES[0], "entered_at": session.start_time,
                                  "summary": "Restored in safe locked state; fresh gates required"}]
@@ -2044,6 +2225,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
     try:
         action = arguments.get("action", "").strip().lower()
         session_name = arguments.get("session_name", "").strip()
+
+        GLOBAL_VELOCITY_PROFILER.record_request(action, arguments)
 
         if not action:
             return "Error: Missing required parameter 'action'."
@@ -3325,6 +3508,239 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
+        # 30. TRACK FILE CHANGE
+        elif action in ("track_file_change", "track_file", "record_file_change"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'track_file_change'."
+            file_path = arguments.get("file_path", "").strip()
+            if not file_path:
+                return "Error: 'file_path' is required for action 'track_file_change'."
+            change_type = arguments.get("change_type", "").strip().lower()
+            if not change_type:
+                return "Error: 'change_type' ('modified', 'created', 'deleted', 'slated') is required for action 'track_file_change'."
+            diff_summary = arguments.get("diff_summary", "").strip()
+            if not diff_summary:
+                return "Error: 'diff_summary' is required for action 'track_file_change'."
+            rationale = arguments.get("rationale", "").strip()
+            affected_invariants = arguments.get("affected_invariants")
+
+            session = get_or_load_session(session_name)
+            entry = session.track_file_change(file_path, change_type, diff_summary, rationale, affected_invariants)
+            session.save()
+
+            inv_str = f"\n- **Affected Invariants**: `{', '.join(entry['affected_invariants'])}`" if entry.get("affected_invariants") else ""
+            sha_str = f"\n- **File SHA256**: `{entry['sha256']}`" if entry.get("sha256") else ""
+            return (
+                f"### 📂 File Change Tracked\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Target File**: `{entry['file_path']}`\n"
+                f"- **Change Type**: `{entry['change_type'].upper()}`\n"
+                f"- **Diff Summary**: {entry['diff_summary']}\n"
+                f"- **Rationale**: {entry['rationale'] or 'N/A'}"
+                f"{sha_str}"
+                f"{inv_str}\n"
+                f"- **Total Tracked Changes**: `{len(session.file_changes)}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 31. GET SESSION LINEAGE
+        elif action in ("get_session_lineage", "lineage", "session_lineage"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'get_session_lineage'."
+            session = get_or_load_session(session_name)
+            tel = session.get_telemetry()
+            v_prof = tel.get("velocity_profile", {})
+
+            # 1. Past files modified/created/deleted
+            past_files = [fc for fc in session.file_changes if fc.get("change_type") != "slated"]
+            past_lines = []
+            for pf in past_files:
+                sha = f" (`{pf['sha256'][:8]}`)" if pf.get("sha256") else ""
+                past_lines.append(f"- `[{pf['change_type'].upper()}]` `{pf['file_path']}`{sha}: {pf['diff_summary']}")
+            past_str = "\n".join(past_lines) if past_lines else "- No files modified or created yet."
+
+            # 2. Slated files
+            slated_files = [fc for fc in session.file_changes if fc.get("change_type") == "slated"]
+            slated_lines = []
+            for sf in slated_files:
+                slated_lines.append(f"- `[SLATED]` `{sf['file_path']}`: {sf['diff_summary']} (Rationale: {sf.get('rationale', 'N/A')})")
+            slated_str = "\n".join(slated_lines) if slated_lines else "- No upcoming files slated."
+
+            # 3. Roadmap & Phase History
+            phase_lines = []
+            for ph in session.phase_history:
+                phase_lines.append(f"- **{ph['phase']}**: {ph.get('summary', 'Entered')}")
+            roadmap_str = "\n".join(phase_lines)
+
+            # 4. Epistemic ledger
+            epi_lines = []
+            for item in session.epistemic_ledger:
+                rcpt = f" (Receipt: `{item['proof_receipt']['receipt_id']}`)" if item.get("proof_receipt") else ""
+                epi_lines.append(f"- `[{item['tag']}]` **{item['id']}**: {item['claim']}{rcpt}")
+            epi_str = "\n".join(epi_lines) if epi_lines else "- No epistemic items logged."
+
+            # 5. Invariants
+            inv_lines = []
+            for inv in session.invariants:
+                rcpt = f" (Receipt: `{inv['proof_receipt']['receipt_id']}`)" if inv.get("proof_receipt") else ""
+                inv_lines.append(f"- **{inv['name']}** `[{inv['domain']}]`: `{inv['formal_statement']}`{rcpt}")
+            inv_str = "\n".join(inv_lines) if inv_lines else "- No formal invariants recorded."
+
+            # 6. Visual mockups
+            vm = session.visual_mockups if isinstance(session.visual_mockups, dict) else {}
+            mockups_list = vm.get("mockups", [])
+            vm_lines = []
+            for m in mockups_list:
+                sel = " 🌟 *(SELECTED)*" if m.get("concept_name") == vm.get("selected_concept") else ""
+                vm_lines.append(f"- **{m.get('concept_name', 'Concept')}** `[{m.get('aesthetic_archetype', 'N/A')}]`{sel}: Palette: {m.get('palette', 'N/A')}, Typography: {m.get('typography', 'N/A')}")
+            vm_str = "\n".join(vm_lines) if vm_lines else "- No visual mockups recorded."
+
+            return (
+                f"### 🌐 Omniscient Session Lineage (`{session.session_name}`)\n\n"
+                f"#### 🎯 Mission Objective & Roadmap:\n"
+                f"- **Goal**: {session.objective}\n"
+                f"- **Active Phase**: `{session.active_phase}` (Phase {tel['phase_index']}/{tel['total_phases']})\n"
+                f"- **Pacing Remaining**: `{tel['pacing_remaining_formatted']}` / Authority: `{tel['authority_remaining_formatted']}`\n\n"
+                f"#### 🛣️ Phase Progression History:\n{roadmap_str}\n\n"
+                f"#### 📝 Completed File Mutations ({len(past_files)}):\n{past_str}\n\n"
+                f"#### 📋 Slated File Modifications ({len(slated_files)}):\n{slated_str}\n\n"
+                f"#### 🔬 Epistemic Grounding Ledger ({len(session.epistemic_ledger)} items):\n{epi_str}\n\n"
+                f"#### 📐 Formal Invariants & Contract Verification ({len(session.invariants)} items):\n{inv_str}\n\n"
+                f"#### 🎨 Visual Mockup Concepts & Spatial Spec:\n{vm_str}\n\n"
+                f"#### ⚡ Model Velocity & Capability Telemetry:\n"
+                f"- **Tier**: `{v_prof.get('model_tier', 'pro').upper()}` (Multiplier: `{v_prof.get('tier_multiplier', 1.0)}x`)\n"
+                f"- **Velocity**: `{v_prof.get('tokens_per_sec', 0.0)} est. tokens/sec` (`{v_prof.get('chars_per_sec', 0.0)} chars/sec`)\n"
+                f"- **Call Frequency**: `{v_prof.get('tool_call_frequency_cpm', 0.0)} calls/min` (Avg Interval: `{v_prof.get('avg_interval_seconds', 0.0)}s`)\n"
+                f"- **Total Ingested**: `{v_prof.get('total_requests', 0)} calls` / `{v_prof.get('total_estimated_tokens', 0)} est. tokens`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 32. INSPECT PLAN
+        elif action in ("inspect_plan", "plan", "inspect_blueprint"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'inspect_plan'."
+            session = get_or_load_session(session_name)
+            tel = session.get_telemetry()
+            gate_report = session._gate_report()
+
+            min_refinements = max(2, math.ceil(session.time_budget_minutes / 5.0))
+            current_refinements = len(session.refinement_cycles)
+            refinement_ok = current_refinements >= min_refinements
+
+            # Refinement history
+            ref_lines = []
+            for ref in session.refinement_cycles:
+                ref_lines.append(f"- **Cycle #{ref['cycle_number']}** `[{ref['refinement_type'].upper()}]` ({ref['focus_area']}): {ref['architectural_refinement']}")
+            ref_str = "\n".join(ref_lines) if ref_lines else "- No rethink-refine cycles logged yet."
+
+            # Slated files
+            slated_files = [fc for fc in session.file_changes if fc.get("change_type") == "slated"]
+            slated_lines = []
+            for sf in slated_files:
+                slated_lines.append(f"- `{sf['file_path']}`: {sf['diff_summary']}")
+            slated_str = "\n".join(slated_lines) if slated_lines else "- None declared yet."
+
+            # Gate checklist
+            c = gate_report["checks"]
+            gate_checklist = (
+                f"- [{'x' if c['two_proven_evidence_items'] else ' '}] At least 2 [PROVEN] facts with evidence ({gate_report['proven_with_evidence']}/2)\n"
+                f"- [{'x' if c['one_proved_invariant'] else ' '}] At least 1 formal Invariant with proof/rationale ({gate_report['invariants_with_proof']}/1)\n"
+                f"- [{'x' if c['adversarial_phase_reached'] else ' '}] Active Phase >= Phase 3 (Current: Phase {tel['phase_index']})\n"
+                f"- [{'x' if refinement_ok else ' '}] Anti-Idle Refinement Cycles ({current_refinements}/{min_refinements} required)\n"
+                f"- [{'x' if not session.execution_locked else ' '}] Immutable Authority Deadline Elapsed ({tel['authority_remaining_formatted']} remaining)"
+            )
+
+            delegation_guidelines = (
+                "1. Verify execution is unlocked (`can_execute_code: True`).\n"
+                "2. Compile Subagent Delegation Contracts with explicit `TargetFile`, `InterfaceContract`, `StrictConstraints`, and `VerificationCommand`.\n"
+                "3. Dispatch subagents to perform atomic codebase changes.\n"
+                "4. Enforce DoD validation via automated test suite execution."
+            )
+
+            return (
+                f"### 📋 Fable Execution Plan & Cognitive Blueprint (`{session.session_name}`)\n\n"
+                f"- **Objective**: {session.objective}\n"
+                f"- **Active Phase**: `{session.active_phase}`\n"
+                f"- **Execution Lock**: `{'🔴 LOCKED' if session.execution_locked else '🟢 UNLOCKED'}`\n\n"
+                f"#### 🚦 Cognitive Gate Status:\n{gate_checklist}\n\n"
+                f"#### 🔄 Rethink-Refine History ({current_refinements} cycles):\n{ref_str}\n\n"
+                f"#### 🛠️ Slated File Implementations:\n{slated_str}\n\n"
+                f"#### 🤖 Subagent Delegation & Implementer Instructions:\n{delegation_guidelines}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 33. VERIFY PROOF
+        elif action in ("verify_proof", "validate_proof", "check_proof"):
+            claim = arguments.get("claim", "").strip()
+            if not claim:
+                return "Error: 'claim' is required for action 'verify_proof'."
+            proof_type = arguments.get("proof_type", "").strip().lower()
+            if not proof_type:
+                return "Error: 'proof_type' ('ast', 'receipt', 'file_sha256', 'formal_logic', 'vector_coordinates') is required for 'verify_proof'."
+            evidence = arguments.get("evidence", "")
+            target_resource = arguments.get("target_resource")
+
+            validator = DeterministicProofValidator()
+            result = validator.verify_proof(claim=claim, proof_type=proof_type, evidence=str(evidence), target_resource=target_resource)
+
+            if session_name:
+                try:
+                    session = get_or_load_session(session_name)
+                    session.proof_receipts.append(result)
+                    session.save()
+                except Exception:
+                    pass
+
+            status_badge = "✅ VERIFIED" if result.get("verified") else "❌ FAILED"
+            err_msg = f"\n- **Error**: {result['error']}" if result.get("error") else ""
+            details_msg = f"\n- **Details**: {result['details']}" if result.get("details") else ""
+            return (
+                f"### ⚖️ Deterministic Proof Verification\n\n"
+                f"- **Status**: `{status_badge}`\n"
+                f"- **Receipt ID**: `{result.get('receipt_id')}`\n"
+                f"- **Proof Type**: `{result.get('proof_type')}`\n"
+                f"- **Claim**: {result.get('claim')}\n"
+                f"- **Timestamp**: `{time.ctime(result.get('timestamp', time.time()))}`"
+                f"{err_msg}"
+                f"{details_msg}"
+            )
+
+        # 34. RECORD VISUAL MOCKUPS
+        elif action in ("record_visual_mockups", "visual_mockups", "record_mockups"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'record_visual_mockups'."
+            mockups = arguments.get("mockups")
+            if not mockups:
+                return "Error: 'mockups' is required for action 'record_visual_mockups'."
+            selected_concept = arguments.get("selected_concept")
+
+            session = get_or_load_session(session_name)
+            vm = session.record_visual_mockups(mockups, selected_concept)
+            session.save()
+
+            concept_lines = []
+            for m in vm.get("mockups", []):
+                sel = " 🌟 *(SELECTED)*" if m.get("concept_name") == vm.get("selected_concept") else ""
+                palette = m.get("palette", "N/A")
+                typo = m.get("typography", "N/A")
+                concept_lines.append(
+                    f"- **{m.get('concept_name', 'Concept')}** `[{m.get('aesthetic_archetype', 'N/A')}]`{sel}\n"
+                    f"  * Prompt: {m.get('prompt', 'N/A')}\n"
+                    f"  * Palette: `{palette}` | Typography: `{typo}`\n"
+                    f"  * Coordinates: `{m.get('coordinates_data', 'N/A')}`"
+                )
+            concept_str = "\n".join(concept_lines)
+
+            return (
+                f"### 🎨 Visual Architectural Mockups Recorded\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Total Concepts**: `{len(vm.get('mockups', []))}`\n"
+                f"- **Selected Archetype**: `{vm.get('selected_concept')}`\n\n"
+                f"#### 🖼️ Concept Specifications:\n"
+                f"{concept_str}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -3333,7 +3749,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'checkpoint_session', 'restore_session', 'list_sessions', 'compile_delegation_contract', "
                 f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
                 f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
-                f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle'."
+                f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle', "
+                f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -3386,7 +3803,12 @@ TOOL_SCHEMA = {
                     "system3_hyperbolic_embed",
                     "system3_kripke_verify",
                     "system3_active_inference",
-                    "system3_proof_oracle"
+                    "system3_proof_oracle",
+                    "track_file_change",
+                    "get_session_lineage",
+                    "inspect_plan",
+                    "verify_proof",
+                    "record_visual_mockups"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -3684,6 +4106,40 @@ TOOL_SCHEMA = {
             "axioms": {
                 "description": "List of reference axiom names or strings for proof oracle.",
                 "type": ["array", "string"]
+            },
+            "file_path": {
+                "type": "string",
+                "description": "Target file path for file change tracking or proof verification."
+            },
+            "change_type": {
+                "type": "string",
+                "enum": ["modified", "created", "deleted", "slated"],
+                "description": "Classification of file change."
+            },
+            "diff_summary": {
+                "type": "string",
+                "description": "Concise summary of file changes, diff, or slated edits."
+            },
+            "affected_invariants": {
+                "description": "List or string of invariant names affected by this file change.",
+                "type": ["array", "string"]
+            },
+            "proof_type": {
+                "type": "string",
+                "enum": ["ast", "receipt", "file_sha256", "formal_logic", "vector_coordinates"],
+                "description": "Deterministic proof type."
+            },
+            "target_resource": {
+                "type": "string",
+                "description": "Target resource (file path, receipt ID) for proof verification."
+            },
+            "mockups": {
+                "description": "List of concept dictionaries for visual mockup recording.",
+                "type": ["array", "string"]
+            },
+            "selected_concept": {
+                "type": "string",
+                "description": "Identifier of the selected visual concept archetype."
             }
         },
         "required": ["action"]
@@ -3720,16 +4176,7 @@ def send_response(response_dict: Dict[str, Any]):
 
 
 def _bounded_lines(stream, limit: int):
-    """Yield newline-delimited frames without waiting for EOF.
-
-    ``read(4096)`` is unsafe for interactive stdio: some buffered stream
-    implementations try to fill that request and therefore wait for more
-    input even after a complete JSON-RPC line has arrived.  Read one byte (or
-    one text character for StringIO-like test streams) at a time instead.  A
-    BufferedReader/FileIO read of one byte returns as soon as a byte is
-    available, while the bounded prefix and ``oversized`` flag keep memory and
-    raw-frame accounting under control.
-    """
+    """Yield newline-delimited frames without waiting for EOF or calling stream.readline()."""
     raw_stream = getattr(stream, "buffer", None)
     if raw_stream is None or not hasattr(raw_stream, "read"):
         raw_stream = stream
@@ -3753,8 +4200,6 @@ def _bounded_lines(stream, limit: int):
             elif not oversized:
                 pending.append(byte)
                 if len(pending) > limit:
-                    # Keep only a bounded prefix while consuming through the
-                    # delimiter; this preserves the next frame in the stream.
                     oversized = True
                     del pending[limit:]
 
@@ -3809,7 +4254,7 @@ def main():
                     },
                     "serverInfo": {
                         "name": "fable-engine",
-                        "version": "1.2.3"
+                        "version": "1.3.0"
                     }
                 }
             })

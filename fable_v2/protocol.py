@@ -300,3 +300,102 @@ class VerificationResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class ProofReceipt:
+    """A deterministic proof receipt verifying an invariant or grounded claim."""
+
+    receipt_id: str
+    claim: str
+    proof_type: str
+    target_resource: str
+    sha256_digest: str
+    verified_at: str
+    verifier_details: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("receipt_id", "claim", "proof_type", "target_resource",
+                     "sha256_digest", "verified_at"):
+            _required_text(getattr(self, name), name)
+        object.__setattr__(self, "verifier_details", copy.deepcopy(dict(self.verifier_details)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FileChangeRecord:
+    """Record of a file modification, creation, or deletion with hash tracking."""
+
+    file_path: str
+    change_type: str
+    before_hash: str | None = None
+    after_hash: str | None = None
+    diff_summary: str = ""
+    rationale: str = ""
+    affected_invariants: tuple[str, ...] = ()
+    timestamp: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _required_text(self.file_path, "file_path")
+        _required_text(self.change_type, "change_type")
+        for inv in self.affected_invariants:
+            _required_text(inv, "affected_invariant")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class VisualMockupSpec:
+    """Specification for visual design mockups, coordinate bounds, and UI typography."""
+
+    mockup_id: str
+    concept_name: str
+    aesthetic_archetype: str
+    prompt: str
+    image_url: str | None = None
+    coordinates_data: Mapping[str, Any] = field(default_factory=dict)
+    palette: tuple[str, ...] = ()
+    typography: Mapping[str, str] = field(default_factory=dict)
+    status: str = "draft"
+    selected_by_user: bool = False
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        for name in ("mockup_id", "concept_name", "aesthetic_archetype", "prompt"):
+            _required_text(getattr(self, name), name)
+        object.__setattr__(self, "coordinates_data", copy.deepcopy(dict(self.coordinates_data)))
+        object.__setattr__(self, "typography", copy.deepcopy(dict(self.typography)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ModelVelocityProfile:
+    """Telemetry profile tracking token throughput, tool latency, and exploration multiplier."""
+
+    model_tier: str
+    tokens_per_sec: float = 0.0
+    avg_tool_latency_sec: float = 0.0
+    sample_count: int = 0
+    high_throughput_mode: bool = False
+    exploration_multiplier: float = 1.0
+    last_updated: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _required_text(self.model_tier, "model_tier")
+        if self.tokens_per_sec < 0:
+            raise ValueError("tokens_per_sec cannot be negative")
+        if self.avg_tool_latency_sec < 0:
+            raise ValueError("avg_tool_latency_sec cannot be negative")
+        if self.sample_count < 0:
+            raise ValueError("sample_count cannot be negative")
+        if self.exploration_multiplier <= 0:
+            raise ValueError("exploration_multiplier must be positive")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+

@@ -19,12 +19,21 @@ from typing import Any, Iterable, Protocol
 from .protocol import (
     Candidate,
     Evidence,
+    FileChangeRecord,
+    ModelVelocityProfile,
+    ProofReceipt,
     TaskSpec,
     ToolReceipt,
     VerificationPolicy,
     VerificationResult,
+    VisualMockupSpec,
     canonical_hash,
     utc_now,
+)
+from .proof_engine import (
+    DeterministicProofValidator,
+    ProofType,
+    ProofValidationResult,
 )
 from .system3 import (
     ActiveInferenceEngine,
@@ -105,6 +114,11 @@ class FableRun:
     system3_hyperbolic_embeddings: dict[str, Any] = field(default_factory=dict)
     system3_meta_cycles: list[dict[str, Any]] = field(default_factory=list)
     triz_repair_recommendations: list[dict[str, Any]] = field(default_factory=list)
+    file_changes: list[FileChangeRecord] = field(default_factory=list)
+    visual_mockups: list[VisualMockupSpec] = field(default_factory=list)
+    model_velocity: ModelVelocityProfile | None = None
+    proof_validator: DeterministicProofValidator = field(default_factory=DeterministicProofValidator,
+                                                          repr=False, compare=False)
     _attestation_secret: bytes = field(default_factory=lambda: secrets.token_bytes(32),
                                        repr=False)
     _lock: threading.RLock = field(default_factory=threading.RLock,
@@ -563,10 +577,144 @@ class FableRun:
             )
         return missing
 
+    def record_file_change(self, change: FileChangeRecord) -> None:
+        """Record a file modification, creation, or deletion with cryptographic hash tracking."""
+        with self._lock:
+            self.file_changes.append(change)
+            self._event(
+                "file_change_recorded",
+                file_path=change.file_path,
+                change_type=change.change_type,
+                before_hash=change.before_hash,
+                after_hash=change.after_hash,
+                diff_summary=change.diff_summary,
+                rationale=change.rationale,
+                affected_invariants=list(change.affected_invariants),
+            )
+
+    def register_visual_mockup(self, mockup: VisualMockupSpec) -> None:
+        """Register a visual design mockup specification and layout coordinates."""
+        with self._lock:
+            if any(m.mockup_id == mockup.mockup_id for m in self.visual_mockups):
+                raise ValueError(f"duplicate visual mockup: {mockup.mockup_id}")
+            self.visual_mockups.append(mockup)
+            self._event(
+                "visual_mockup_registered",
+                mockup_id=mockup.mockup_id,
+                concept_name=mockup.concept_name,
+                aesthetic_archetype=mockup.aesthetic_archetype,
+                status=mockup.status,
+            )
+
+    def update_model_velocity(self, profile: ModelVelocityProfile) -> None:
+        """Update model throughput, latency, and exploration multiplier telemetry."""
+        with self._lock:
+            self.model_velocity = profile
+            self._event(
+                "model_velocity_updated",
+                model_tier=profile.model_tier,
+                tokens_per_sec=profile.tokens_per_sec,
+                avg_tool_latency_sec=profile.avg_tool_latency_sec,
+                exploration_multiplier=profile.exploration_multiplier,
+            )
+
+    def _gate_report(self, candidate_id: str | None = None) -> dict[str, Any]:
+        """Run the DeterministicProofValidator across candidates, receipts, and attached evidence."""
+        with self._lock:
+            target_candidates = (
+                [self.candidates[candidate_id]]
+                if candidate_id and candidate_id in self.candidates
+                else list(self.candidates.values())
+            )
+            validated_proofs: list[dict[str, Any]] = []
+            all_passed = True
+            min_confidence = 1.0
+
+            # 1. Validate evidence integrity and anti-tautology
+            for ev in self.evidence.values():
+                if ev.receipt_id in self.receipts:
+                    rcpt = self.receipts[ev.receipt_id]
+                    rcpt_val = self.proof_validator.validate_tool_receipt(
+                        receipt=rcpt,
+                        session_receipts=self.receipts,
+                        claim=ev.claim,
+                    )
+                    if not rcpt_val.passed:
+                        all_passed = False
+                        min_confidence = min(min_confidence, rcpt_val.confidence)
+                    validated_proofs.append(rcpt_val.to_dict())
+
+                    # Check claim itself is not tautological
+                    taut_ok, taut_msg = self.proof_validator.check_anti_tautology(ev.claim, ev.claim)
+                    if not taut_ok:
+                        all_passed = False
+                        min_confidence = 0.0
+                        validated_proofs.append({
+                            "passed": False,
+                            "confidence": 0.0,
+                            "proof_type": "anti_tautology",
+                            "details": f"Evidence '{ev.evidence_id}': {taut_msg}",
+                            "proof_receipt": None,
+                            "metadata": {"evidence_id": ev.evidence_id},
+                        })
+                else:
+                    taut_ok, taut_msg = self.proof_validator.check_anti_tautology(str(ev.content), ev.claim)
+                    if not taut_ok:
+                        all_passed = False
+                        min_confidence = 0.0
+                        validated_proofs.append({
+                            "passed": False,
+                            "confidence": 0.0,
+                            "proof_type": "anti_tautology",
+                            "details": f"Evidence '{ev.evidence_id}': {taut_msg}",
+                            "proof_receipt": None,
+                            "metadata": {"evidence_id": ev.evidence_id},
+                        })
+
+            # 2. Validate candidate artifacts (AST if python code)
+            for cand in target_candidates:
+                if isinstance(cand.artifact, dict) and "code" in cand.artifact:
+                    ast_val = self.proof_validator.validate_ast(
+                        code_or_path=cand.artifact["code"],
+                        claim=f"Candidate {cand.candidate_id} AST validation",
+                    )
+                    if not ast_val.passed:
+                        all_passed = False
+                        min_confidence = min(min_confidence, ast_val.confidence)
+                    validated_proofs.append(ast_val.to_dict())
+                elif isinstance(cand.artifact, str) and (cand.artifact.endswith(".py") or "\ndef " in cand.artifact or "\nclass " in cand.artifact):
+                    ast_val = self.proof_validator.validate_ast(
+                        code_or_path=cand.artifact,
+                        claim=f"Candidate {cand.candidate_id} AST validation",
+                    )
+                    if not ast_val.passed:
+                        all_passed = False
+                        min_confidence = min(min_confidence, ast_val.confidence)
+                    validated_proofs.append(ast_val.to_dict())
+
+            missing = self.missing_requirements(candidate_id)
+            if candidate_id:
+                missing += self.verification_requirements(candidate_id)
+
+            return {
+                "passed": all_passed and not missing,
+                "confidence": round(min_confidence, 4) if all_passed else 0.0,
+                "candidate_id": candidate_id,
+                "total_proofs_evaluated": len(validated_proofs),
+                "validated_proofs": validated_proofs,
+                "missing_requirements": missing,
+                "timestamp": utc_now(),
+            }
+
     def finalize(self, candidate_id: str) -> Candidate:
         if candidate_id not in self.candidates:
             raise ValueError(f"unknown candidate: {candidate_id}")
+        gate_report = self._gate_report(candidate_id)
         missing = self.missing_requirements(candidate_id) + self.verification_requirements(candidate_id)
+        if not gate_report["passed"] and not missing:
+            for p in gate_report["validated_proofs"]:
+                if not p.get("passed"):
+                    missing.append(f"deterministic proof validation failed: {p.get('details')}")
         if missing:
             self._generate_triz_repair_recommendation(candidate_id, missing)
             self.state = RunState.REJECTED
@@ -576,6 +724,7 @@ class FableRun:
         self.state = RunState.FINALIZED
         self._event("run_finalized", candidate_id=candidate_id)
         return self.candidates[candidate_id]
+
 
     def run_system3_meta_cycle(self, candidate_id: str) -> dict[str, Any]:
         """Execute a full System 3 meta-cognitive reflection cycle for a candidate."""
@@ -710,6 +859,9 @@ class FableRun:
             "system3_hyperbolic_embeddings": copy.deepcopy(self.system3_hyperbolic_embeddings),
             "system3_meta_cycles": copy.deepcopy(self.system3_meta_cycles),
             "triz_repair_recommendations": copy.deepcopy(self.triz_repair_recommendations),
+            "file_changes": [fc.to_dict() for fc in self.file_changes],
+            "visual_mockups": [vm.to_dict() for vm in self.visual_mockups],
+            "model_velocity": self.model_velocity.to_dict() if self.model_velocity else None,
             # Production deployments should protect this with an external key
             # store; it is included here so an in-memory checkpoint can be
             # faithfully restored without silently trusting new signatures.
@@ -786,6 +938,20 @@ class FableRun:
         run.system3_hyperbolic_embeddings = copy.deepcopy(data.get("system3_hyperbolic_embeddings", {}))
         run.system3_meta_cycles = copy.deepcopy(data.get("system3_meta_cycles", []))
         run.triz_repair_recommendations = copy.deepcopy(data.get("triz_repair_recommendations", []))
+        run.file_changes = [
+            FileChangeRecord(
+                **{**fc, "affected_invariants": tuple(fc.get("affected_invariants", ()))}
+            )
+            for fc in data.get("file_changes", [])
+        ]
+        run.visual_mockups = [
+            VisualMockupSpec(
+                **{**vm, "palette": tuple(vm.get("palette", ()))}
+            )
+            for vm in data.get("visual_mockups", [])
+        ]
+        mv_data = data.get("model_velocity")
+        run.model_velocity = ModelVelocityProfile(**mv_data) if mv_data else None
         run.validate_event_history()
         return run
 
@@ -798,6 +964,9 @@ class FableRun:
             "candidates": len(self.candidates),
             "evidence": len(self.evidence),
             "verifications": len(self.verifications),
+            "file_changes": len(self.file_changes),
+            "visual_mockups": len(self.visual_mockups),
+            "model_velocity": self.model_velocity.to_dict() if self.model_velocity else None,
             "successful_capabilities": sorted(self.successful_capabilities()),
             "missing_requirements": (
                 self.missing_requirements(self.final_candidate_id)

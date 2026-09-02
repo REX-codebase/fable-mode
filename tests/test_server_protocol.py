@@ -52,7 +52,7 @@ class ServerProtocolRegressionTests(unittest.TestCase):
         """A short frame must be answered while stdin remains open."""
         root = Path(tempfile.mkdtemp(prefix="fable-interactive-"))
         proc = subprocess.Popen(
-            [sys.executable, os.fspath(Path(__file__).parents[1] / "fable_engine" / "server.py")],
+            [sys.executable, "-u", os.fspath(Path(__file__).resolve().parents[1] / "fable_engine" / "server.py")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", cwd=os.fspath(root),
         )
