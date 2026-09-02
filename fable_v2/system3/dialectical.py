@@ -742,7 +742,13 @@ class DialecticalSynthesizer:
             current_score = measured_residual
             convergence = measured_residual <= target_residual_threshold
         else:
-            convergence = False
+            # The bounded planner is allowed to report estimated convergence
+            # for a substantive, explicitly supplied contradiction.  This is
+            # a planning result only: ``measured`` remains false and the
+            # Pareto claim below remains UNMEASURED.  Keep the auto-generated
+            # fallback contradiction conservative so an empty critique cannot
+            # manufacture a convergence proof (important for strict callers).
+            convergence = bool(critique.contradictions) and current_score <= target_residual_threshold
         pareto_measured = bool(measured_pareto_metrics) and all(
             isinstance(v, (int, float)) and math.isfinite(float(v))
             for v in (measured_pareto_metrics or {}).values()

@@ -41,16 +41,20 @@ would any other local application state.
 
 ## Release archives
 
-Release CI produces one archive per runner for Linux x86_64, macOS x86_64
-(from the macOS 15 Intel runner), and Windows x86_64, plus a `SHA256SUMS` file.
-Archive names use the bare package semver (for example, `1.2.0`) rather than
-including the tag's leading `v`. The archives contain a frozen
-`fable-mode` executable. They do not prove host compatibility or provide a
-complete sandbox.
+Release CI produces one staging archive per runner for Linux x86_64, macOS
+x86_64 (from the macOS 15 Intel runner), macOS arm64 (from the macOS 15 Apple
+Silicon runner), and Windows x86_64. The publish job validates all four,
+retains versioned tag-spelling assets such as
+`fable-mode-v1.2.3-macos-arm64.zip`, and creates stable latest-release aliases.
+The single `SHA256SUMS` asset covers the four versioned archives and four
+aliases. Staging archive names use the bare package semver (for example,
+`1.2.3`) rather than including the tag's leading `v`. The archives contain a
+frozen `fable-mode` executable. They do not prove host compatibility or provide
+a complete sandbox.
 
-**Unsigned artifact warning:** release archives are currently unsigned. A
-checksum detects accidental or in-transit changes only when the checksum file
-was obtained from a trusted source; it does not authenticate the publisher.
-Prefer a trusted release page and independently verify both the checksum and
-provenance before execution. Do not treat a matching filename or checksum as a
-signature.
+**Unsigned artifact warning:** release archives are currently unsigned and
+macOS artifacts are not notarized. A checksum detects accidental or in-transit
+changes only when the checksum file was obtained from a trusted source; it does
+not authenticate the publisher. Prefer a trusted release page and independently
+verify both the checksum and provenance before execution. Do not treat a
+matching filename or checksum as a signature.

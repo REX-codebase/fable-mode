@@ -551,8 +551,28 @@ class FableRun:
             # from already-present receipts.  The receipt-bound lifecycle is
             # started explicitly by observe_system3/predict_system3/act_system3.
             fe_engine = ActiveInferenceEngine(create_default_architecture_pomdp())
-            fe_data = {"status": "awaiting_receipt_bound_system3_loop",
-                       "loop_required_for_update": True}
+            if bool(self.task.metadata.get("require_system3_loop", False)):
+                # Strict candidates expose only an unstarted state.  No
+                # registration-time projection may stand in for the host-bound
+                # observe/predict/act/outcome/update lifecycle.
+                fe_data = {"status": "awaiting_receipt_bound_system3_loop",
+                           "loop_required_for_update": True}
+            else:
+                # Legacy registration callers expect useful baseline telemetry.
+                # This is an estimate from the fixed generative model, not a
+                # receipt, observation, or authorization and cannot satisfy a
+                # strict loop/finalization gate.
+                telemetry_engine = ActiveInferenceEngine(create_default_architecture_pomdp())
+                f_val, complexity, accuracy = telemetry_engine.update_beliefs("HIGH_THROUGHPUT_CLEAN")
+                fe_data = {
+                    "status": "legacy_telemetry_only",
+                    "claim_status": "estimated_model_projection_not_measurement",
+                    "observation": "HIGH_THROUGHPUT_CLEAN",
+                    "variational_free_energy_f": f_val,
+                    "complexity_kl": complexity,
+                    "accuracy_log_likelihood": accuracy,
+                    "loop_required_for_update": False,
+                }
             candidate.metadata["system3_free_energy"] = fe_data
             self.system3_free_energy[candidate.candidate_id] = fe_data
             active_data = fe_engine.to_dict()
@@ -1757,11 +1777,15 @@ class FableRun:
     def record_system3_outcome(self, candidate_id: str, prediction_id: str,
                                receipt_id: str, observed_outcome: Any = None,
                                *, outcome_id: str | None = None,
-                               observed_at: str | None = None) -> Outcome:
+                               observed_at: str | None = None,
+                               _legacy_compatibility: bool = False) -> Outcome:
         """Bind an actual ToolReceipt to an acted prediction."""
         with self._lock:
             self._ensure_mutable(); candidate = self._validate_system3_record_candidate(candidate_id)
-            self._validate_system3_record_integrity(candidate_id)
+            legacy_allowed = (_legacy_compatibility
+                              and not bool(self.task.metadata.get("require_system3_loop", False)))
+            self._validate_system3_record_integrity(candidate_id,
+                                                    allow_legacy_untrusted=legacy_allowed)
             prediction = self.predictions.get(prediction_id)
             receipt = self.receipts.get(receipt_id)
             if prediction is None or prediction.candidate_id != candidate_id or prediction.run_id != self.session_id:
@@ -1770,7 +1794,7 @@ class FableRun:
                 raise PermissionError("outcome requires a receipt from this run")
             if receipt.success is not True:
                 raise PermissionError("outcome requires a successful tool receipt")
-            if not receipt.trusted:
+            if not receipt.trusted and not legacy_allowed:
                 raise PermissionError("outcome requires a host/external-bound receipt")
             if (bool(self.task.metadata.get("require_system3_loop", False))
                     and not self._system3_receipt_authenticated(receipt)):
@@ -1806,8 +1830,21 @@ class FableRun:
     def update_system3(self, candidate_id: str, outcome_id: str | None = None) -> dict[str, Any]:
         """Update beliefs and policy from a receipt-backed outcome only."""
         with self._lock:
-            self._ensure_mutable(); self._validate_system3_record_candidate(candidate_id)
-            self._validate_system3_record_integrity(candidate_id)
+            self._ensure_mutable(); candidate = self._validate_system3_record_candidate(candidate_id)
+            legacy_allowed = (
+                not bool(self.task.metadata.get("require_system3_loop", False))
+                and (getattr(self, "_legacy_cycle_in_progress", False)
+                     or (isinstance(candidate.metadata.get("system3_loop"), Mapping)
+                         and candidate.metadata["system3_loop"].get("_legacy_compatibility") is True))
+            )
+            if legacy_allowed and "system3_loop" not in candidate.metadata:
+                # Stage the explicit compatibility marker before integrity
+                # validation; it is committed and then included in the final
+                # loop metadata below.
+                candidate.metadata["system3_loop"] = {"_legacy_compatibility": True}
+                self._system3_commits[candidate_id] = self._system3_metadata_hash(candidate)
+            self._validate_system3_record_integrity(candidate_id,
+                                                    allow_legacy_untrusted=legacy_allowed)
             eligible = [o for o in self.outcomes.values() if o.candidate_id == candidate_id]
             if outcome_id:
                 outcome = self.outcomes.get(outcome_id)
@@ -1839,6 +1876,10 @@ class FableRun:
             self.system3_policy_revisions[candidate_id] = copy.deepcopy(revision)
             candidate = self.candidates[candidate_id]
             candidate.metadata["system3_loop"] = {"observation": copy.deepcopy(self.system3_observations[candidate_id]),
+                # This marker records that only the legacy convenience wrapper
+                # permitted an untrusted local receipt.  It is never accepted
+                # for strict System 3 tasks.
+                **({"_legacy_compatibility": True} if getattr(self, "_legacy_cycle_in_progress", False) else {}),
                 "prediction_ids": [p.prediction_id for p in self.predictions.values() if p.candidate_id == candidate_id],
                 "action_ids": [a["action_id"] for a in self.system3_actions.values() if a["candidate_id"] == candidate_id],
                 "outcome_ids": [o.outcome_id for o in eligible], "updates": [copy.deepcopy(update)],
@@ -1882,7 +1923,8 @@ class FableRun:
         """
         return receipt.receipt_id in self._authenticated_receipt_ids
 
-    def _validate_system3_record_integrity(self, candidate_id: str, *, complete: bool = False) -> None:
+    def _validate_system3_record_integrity(self, candidate_id: str, *, complete: bool = False,
+                                           allow_legacy_untrusted: bool = False) -> None:
         """Revalidate every live coding-loop record and all semantic bindings.
 
         The public maps intentionally remain ordinary Python containers for
@@ -1941,7 +1983,12 @@ class FableRun:
                     or outcome.action != prediction.action
                     or outcome.prediction_id not in action_by_prediction
                     or receipt is None or receipt.session_id != self.session_id
-                    or receipt.success is not True or not receipt.trusted
+                    or receipt.success is not True
+                    or (not receipt.trusted and not (
+                        allow_legacy_untrusted
+                        or (not bool(self.task.metadata.get("require_system3_loop", False))
+                            and isinstance(candidate.metadata.get("system3_loop"), Mapping)
+                            and candidate.metadata["system3_loop"].get("_legacy_compatibility") is True)))
                     or (bool(self.task.metadata.get("require_system3_loop", False))
                         and not self._system3_receipt_authenticated(receipt))
                     or outcome.receipt_id not in candidate.receipt_ids
@@ -2006,6 +2053,9 @@ class FableRun:
             loop_metadata = candidate.metadata.get("system3_loop")
             expected_metadata = {
                 "observation": copy.deepcopy(obs),
+                **({"_legacy_compatibility": True}
+                   if (not bool(self.task.metadata.get("require_system3_loop", False))
+                       and any(not self.receipts[o.receipt_id].trusted for o in outcomes)) else {}),
                 "prediction_ids": [p.prediction_id for p in predictions],
                 "action_ids": [a["action_id"] for a in actions],
                 "outcome_ids": [o.outcome_id for o in outcomes],
@@ -2159,6 +2209,12 @@ class FableRun:
                 if not candidate.receipt_ids:
                     raise PermissionError("System 3 coding cycle requires an actual tool receipt")
                 receipt = self.receipts[candidate.receipt_ids[0]]
+                if bool(self.task.metadata.get("require_system3_loop", False)) and (
+                        receipt.success is not True or not receipt.trusted
+                        or not self._system3_receipt_authenticated(receipt)):
+                    raise PermissionError(
+                        "strict System 3 convenience cycle requires an authenticated host receipt"
+                    )
                 self.observe_system3(candidate_id, {
                     "candidate_artifact_hash": canonical_hash(candidate.artifact),
                     "receipt_id": receipt.receipt_id,
@@ -2170,8 +2226,19 @@ class FableRun:
                     policy_id=f"system3:{candidate_id}",
                 )
                 self.act_system3(candidate_id, prediction.prediction_id)
-                outcome = self.record_system3_outcome(candidate_id, prediction.prediction_id, receipt.receipt_id)
-                self.update_system3(candidate_id, outcome.outcome_id)
+                # Explicitly scoped compatibility switch: only this legacy
+                # convenience wrapper may use a self-minted diagnostic receipt.
+                # The public outcome primitive and all strict tasks remain
+                # receipt-bound and authenticated.
+                self._legacy_cycle_in_progress = not bool(self.task.metadata.get("require_system3_loop", False))
+                try:
+                    outcome = self.record_system3_outcome(
+                        candidate_id, prediction.prediction_id, receipt.receipt_id,
+                        _legacy_compatibility=self._legacy_cycle_in_progress,
+                    )
+                    self.update_system3(candidate_id, outcome.outcome_id)
+                finally:
+                    self._legacy_cycle_in_progress = False
 
             # 1. Active Inference telemetry is grounded in the completed
             # receipt-bound update above.  Do not run a second synthetic

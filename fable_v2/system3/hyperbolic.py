@@ -485,10 +485,20 @@ class HyperbolicTreeEmbedder:
                 else:
                     adj[k_str] = []
 
-            all_targets = {target for targets in adj.values() for target in targets}
-            roots = [k for k in adj.keys() if k not in all_targets]
+            # Adjacency-list conventions commonly omit leaf keys.  A target
+            # appearing in an edge is therefore an implied leaf, not an
+            # undefined reference.  Explicit metadata remains strict below:
+            # labels for IDs that do not occur in the resulting hierarchy are
+            # rejected rather than silently ignored.
+            for target in {target for targets in adj.values() for target in targets}:
+                adj.setdefault(target, [])
+            roots = [k for k in adj.keys() if k not in {target for targets in adj.values() for target in targets}]
             if roots:
                 detected_root = roots[0]
+
+        unknown_labels = set(labels) - set(adj)
+        if unknown_labels:
+            raise HyperbolicGeometryError("node labels reference undefined nodes")
 
         # A hierarchy is a rooted DAG/tree, never a cyclic graph. Validate
         # before the recursive embedding walk (which must not be allowed to

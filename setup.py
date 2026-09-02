@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="fable-engine",
-    version="1.2.0",
+    version="1.2.3",
     description="Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server",
     license="MIT",
     packages=find_packages(),

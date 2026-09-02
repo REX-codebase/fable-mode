@@ -12,8 +12,8 @@ permission boundary. V2 is an experimental runtime and broker, not a finished
 replacement for V1. Measure outcomes in the host and workload where you intend
 to use it.
 
-**Package version:** 1.2.0  
-<!-- package-version: 1.2.0 -->
+**Package version:** 1.2.3  
+<!-- package-version: 1.2.3 -->
 
 Fable Mode is maintained independently by REX-codebase under the MIT license.
 It is not affiliated with any model vendor or host named in this repository.
@@ -113,7 +113,7 @@ python3 --version                 # must be Python 3.10+
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
-fable-mode --version               # should print 1.2.0
+fable-mode --version               # should print 1.2.3
 
 # Run the V1 MCP server directly (keep stdin/stdout connected to the host):
 python -m fable_mode serve
@@ -157,7 +157,7 @@ py -3 --version                    # must be Python 3.10+
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
-fable-mode --version                # should print 1.2.0
+fable-mode --version                # should print 1.2.3
 
 # Run the V1 MCP server directly:
 python -m fable_mode serve
@@ -204,6 +204,44 @@ V2 availability is intentionally explicit across distribution paths:
 | `install.sh` / `install.ps1` source helper | Copied into `runtime/fable_v2` (including `system3`); invoke `PYTHONPATH=/path/to/install/runtime python3 -m fable_v2.execution_broker --workspace /path/to/workspace` (use `py -3` on Windows) |
 | Frozen release archive | V2 modules are bundled for embedding, but the frozen `fable-mode` executable exposes the V1 launcher only; use a pip/source install for the standalone V2 broker |
 
+## Release downloads (v1.2.3)
+
+The latest existing release is **v1.2.3**. The release workflow is the source
+of truth: download links are available only after a tagged release has completed successfully;
+use the assets only after a tagged release has completed successfully. The Windows and macOS scripts are available from the `main` branch now; each
+script selects the exact architecture-specific archive after
+checking the GitHub Release metadata.
+
+**Downloaders (available from `main`):**
+
+- [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
+- [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
+
+**Latest release assets:**
+
+- [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
+- [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
+- [macOS arm64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip)
+- [Linux x86_64 tar.gz](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz)
+- [SHA256SUMS](https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS)
+
+A completed tagged release publishes four versioned archives:
+`fable-mode-vX.Y.Z-windows-x86_64.zip`,
+`fable-mode-vX.Y.Z-macos-x86_64.zip`,
+`fable-mode-vX.Y.Z-macos-arm64.zip`, and
+`fable-mode-vX.Y.Z-linux-x86_64.tar.gz`, plus `SHA256SUMS`. It also publishes
+the stable filenames used by the latest-release links above. For the current
+release, the versioned names are `fable-mode-v1.2.3-windows-x86_64.zip`,
+`fable-mode-v1.2.3-macos-x86_64.zip`, `fable-mode-v1.2.3-macos-arm64.zip`, and
+`fable-mode-v1.2.3-linux-x86_64.tar.gz`. The macOS Intel and Apple Silicon
+archives are separate binaries, not a universal archive.
+
+These are **unsigned binaries**. `SHA256SUMS` provides SHA-256 integrity
+checks, not publisher authentication or a signature. The macOS artifacts are
+not signed and have no macOS notarization. Review release provenance and verify the
+matching checksum before extraction or execution; the downloaders verify the
+checksum before extracting and never execute a downloaded binary.
+
 For a packaged release, use the archive for the matching OS and architecture;
 see [release policy](docs/release-policy.md). Do not place a downloaded binary
 on a PATH and trust it merely because its filename is familiar.
@@ -222,7 +260,7 @@ MCP. Its examples are in the same reference document.
 The repository's source CI matrix runs Ubuntu, macOS, and Windows runners for
 Python 3.10, 3.11, and 3.12. That is test coverage for the source suite, not a
 claim that every host integration works there. Release CI builds separate
-Linux x86_64, macOS x86_64, and Windows x86_64 archives. See the full matrix
+Linux x86_64, macOS x86_64, macOS arm64, and Windows x86_64 archives. See the full matrix
 in [`docs/host-compatibility.md`](docs/host-compatibility.md), which separates
 **tested**, **documented**, **experimental**, and **not supported**.
 

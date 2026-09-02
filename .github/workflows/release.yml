@@ -46,6 +46,9 @@ jobs:
           # macOS 13 is retired; the Intel image preserves the x86_64 artifact.
           - os: macos-15-intel
             artifact: macos-x86_64
+          # macOS 15 on the standard hosted image is Apple Silicon.
+          - os: macos-15
+            artifact: macos-arm64
           - os: windows-latest
             artifact: windows-x86_64
     steps:
@@ -139,8 +142,8 @@ jobs:
         if: "${{ runner.os == 'Windows' }}"
         shell: pwsh
         run: |
-          $home = Join-Path $PWD 'smoke-home'; New-Item -ItemType Directory -Force $home | Out-Null
-          $bin = Join-Path $home 'bin'; New-Item -ItemType Directory -Force $bin | Out-Null
+          $smokeHome = Join-Path $PWD 'smoke-home'; New-Item -ItemType Directory -Force $smokeHome | Out-Null
+          $bin = Join-Path $smokeHome 'bin'; New-Item -ItemType Directory -Force $bin | Out-Null
           $fake = @'
           import json, os, pathlib, sys
           host = sys.argv[1]; args = sys.argv[2:]
@@ -165,41 +168,41 @@ jobs:
               state.write_text(json.dumps(data)); raise SystemExit(0)
           raise SystemExit(4)
           '@
-          Set-Content -Path (Join-Path $home 'fake-mcp.py') -Value $fake
+          Set-Content -Path (Join-Path $smokeHome 'fake-mcp.py') -Value $fake
           $py = (Get-Command python).Source
           foreach ($name in @('claude', 'codex')) {
-            '{}' | Set-Content (Join-Path $home "$name.json")
-            Set-Content -Path (Join-Path $bin "$name.cmd") -Value "@echo off`r`n`"$py`" `"$home\\fake-mcp.py`" $name %*"
+            '{}' | Set-Content (Join-Path $smokeHome "$name.json")
+            Set-Content -Path (Join-Path $bin "$name.cmd") -Value "@echo off`r`n`"$py`" `"$smokeHome\\fake-mcp.py`" $name %*"
           }
-          Set-Content -Path (Join-Path $bin 'agy.cmd') -Value "@echo off`r`n`"$py`" `"$home\\fake-mcp.py`" agy %*"
-          $env:HOME = $home; $env:USERPROFILE = $home; $env:XDG_CONFIG_HOME = (Join-Path $home '.config')
-          $env:FABLE_DATA_DIR = (Join-Path $home 'data'); $env:Path = "$bin;$env:Path"
-          $exe = Join-Path $PWD 'dist\fable-mode.exe'; $install = Join-Path $home 'install'
+          Set-Content -Path (Join-Path $bin 'agy.cmd') -Value "@echo off`r`n`"$py`" `"$smokeHome\\fake-mcp.py`" agy %*"
+          $env:HOME = $smokeHome; $env:USERPROFILE = $smokeHome; $env:XDG_CONFIG_HOME = (Join-Path $smokeHome '.config')
+          $env:FABLE_DATA_DIR = (Join-Path $smokeHome 'data'); $env:Path = "$bin;$env:Path"
+          $exe = Join-Path $PWD 'dist\fable-mode.exe'; $install = Join-Path $smokeHome 'install'
           & $exe install --yes --register-hosts --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if (-not $state.'fable-engine') { exit 1 }
           }
-          $agyConfig = Join-Path $home '.gemini\config\mcp_config.json'
+          $agyConfig = Join-Path $smokeHome '.gemini\config\mcp_config.json'
           if (-not (Test-Path $agyConfig)) { exit 1 }
           $agyState = Get-Content $agyConfig | ConvertFrom-Json
           if (-not $agyState.mcpServers.'fable-engine') { exit 1 }
           & $exe verify --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | & $exe serve --state-dir (Join-Path $home 'data') | Select-String '"id": 1' | Out-Null
+          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | & $exe serve --state-dir (Join-Path $smokeHome 'data') | Select-String '"id": 1' | Out-Null
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Replacement without registration must retain ownership metadata.
           & $exe install --yes --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path $agyConfig)) { exit 1 }
           & $exe install --yes --register-hosts --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if (-not $state.'fable-engine') { exit 1 }
           }
           $agyState = Get-Content $agyConfig | ConvertFrom-Json
           if (-not $agyState.mcpServers.'fable-engine') { exit 1 }
           & $exe uninstall --yes --install-dir $install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($name in @('claude', 'codex')) {
-            $state = Get-Content (Join-Path $home "$name.json") | ConvertFrom-Json
+            $state = Get-Content (Join-Path $smokeHome "$name.json") | ConvertFrom-Json
             if ($state.'fable-engine' -or $state.'fable-mode') { exit 1 }
           }
           if (Test-Path $agyConfig) { exit 1 }
@@ -219,6 +222,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Generated release notes need the tag history, not a shallow default
+      # branch checkout. Keep this before the release-creation step.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release
@@ -226,9 +235,38 @@ jobs:
         shell: bash
         run: |
           set -eu
+          tag="${GITHUB_REF_NAME:?GITHUB_REF_NAME must be set}"
           mkdir -p upload
-          find release -type f \( -name '*.zip' -o -name '*.tar.gz' \) -exec cp {} upload/ \;
-          cat release/*/SHA256SUMS > upload/SHA256SUMS
+
+          # build_release.py emits the bare package version. The public
+          # release keeps the tag spelling and also provides stable
+          # /releases/latest/download aliases for README links.
+          for descriptor in \
+            "windows-x86_64|fable-mode-${tag#v}-windows-x86_64.zip|fable-mode-${tag}-windows-x86_64.zip|fable-mode-windows-x86_64.zip" \
+            "macos-x86_64|fable-mode-${tag#v}-macos-x86_64.zip|fable-mode-${tag}-macos-x86_64.zip|fable-mode-macos-x86_64.zip" \
+            "macos-arm64|fable-mode-${tag#v}-macos-arm64.zip|fable-mode-${tag}-macos-arm64.zip|fable-mode-macos-arm64.zip" \
+            "linux-x86_64|fable-mode-${tag#v}-linux-x86_64.tar.gz|fable-mode-${tag}-linux-x86_64.tar.gz|fable-mode-linux-x86_64.tar.gz"; do
+            IFS='|' read -r artifact source_archive archive alias <<< "$descriptor"
+            source_dir="release/fable-mode-${artifact}"
+            source_file="${source_dir}/${source_archive}"
+            test -d "$source_dir"
+            test -f "$source_file"
+            archive_count=$(find "$source_dir" -maxdepth 1 -type f \(-name '*.zip' -o -name '*.tar.gz' \) | wc -l)
+            test "$archive_count" -eq 1
+            test ! -e "upload/$archive"
+            test ! -e "upload/$alias"
+            cp -- "$source_file" "upload/$archive"
+            cp -- "$source_file" "upload/$alias"
+          done
+
+          # Four versioned archives and four aliases are checksummed together.
+          test "$(find upload -maxdepth 1 -type f \(-name '*.zip' -o -name '*.tar.gz' \) | wc -l)" -eq 8
+          test ! -e upload/SHA256SUMS
+          (
+            cd upload
+            sha256sum -- *.zip *.tar.gz > SHA256SUMS
+          )
+          test -s upload/SHA256SUMS
       - name: Create GitHub Release (unsigned artifacts, checksums attached)
         env:
           GH_TOKEN: ${{ github.token }}

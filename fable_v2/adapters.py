@@ -65,6 +65,69 @@ class HostCapabilities:
             "missing": sorted(missing),
         }
 
+    def verify_temporal_capability_invariants(self, formula: str = "AG(capable)") -> dict[str, object]:
+        """Return a non-authoritative temporal capability projection.
+
+        This convenience report is intentionally separate from broker/MCP
+        authorization.  In particular, an ``is_satisfied`` value here cannot
+        attest that a host actually executed a tool or unlock any strict gate.
+        """
+        if not isinstance(formula, str) or not formula.strip():
+            raise ValueError("formula must be a non-empty string")
+        normalized = formula.strip()
+        # ``AG(capable)`` is the legacy adapter spelling.  It describes the
+        # profile's declared capability set, not an observed host fact.
+        if normalized.lower() in {"ag(capable)", "ag(safe_execution)", "ag(safe)"}:
+            # Expected profiles are deliberately not host attestations.  Only
+            # a probed profile can satisfy a capability-state invariant.
+            satisfied = self.is_attested and bool(self.observed_capabilities)
+        else:
+            satisfied = False
+        return {
+            "formula": normalized,
+            "is_satisfied": satisfied,
+            "satisfying_worlds": ["w_init", "w_ready"] if satisfied else [],
+            "authoritative": self.is_attested,
+            "claim_status": "compatibility_telemetry_only",
+            "capabilities": sorted(self.observed_capabilities if self.is_attested else self.capabilities),
+        }
+
+    def validate_causal_capability_contract(self, required: Iterable[str]) -> dict[str, object]:
+        """Validate a declared capability contract for legacy adapters.
+
+        This checks profile compatibility only.  Strict callers must still
+        use an attested profile and broker authorization before execution.
+        """
+        targets = [str(item).strip() for item in required if str(item).strip()]
+        available_set = set(self.observed_capabilities if self.is_attested else self.capabilities)
+        missing = [item for item in targets if item not in available_set]
+        # Build the same small causal representation exposed by the original
+        # adapter API, but label it as telemetry: a DAG report cannot grant
+        # host execution authority.
+        try:
+            from .system3.causal import CausalDAG, CausalNodeType
+            dag = CausalDAG(name=f"HostCapabilities_{self.host}")
+            for item in targets:
+                dag.add_node(node_id=f"cap_{item}", name=item,
+                             node_type=(CausalNodeType.EXOGENOUS if item in available_set
+                                        else CausalNodeType.ENDOGENOUS),
+                             value=1.0 if item in available_set else 0.0)
+            brittleness = (dag.evaluate_brittleness(f"cap_{targets[0]}").overall_brittleness_score
+                           if targets else 0.0)
+            dag_data = dag.to_dict()
+        except Exception:
+            brittleness, dag_data = 0.0, {"name": f"HostCapabilities_{self.host}", "nodes": [], "edges": []}
+        return {
+            "is_valid": not missing,
+            "required": targets,
+            "available": [item for item in targets if item in available_set],
+            "missing": missing,
+            "authoritative": self.is_attested,
+            "claim_status": "compatibility_telemetry_only",
+            "brittleness_score": brittleness,
+            "dag": dag_data,
+        }
+
 
 # These are conservative *expected* profiles. Real adapters must call
 # ``attest`` after probing the host; expected capabilities are never

@@ -26,21 +26,26 @@ docs must describe any changed contract or entry point.
 ## Tags and archives
 
 Release CI runs for tags matching `v*.*.*`. The tag without the leading `v`
-must equal the package version. Build runners currently publish:
+must equal the package version. Each build runner first emits one staging archive
+using the bare package semver, then the publish job verifies and uploads the
+versioned tag-spelling asset plus a stable latest-release alias. Build runners
+currently publish:
 
 - `fable-mode-<version>-linux-x86_64.tar.gz`;
 - `fable-mode-<version>-macos-x86_64.zip` (built on the macOS 15 Intel runner);
-  and
+- `fable-mode-<version>-macos-arm64.zip` (built on the macOS 15 Apple Silicon runner); and
 - `fable-mode-<version>-windows-x86_64.zip`;
 
-plus `SHA256SUMS`. `<version>` is the bare package semver (for example,
-`1.2.0`), not the tag spelling `v1.2.0`; check the release assets rather than
-guessing a filename.
+where `<version>` is the bare package semver (currently `1.2.3`). The GitHub
+Release assets use the matching tag spelling (`fable-mode-vX.Y.Z-...`) and also
+provide `fable-mode-{linux-x86_64,macos-x86_64,macos-arm64,windows-x86_64}.*`
+aliases for `/releases/latest/download` links, plus one `SHA256SUMS` covering
+all eight archives. Check the release assets rather than guessing a filename.
 
-Artifacts are currently **unsigned**. Checksums help detect changes but do not
-authenticate the publisher. Obtain release metadata from a trusted channel,
-verify the archive checksum, and review provenance before running an archive.
-Do not describe a checksum as a signature.
+Artifacts are currently **unsigned**, and macOS artifacts are not notarized.
+Checksums help detect changes but do not authenticate the publisher. Obtain
+release metadata from a trusted channel, verify the archive checksum, and review
+provenance before running an archive. Do not describe a checksum as a signature.
 
 ## Before publishing
 

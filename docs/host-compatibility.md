@@ -11,10 +11,10 @@ authoritative.
 | Environment | V1 source suite | V2 foundation suite | Release artifact | Status |
 |---|---:|---:|---:|---|
 | Ubuntu GitHub runner, Python 3.10-3.12 | Yes | Yes | Linux x86_64 | Tested in CI |
-| macOS GitHub runner, Python 3.10-3.12 | Yes | Yes | macOS x86_64 | Tested in CI |
+| macOS GitHub runner, Python 3.10-3.12 | Yes | Yes | macOS x86_64 and arm64 | Tested in CI |
 | Windows GitHub runner, Python 3.10-3.12 | Yes | Yes | Windows x86_64 | Tested in CI |
 | WSL2 with Python 3.10+ | No dedicated runner | Python code is expected to run as Linux source | No WSL archive | Documented, not CI-tested |
-| macOS arm64 source | No dedicated runner | No dedicated runner | No arm64 release archive | Documented as a possible source build; validate locally |
+| macOS arm64 source | No dedicated source runner | No dedicated source runner | macOS arm64 release archive | Release artifact tested in the macOS 15 Apple Silicon build; source mode remains locally validated |
 | Linux arm64 source | No dedicated runner | No dedicated runner | No arm64 release archive | Documented as a possible source build; validate locally |
 | Python older than 3.10 | No | No | No | Not supported |
 | 32-bit release target | No | No | No | Not supported by published artifacts |
