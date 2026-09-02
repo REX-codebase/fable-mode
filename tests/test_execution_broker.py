@@ -302,6 +302,7 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertLessEqual(len(response["message"].encode()), MAX_ERROR_TEXT + 20)
 
+    @unittest.skipIf(os.name == "nt", "Windows broker filesystem writes are fail-closed")
     def test_writes_are_locked_until_admin_authorization(self):
         with self.assertRaises(PermissionError):
             self.broker.write_file("result.txt", "blocked")

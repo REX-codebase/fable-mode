@@ -106,6 +106,17 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
         "FABLE_DATA_DIR": str(data_dir),
         "PYTHONIOENCODING": "utf-8",
     }
+    # Source-mode verification launches the installed runtime from an
+    # arbitrary data-directory cwd. Bind imports to that exact runtime copy;
+    # do not rely on the caller's ambient PYTHONPATH. Preserve only the
+    # Windows variables required for a child interpreter to start.
+    if len(argv) >= 2 and Path(argv[1]).name == "fable_mode_entry.py":
+        env["PYTHONPATH"] = str(Path(argv[1]).resolve().parent)
+    if os.name == "nt":
+        for key in ("SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATHEXT"):
+            value = os.environ.get(key)
+            if value:
+                env[key] = value
     kwargs: dict = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "env": env, "cwd": str(data_dir)}
     if os.name == "posix":
         kwargs["start_new_session"] = True

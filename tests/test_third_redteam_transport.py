@@ -65,7 +65,7 @@ class ThirdRedTeamTransportTests(unittest.TestCase):
             response = json.loads(output.getvalue())
             self.assertEqual(response["error"]["code"], -32002)
 
-    @unittest.skipIf(os.name == "nt", "shebang test uses POSIX executable semantics")
+    @unittest.skipIf(os.name == "nt" or sys.platform == "darwin", "shebang test requires Linux procfs semantics")
     def test_locked_broker_rejects_script_even_with_unpinned_shebang(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
