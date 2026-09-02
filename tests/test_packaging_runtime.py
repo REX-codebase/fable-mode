@@ -9,7 +9,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fable_mode import __version__
 from fable_mode.adapters import Host, RegistrationError, detect_hosts, register_hosts, run_argv
 from fable_mode.installer import InstallError, Installer, verify_installation
 from fable_mode.launcher import _smoke
@@ -26,7 +25,7 @@ class PackagingSecurityTests(unittest.TestCase):
     def test_top_level_wrapper_is_package_aware(self):
         wrapper = Path(__file__).resolve().parents[1] / "fable_mode_entry.py"
         result = subprocess.run([sys.executable, str(wrapper), "--version"], capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.strip(), __version__)
+        self.assertEqual(result.stdout.strip(), "1.2.0")
 
     def test_unattended_install_requires_confirmation(self):
         wrapper = Path(__file__).resolve().parents[1] / "fable_mode_entry.py"
@@ -46,12 +45,7 @@ class PackagingSecurityTests(unittest.TestCase):
         source.mkdir()
         # An explicit source override cannot smuggle a symlinked canonical file.
         (source / "fable_mode").mkdir()
-        try:
-            os.symlink("/etc/passwd", source / "fable_mode" / "__init__.py")
-        except OSError as exc:
-            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
-                self.skipTest("Symlink creation requires elevated privilege on Windows")
-            raise
+        os.symlink("/etc/passwd", source / "fable_mode" / "__init__.py")
         with self.assertRaises(InstallError):
             Installer(self.root / "i", source=source).install()
 
@@ -84,13 +78,7 @@ class PackagingSecurityTests(unittest.TestCase):
         self.assertEqual(value["keep"], {"x": 1})
         self.assertNotIn("fable-mode", value["mcpServers"])
         self.assertEqual(value["mcpServers"]["fable-engine"]["args"], ["serve"])
-        config.unlink()
-        try:
-            os.symlink(config.parent / "elsewhere", config)
-        except OSError as exc:
-            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
-                self.skipTest("Symlink creation requires elevated privilege on Windows")
-            raise
+        config.unlink(); os.symlink(config.parent / "elsewhere", config)
         with self.assertRaises(RegistrationError):
             register_hosts({"antigravity": host}, [str(exe), "serve"], home=home)
 
@@ -100,7 +88,7 @@ class PackagingSecurityTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in which.call_args_list], ["claude", "agy", "codex"])
 
     def test_output_is_bounded_and_timeout_is_reported(self):
-        code, out, err, timed = run_argv([os.environ.get("PYTHON", sys.executable), "-c", "print('x'*1000000)"], timeout=2)
+        code, out, err, timed = run_argv([os.environ.get("PYTHON", "python"), "-c", "print('x'*1000000)"], timeout=2)
         self.assertLessEqual(len(out.encode()), 8192)
         self.assertFalse(timed)
 
@@ -115,6 +103,35 @@ class PackagingSecurityTests(unittest.TestCase):
         self.assertEqual(result.executable_argv[-1], "serve")
         smoke_ok, smoke_detail = _smoke(result.executable_argv, self.root / "data")
         self.assertTrue(smoke_ok, smoke_detail)
+
+    def test_installed_v2_import_and_locked_broker_probe(self):
+        """The source-helper installation must retain V2 and its safe probe."""
+        target = self.root / "i"
+        result = Installer(target).install(); result.transaction.commit()
+        runtime = target / "runtime"
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        code = (
+            "import json, pathlib, sys; "
+            "from fable_v2.system3 import System3Executive; "
+            "from fable_v2 import BrokerPolicy, ExecutionBroker; "
+            "broker = ExecutionBroker(BrokerPolicy(pathlib.Path(sys.argv[1]), "
+            "(pathlib.Path(sys.executable).name,))); "
+            "result = broker.handle({'action': 'probe'}); "
+            "assert result['writes_enabled'] is False; "
+            "assert 'capabilities' in result and 'available_executables' in result; "
+            "print(json.dumps(result, sort_keys=True))"
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(runtime)
+        completed = subprocess.run(
+            [sys.executable, "-c", code, str(workspace)],
+            cwd=outside, env=env, capture_output=True, text=True, check=True,
+        )
+        self.assertIn('"writes_enabled": false', completed.stdout)
+        self.assertIn('"fable-execution-broker"', completed.stdout)
 
 
 if __name__ == "__main__":
@@ -139,13 +156,7 @@ class RemediationRegressionTests(unittest.TestCase):
         # A fresh valid installation still refuses a symlink substitution.
         result = Installer(self.root / "fresh-install").install(); result.transaction.commit()
         runtime = result.install_dir / "runtime" / "fable_engine" / "server.py"
-        moved = runtime.with_suffix(".real"); runtime.rename(moved)
-        try:
-            runtime.symlink_to(moved)
-        except OSError as exc:
-            if getattr(exc, "winerror", None) == 1314 or isinstance(exc, (PermissionError, NotImplementedError)):
-                self.skipTest("Symlink creation requires elevated privilege on Windows")
-            raise
+        moved = runtime.with_suffix(".real"); runtime.rename(moved); runtime.symlink_to(moved)
         self.assertFalse(verify_installation(target)[0])
 
     def test_cli_registration_cleanup_requires_exact_match(self):

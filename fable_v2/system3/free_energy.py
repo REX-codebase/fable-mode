@@ -15,13 +15,25 @@ import copy
 import json
 import math
 
+from ..protocol import canonical_hash
+
 
 EPS = 1e-12
 
 
+def _finite(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{field_name} must be finite")
+    return float(value)
+
+
 def _normalize(dist: Sequence[float]) -> List[float]:
-    """Normalize a vector to a valid probability distribution."""
-    total = sum(dist)
+    """Normalize a finite, bounded probability vector."""
+    if len(dist) > 128 or any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(float(x)) or x < 0 for x in dist):
+        raise ValueError("probability vector contains invalid or unbounded values")
+    total = sum(float(x) for x in dist)
+    if not math.isfinite(total):
+        raise ValueError("probability vector sum must be finite")
     if total < EPS:
         # Uniform fallback
         n = len(dist)
@@ -33,8 +45,13 @@ def _softmax(values: Sequence[float], temperature: float = 1.0) -> List[float]:
     """Numerically stable softmax."""
     if not values:
         return []
-    temp = max(1e-6, temperature)
-    scaled = [v / temp for v in values]
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v))
+           for v in values):
+        raise ValueError("softmax values must be finite")
+    if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) or not math.isfinite(float(temperature)):
+        raise ValueError("softmax temperature must be finite")
+    temp = max(1e-6, float(temperature))
+    scaled = [float(v) / temp for v in values]
     max_v = max(scaled)
     exps = [math.exp(v - max_v) for v in scaled]
     sum_exps = sum(exps)
@@ -71,6 +88,21 @@ class Policy:
     description: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.policy_id, str) or not self.policy_id.strip():
+            raise ValueError("policy_id must be non-empty")
+        if (not isinstance(self.actions, list) or len(self.actions) > 128
+                or any(not isinstance(a, str) or not a.strip() for a in self.actions)):
+            raise ValueError("policy actions are invalid or unbounded")
+        if not self.actions:
+            raise ValueError("policy must contain at least one action")
+        self.actions = list(self.actions)
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
+    def commitment(self) -> str:
+        return canonical_hash(self.to_dict())
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -93,11 +125,25 @@ class PolicyEvaluation:
     is_optimal: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        for name in ("expected_free_energy_g", "risk_pragmatic_divergence",
+                     "ambiguity_expected_entropy", "epistemic_information_gain",
+                     "pragmatic_goal_utility", "probability"):
+            _finite(getattr(self, name), name)
+        if not 0 <= self.probability <= 1:
+            raise ValueError("policy probability must be between 0 and 1")
+        if (not isinstance(self.actions, list) or not self.actions
+                or any(not isinstance(a, str) or not a.strip() for a in self.actions)):
+            raise ValueError("policy evaluation actions are invalid")
+        self.actions = list(self.actions)
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return copy.deepcopy(asdict(self))
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PolicyEvaluation":
+    def from_dict(cls, data: Dict[str, Any]) -> "PolicyEvaluation":  
         return cls(**data)
 
 
@@ -122,6 +168,12 @@ class GenerativeModel:
     d_prior: List[float]                      # Length: len(states)
 
     def __post_init__(self):
+        if not self.states or not self.observations or not self.actions:
+            raise ValueError("generative model requires non-empty states, observations, and actions")
+        if any(not isinstance(x, str) or not x.strip() for x in (*self.states, *self.observations, *self.actions)):
+            raise ValueError("generative model labels must be non-empty strings")
+        if len(self.states) > 128 or len(self.observations) > 128 or len(self.actions) > 128:
+            raise ValueError("generative model exceeds bounds")
         num_s = len(self.states)
         num_o = len(self.observations)
         if len(self.d_prior) != num_s:
@@ -130,6 +182,19 @@ class GenerativeModel:
             raise ValueError(f"C preferences length {len(self.c_preferences)} != number of observations {num_o}")
         if len(self.a_matrix) != num_o or any(len(row) != num_s for row in self.a_matrix):
             raise ValueError(f"A matrix must have shape ({num_o}, {num_s})")
+        for action, matrix in self.b_matrices.items():
+            if action not in self.actions or not isinstance(matrix, list) or len(matrix) != num_s:
+                raise ValueError("B transition matrix has invalid action or shape")
+            if any(not isinstance(row, list) or len(row) != num_s for row in matrix):
+                raise ValueError("B transition matrix has invalid shape")
+            if any(not isinstance(value, (int, float)) or isinstance(value, bool)
+                   or not math.isfinite(float(value)) or float(value) < 0
+                   for row in matrix for value in row):
+                raise ValueError("B transition matrix contains invalid values")
+            if any(sum(float(matrix[i][j]) for i in range(num_s)) < EPS for j in range(num_s)):
+                raise ValueError("B transition matrix contains an empty transition column")
+        if set(self.b_matrices) != set(self.actions):
+            raise ValueError("B transition matrices must cover every action")
         # Normalize columns of A
         norm_a = [[0.0] * num_s for _ in range(num_o)]
         for s_idx in range(num_s):
@@ -164,8 +229,19 @@ class FreeEnergyReport:
     selected_action: str
     telemetry: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if type(self.step) is not int or self.step < 0:
+            raise ValueError("free-energy step must be a non-negative integer")
+        for name in ("variational_free_energy_f", "complexity_kl",
+                     "accuracy_log_likelihood", "surprisal_bound"):
+            _finite(getattr(self, name), name)
+        self.belief_state = {str(k): _finite(v, f"belief {k}") for k, v in self.belief_state.items()}
+        self.evaluated_policies = list(self.evaluated_policies)
+        self.telemetry = copy.deepcopy(dict(self.telemetry))
+        canonical_hash(self.telemetry)
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return copy.deepcopy({
             "step": self.step,
             "current_observation": self.current_observation,
             "belief_state": self.belief_state,
@@ -177,10 +253,10 @@ class FreeEnergyReport:
             "selected_policy": self.selected_policy.to_dict(),
             "selected_action": self.selected_action,
             "telemetry": self.telemetry,
-        }
+        })
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FreeEnergyReport":
+    def from_dict(cls, data: Dict[str, Any]) -> "FreeEnergyReport": 
         policies = [PolicyEvaluation.from_dict(p) for p in data.get("evaluated_policies", [])]
         sel_pol = PolicyEvaluation.from_dict(data["selected_policy"])
         return cls(
@@ -210,11 +286,191 @@ class ActiveInferenceEngine:
         generative_model: GenerativeModel,
         policy_precision_gamma: float = 16.0,
     ):
-        self.model = generative_model
-        self.gamma = policy_precision_gamma
+        if not isinstance(generative_model, GenerativeModel):
+            raise TypeError("generative_model must be GenerativeModel")
+        self.model = copy.deepcopy(generative_model)
+        if not isinstance(policy_precision_gamma, (int, float)) or not math.isfinite(float(policy_precision_gamma)) or policy_precision_gamma < 0 or policy_precision_gamma > 1_000_000:
+            raise ValueError("policy precision is invalid or out of bounds")
+        self.gamma = float(policy_precision_gamma)
         self.current_beliefs: List[float] = list(self.model.d_prior)
+        self._belief_commitment: str = canonical_hash(self.current_beliefs)
         self.step_count: int = 0
         self.history: List[Dict[str, Any]] = []
+        self.last_observation: Optional[str] = None
+        self._observation_commitment: Optional[str] = None
+        self.last_prediction: List[Dict[str, Any]] = []
+        self.last_action: Optional[str] = None
+        self.last_update: Optional[Dict[str, float]] = None
+        self.state_trusted: bool = True
+        self._model_commitment: str = canonical_hash(self.model.to_dict())
+        self._prediction_commitment: Optional[str] = None
+        self._prediction_observation_commitment: Optional[str] = None
+        self._policy_commitments: Dict[str, str] = {}
+        self._policy_refs: Dict[str, Policy] = {}
+        self._last_policies: List[Policy] = []
+        self._action_commitment: Optional[str] = None
+
+    def _ensure_trusted(self) -> None:
+        beliefs_ok = (isinstance(self.current_beliefs, list)
+                      and len(self.current_beliefs) == len(self.model.states)
+                      and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                              and math.isfinite(float(x)) and float(x) >= 0
+                              for x in self.current_beliefs))
+        if (not self.state_trusted
+                or canonical_hash(self.model.to_dict()) != self._model_commitment
+                or not beliefs_ok
+                or canonical_hash(self.current_beliefs) != self._belief_commitment):
+            self.state_trusted = False
+            raise ValueError("active-inference state is untrusted")
+
+    def _validate_evaluations(self, evaluations: Any, *, require_bound: bool = True) -> List[PolicyEvaluation]:
+        if not isinstance(evaluations, list) or not evaluations or len(evaluations) > 10_000:
+            raise ValueError("predictions must be a non-empty bounded list")
+        normalized: List[PolicyEvaluation] = []
+        seen: Set[str] = set()
+        for item in evaluations:
+            if not isinstance(item, PolicyEvaluation):
+                raise TypeError("predictions must contain PolicyEvaluation records")
+            if item.policy_id in seen or not item.actions or any(a not in self.model.actions for a in item.actions):
+                raise ValueError("prediction contains a duplicate or invalid action")
+            # The object returned by predict is caller-mutable.  Compare it to
+            # the private snapshot before allowing it to drive action/update.
+            for value_name in ("expected_free_energy_g", "risk_pragmatic_divergence",
+                                "ambiguity_expected_entropy", "epistemic_information_gain",
+                                "pragmatic_goal_utility", "probability"):
+                _finite(getattr(item, value_name), value_name)
+            declared_policy_commitment = item.metadata.get("policy_commitment")
+            if declared_policy_commitment is not None and (
+                    self._policy_commitments.get(item.policy_id) != declared_policy_commitment
+                    or (item.policy_id in self._policy_refs
+                        and self._policy_refs[item.policy_id].commitment() != declared_policy_commitment)):
+                raise PermissionError("policy record is not bound to this prediction")
+            seen.add(item.policy_id)
+            normalized.append(item)
+        if require_bound:
+            if (self._prediction_commitment is None
+                    or self._prediction_observation_commitment != self._observation_commitment):
+                raise PermissionError("predictions are not bound to the current observation")
+            if canonical_hash([x.to_dict() for x in normalized]) != self._prediction_commitment:
+                raise PermissionError("predictions were modified or are not bound to this engine")
+        return normalized
+
+    def observe(self, observation: str) -> str:
+        """Record an observation from the environment (no self-reported state)."""
+        self._ensure_trusted()
+        if observation not in self.model.observations:
+            raise ValueError(f"Unknown observation '{observation}'. Available: {self.model.observations}")
+        self.last_observation = observation
+        self._observation_commitment = canonical_hash(observation)
+        return observation
+
+    def predict(self, candidate_policies: Optional[List[Policy]] = None) -> List[PolicyEvaluation]:
+        """Predict policy outcomes from the current posterior without acting."""
+        self._ensure_trusted()
+        policies = candidate_policies or [
+            Policy(policy_id=f"policy_{act}", actions=[act], label=f"Execute {act}")
+            for act in self.model.actions
+        ]
+        if not isinstance(policies, list) or len(policies) > 10_000:
+            raise ValueError("too many candidate policies")
+        seen_policy_ids: Set[str] = set()
+        for policy in policies:
+            if not isinstance(policy, Policy):
+                raise TypeError("candidate policies must be Policy records")
+            if policy.policy_id in seen_policy_ids or any(a not in self.model.actions for a in policy.actions):
+                raise ValueError("candidate policy contains duplicate or invalid actions")
+            # Capture the complete policy before evaluation; a caller must not
+            # mutate actions or metadata between predict and act.
+            self._policy_commitments[policy.policy_id] = policy.commitment()
+            self._policy_refs[policy.policy_id] = policy
+            seen_policy_ids.add(policy.policy_id)
+        self._last_policies = list(policies)
+        evaluations = [self.evaluate_policy(policy) for policy in policies]
+        for evaluation, policy in zip(evaluations, policies):
+            evaluation.metadata["policy_commitment"] = self._policy_commitments[policy.policy_id]
+        self.last_prediction = [copy.deepcopy(evaluation.to_dict()) for evaluation in evaluations]
+        self._prediction_commitment = canonical_hash(self.last_prediction)
+        self._prediction_observation_commitment = self._observation_commitment
+        return evaluations
+
+    def act(self, predictions: Optional[List[PolicyEvaluation]] = None) -> str:
+        """Select an action only from an untampered, engine-bound prediction set."""
+        self._ensure_trusted()
+        if predictions is None:
+            if self._prediction_commitment is not None and self.last_prediction:
+                evaluations = [PolicyEvaluation.from_dict(copy.deepcopy(item))
+                               for item in self.last_prediction]
+            else:
+                evaluations = self.predict()
+        else:
+            evaluations = predictions
+        self._validate_evaluations(evaluations, require_bound=True)
+        selected = min(evaluations, key=lambda item: item.expected_free_energy_g)
+        if not selected.actions or selected.actions[0] not in self.model.actions:
+            raise ValueError("selected prediction contains an invalid action")
+        self.last_action = selected.actions[0]
+        self._action_commitment = canonical_hash({
+            "action": self.last_action,
+            "predictions": self._prediction_commitment,
+        })
+        return self.last_action
+
+    def update(self, observation: Optional[str] = None) -> Dict[str, float]:
+        """Update beliefs from the bound observation and prediction set only."""
+        self._ensure_trusted()
+        if self.last_observation is None:
+            raise PermissionError("update requires a prior observed environment value")
+        observed = self.last_observation if observation is None else observation
+        if (observed != self.last_observation or observed not in self.model.observations
+                or self._observation_commitment != canonical_hash(self.last_observation)):
+            raise PermissionError("update observation is not bound to the prior observation")
+        if self._prediction_commitment is None or self.last_action is None:
+            raise PermissionError("update requires bound predictions and a selected action")
+        self._validate_evaluations(
+            [PolicyEvaluation.from_dict(item) for item in self.last_prediction],
+            require_bound=True,
+        )
+        if self._action_commitment != canonical_hash({
+                "action": self.last_action, "predictions": self._prediction_commitment}):
+            raise PermissionError("selected action is not bound to the current predictions")
+        f_val, complexity, accuracy = self.update_beliefs(observed)
+        for name, value in (("variational_free_energy_f", f_val),
+                            ("complexity_kl", complexity),
+                            ("accuracy_log_likelihood", accuracy)):
+            _finite(value, name)
+        self.last_update = {
+            "variational_free_energy_f": f_val,
+            "complexity_kl": complexity,
+            "accuracy_log_likelihood": accuracy,
+        }
+        return dict(self.last_update)
+
+    def observe_predict_act_update(
+        self, observation: str, candidate_policies: Optional[List[Policy]] = None
+    ) -> Dict[str, Any]:
+        """Run the complete observe -> predict -> act -> update lifecycle."""
+        self.observe(observation)
+        predictions = self.predict(candidate_policies)
+        action = self.act(predictions)
+        update = self.update(observation)
+        self.step_count += 1
+        record = {
+            "step": self.step_count, "observation": observation,
+            "policies": [copy.deepcopy(policy.to_dict()) for policy in self._last_policies],
+            "predictions": [item.to_dict() for item in predictions],
+            "action": action, "update": update,
+        }
+        # ``candidate_policies`` is None when defaults were generated; retain
+        # the actual policy records so a restored cycle can revalidate mutable
+        # labels, descriptions, and metadata as well as its actions.
+        if not record["policies"]:
+            record["policies"] = [
+                {"policy_id": item.policy_id, "actions": list(item.actions),
+                 "label": "", "description": "", "metadata": {}}
+                for item in predictions
+            ]
+        self.history.append(copy.deepcopy(record))
+        return record
 
     def update_beliefs(self, observation: str) -> Tuple[float, float, float]:
         """
@@ -222,6 +478,7 @@ class ActiveInferenceEngine:
         ln q*(s) = ln p(s) + ln p(o | s) - ln Z
         Returns (Free_Energy_F, Complexity_KL, Accuracy_Log_Likelihood).
         """
+        self._ensure_trusted()
         if observation not in self.model.observations:
             raise ValueError(f"Unknown observation '{observation}'. Available: {self.model.observations}")
 
@@ -237,6 +494,7 @@ class ActiveInferenceEngine:
 
         # Posterior beliefs via softmax
         self.current_beliefs = _softmax(log_joint)
+        self._belief_commitment = canonical_hash(self.current_beliefs)
 
         # Calculate Variational Free Energy F = Complexity - Accuracy
         # Complexity = D_KL(q(s) || p(s))
@@ -257,6 +515,7 @@ class ActiveInferenceEngine:
         Evaluate Expected Free Energy G(pi) for candidate policy pi:
         G(pi) = Risk (Pragmatic Divergence) + Ambiguity (Expected Uncertainty)
         """
+        self._ensure_trusted()
         num_s = len(self.model.states)
         num_o = len(self.model.observations)
 
@@ -336,9 +595,16 @@ class ActiveInferenceEngine:
         3. Compute policy posterior distribution P(pi) via softmax(-gamma * G).
         4. Select optimal policy and action (Action).
         """
+        self._ensure_trusted()
+        if not isinstance(candidate_policies, list):
+            raise TypeError("candidate_policies must be a list")
         self.step_count += 1
 
         # 1. Perception
+        if observation not in self.model.observations:
+            raise ValueError(f"Unknown observation '{observation}'. Available: {self.model.observations}")
+        self.last_observation = observation
+        self._observation_commitment = canonical_hash(observation)
         f_val, comp_kl, acc_ll = self.update_beliefs(observation)
 
         if not candidate_policies:
@@ -348,8 +614,24 @@ class ActiveInferenceEngine:
                 for act in self.model.actions
             ]
 
+        if not candidate_policies or any(not isinstance(p, Policy) or not p.actions
+                                         or any(a not in self.model.actions for a in p.actions)
+                                         for p in candidate_policies):
+            raise ValueError("candidate policies contain invalid actions")
+        if len({p.policy_id for p in candidate_policies}) != len(candidate_policies):
+            raise ValueError("candidate policies contain duplicate identifiers")
+        self._last_policies = list(candidate_policies)
+        for policy in candidate_policies:
+            self._policy_commitments[policy.policy_id] = policy.commitment()
+            self._policy_refs[policy.policy_id] = policy
+
         # 2. Policy Planning
         evaluations = [self.evaluate_policy(p) for p in candidate_policies]
+        for evaluation, policy in zip(evaluations, candidate_policies):
+            evaluation.metadata["policy_commitment"] = self._policy_commitments[policy.policy_id]
+        self.last_prediction = [copy.deepcopy(evaluation.to_dict()) for evaluation in evaluations]
+        self._prediction_commitment = canonical_hash(self.last_prediction)
+        self._prediction_observation_commitment = self._observation_commitment
 
         # 3. Policy Posterior P(pi) = softmax(-gamma * G)
         neg_g_values = [-self.gamma * e.expected_free_energy_g for e in evaluations]
@@ -361,6 +643,9 @@ class ActiveInferenceEngine:
         best_eval = min(evaluations, key=lambda e: e.expected_free_energy_g)
         best_eval.is_optimal = True
         selected_action = best_eval.actions[0] if best_eval.actions else self.model.actions[0]
+        self.last_action = selected_action
+        self._action_commitment = canonical_hash({
+            "action": selected_action, "predictions": self._prediction_commitment})
 
         belief_dict = {
             self.model.states[i]: self.current_beliefs[i]
@@ -390,21 +675,164 @@ class ActiveInferenceEngine:
         return report
 
     def to_dict(self) -> Dict[str, Any]:
+        self._ensure_trusted()
         return {
             "model": self.model.to_dict(),
             "gamma": self.gamma,
             "current_beliefs": self.current_beliefs,
             "step_count": self.step_count,
-            "history": self.history,
+            "history": copy.deepcopy(self.history),
+            "last_observation": self.last_observation,
+            "last_prediction": copy.deepcopy(self.last_prediction),
+            "last_action": self.last_action,
+            "last_update": copy.deepcopy(self.last_update),
+            "state_trusted": bool(self.state_trusted),
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ActiveInferenceEngine":
-        model = GenerativeModel.from_dict(data["model"])
+        """Restore only a structurally and semantically consistent history."""
+        if not isinstance(data, dict) or not isinstance(data.get("model"), dict):
+            raise ValueError("restored inference state requires a model mapping")
+        model = GenerativeModel.from_dict(copy.deepcopy(data["model"]))
         engine = cls(generative_model=model, policy_precision_gamma=data.get("gamma", 16.0))
-        engine.current_beliefs = list(data.get("current_beliefs", model.d_prior))
-        engine.step_count = int(data.get("step_count", 0))
-        engine.history = list(data.get("history", []))
+        if data.get("state_trusted", True) is not True:
+            engine.state_trusted = False
+            raise ValueError("restored active-inference state is explicitly untrusted")
+        beliefs = data.get("current_beliefs", model.d_prior)
+        if (not isinstance(beliefs, list) or len(beliefs) != len(model.states)
+                or any(not isinstance(x, (int, float)) or isinstance(x, bool)
+                       or not math.isfinite(float(x)) or float(x) < 0 for x in beliefs)):
+            raise ValueError("restored belief state is invalid")
+        total = sum(float(x) for x in beliefs)
+        if total < EPS or abs(total - 1.0) > 1e-6:
+            raise ValueError("restored belief state is not normalized")
+        engine.current_beliefs = [float(x) for x in beliefs]
+
+        step_count = data.get("step_count", 0)
+        if type(step_count) is not int or step_count < 0 or step_count > 1_000_000:
+            raise ValueError("restored inference step count is invalid")
+        history = data.get("history", [])
+        if not isinstance(history, list) or len(history) > 100_000 or len(history) != step_count:
+            raise ValueError("restored inference history/step count mismatch")
+        valid_actions = set(model.actions)
+        valid_observations = set(model.observations)
+        for index, record in enumerate(history, 1):
+            if not isinstance(record, dict) or record.get("step") != index:
+                raise ValueError("restored inference history has invalid step ordering")
+            observation = record.get("observation")
+            action = record.get("action")
+            if observation not in valid_observations or action not in valid_actions:
+                raise ValueError("restored inference history has invalid observation/action")
+            policies_data = record.get("policies")
+            if policies_data is not None:
+                if (not isinstance(policies_data, list) or not policies_data
+                        or len(policies_data) > 10_000):
+                    raise ValueError("restored inference history has invalid policy records")
+                policies = [Policy.from_dict(copy.deepcopy(item)) for item in policies_data]
+                if len({p.policy_id for p in policies}) != len(policies):
+                    raise ValueError("restored policy list contains duplicates")
+                if any(any(a not in valid_actions for a in p.actions) for p in policies):
+                    raise ValueError("restored policy contains an invalid action")
+            predictions = record.get("predictions")
+            if not isinstance(predictions, list) or not predictions:
+                raise ValueError("restored inference history lacks policy predictions")
+            policy_ids = set()
+            for prediction in predictions:
+                if not isinstance(prediction, dict) or not isinstance(prediction.get("policy_id"), str):
+                    raise ValueError("restored policy prediction is malformed")
+                if prediction["policy_id"] in policy_ids:
+                    raise ValueError("restored policy list contains duplicates")
+                policy_ids.add(prediction["policy_id"])
+                actions = prediction.get("actions")
+                if not isinstance(actions, list) or not actions or any(a not in valid_actions for a in actions):
+                    raise ValueError("restored policy contains an invalid action")
+                for key in ("expected_free_energy_g", "risk_pragmatic_divergence",
+                            "ambiguity_expected_entropy", "epistemic_information_gain",
+                            "pragmatic_goal_utility", "probability"):
+                    value = prediction.get(key)
+                    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+                        raise ValueError("restored policy contains a non-finite metric")
+            update = record.get("update")
+            if not isinstance(update, dict) or any(
+                    not isinstance(update.get(key), (int, float)) or isinstance(update.get(key), bool)
+                    or not math.isfinite(float(update.get(key)))
+                    for key in ("variational_free_energy_f", "complexity_kl", "accuracy_log_likelihood")):
+                raise ValueError("restored inference update is malformed")
+        engine.step_count = step_count
+        engine.history = copy.deepcopy(history)
+        last_observation = data.get("last_observation")
+        if last_observation is not None and last_observation not in valid_observations:
+            raise ValueError("restored last observation is invalid")
+        last_action = data.get("last_action")
+        if last_action is not None and last_action not in valid_actions:
+            raise ValueError("restored last action is invalid")
+        last_prediction = data.get("last_prediction", [])
+        if not isinstance(last_prediction, list):
+            raise ValueError("restored last prediction must be a list")
+        # Validate the same prediction schema by using a synthetic history row.
+        if last_prediction:
+            policy_ids = set()
+            for prediction in last_prediction:
+                if (not isinstance(prediction, dict) or not isinstance(prediction.get("policy_id"), str)
+                        or prediction["policy_id"] in policy_ids
+                        or not isinstance(prediction.get("actions"), list)
+                        or not prediction["actions"]
+                        or any(a not in valid_actions for a in prediction["actions"])):
+                    raise ValueError("restored last policy list is invalid")
+                policy_ids.add(prediction["policy_id"])
+                for key in ("expected_free_energy_g", "risk_pragmatic_divergence",
+                            "ambiguity_expected_entropy", "epistemic_information_gain",
+                            "pragmatic_goal_utility", "probability"):
+                    value = prediction.get(key)
+                    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+                        raise ValueError("restored last policy metric is invalid")
+        last_update = data.get("last_update")
+        if last_update is not None and (not isinstance(last_update, dict) or any(
+                not isinstance(last_update.get(key), (int, float)) or isinstance(last_update.get(key), bool)
+                or not math.isfinite(float(last_update.get(key)))
+                for key in ("variational_free_energy_f", "complexity_kl", "accuracy_log_likelihood"))):
+            raise ValueError("restored last update is invalid")
+        if step_count == 0 and any(x is not None for x in (last_observation, last_action, last_update)):
+            raise ValueError("empty restored history cannot have last-step state")
+        engine.last_observation = last_observation
+        engine._observation_commitment = (canonical_hash(last_observation)
+                                          if last_observation is not None else None)
+        engine.last_prediction = copy.deepcopy(last_prediction)
+        engine.last_action = last_action
+        engine.last_update = copy.deepcopy(last_update)
+
+        # Recompute every recorded cycle from the model, rather than trusting
+        # persisted predictions, actions, metrics, or beliefs.  A structurally
+        # valid but numerically edited checkpoint therefore cannot become a
+        # trusted inference state.
+        recomputed = cls(generative_model=copy.deepcopy(model), policy_precision_gamma=engine.gamma)
+        for record in history:
+            if record.get("policies") is not None:
+                policies = [Policy.from_dict(copy.deepcopy(p)) for p in record["policies"]]
+            else:
+                policies = [Policy(policy_id=p["policy_id"], actions=list(p["actions"]))
+                            for p in record["predictions"]]
+            expected = recomputed.observe_predict_act_update(record["observation"], policies)
+            if canonical_hash(expected) != canonical_hash(record):
+                raise ValueError("restored inference metrics do not match recomputed predictions")
+        if engine.current_beliefs != recomputed.current_beliefs:
+            raise ValueError("restored belief state does not match recomputed history")
+        if last_observation != recomputed.last_observation:
+            raise ValueError("restored last observation does not match recomputed state")
+        if step_count and (not last_prediction
+                or canonical_hash(last_prediction) != canonical_hash(recomputed.last_prediction)):
+            raise ValueError("restored last prediction does not match recomputed state")
+        if last_action != recomputed.last_action or last_update != recomputed.last_update:
+            raise ValueError("restored last action/update does not match recomputed state")
+        engine._belief_commitment = canonical_hash(engine.current_beliefs)
+        engine._prediction_commitment = recomputed._prediction_commitment
+        engine._prediction_observation_commitment = recomputed._prediction_observation_commitment
+        engine._policy_commitments = dict(recomputed._policy_commitments)
+        engine._policy_refs = dict(recomputed._policy_refs)
+        engine._last_policies = list(recomputed._last_policies)
+        engine._action_commitment = recomputed._action_commitment
+        engine.state_trusted = True
         return engine
 
 
@@ -477,3 +905,32 @@ def create_default_architecture_pomdp() -> GenerativeModel:
         c_preferences=c_pref,
         d_prior=d_prior,
     )
+
+# Auditable System 3 coding-loop helpers.  Kept in this shipped module so
+# package manifests cannot silently omit the anti-laziness primitives.
+def prediction_error(predicted: Any, observed: Any) -> float:
+    """Compute bounded error from values, never from a caller success claim."""
+    if isinstance(predicted, bool) or isinstance(observed, bool):
+        return 0.0 if predicted == observed else 1.0
+    if isinstance(predicted, (int, float)) and isinstance(observed, (int, float)):
+        p, o = _finite(predicted, "predicted outcome"), _finite(observed, "observed outcome")
+        return min(1.0, abs(p - o) / max(1.0, abs(p), abs(o)))
+    return 0.0 if canonical_hash(predicted) == canonical_hash(observed) else 1.0
+
+
+def revise_belief(confidence: float, error: float) -> Dict[str, float]:
+    prior, err = _finite(confidence, "confidence"), _finite(error, "prediction_error")
+    if not 0.0 <= prior <= 1.0 or not 0.0 <= err <= 1.0:
+        raise ValueError("belief inputs must be in [0, 1]")
+    return {"prior_confidence": prior, "posterior_confidence": max(0.0, min(1.0, prior * (1.0 - err))),
+            "prediction_error": err}
+
+
+def policy_revision(action: str, error: float, revision_index: int) -> Dict[str, Any]:
+    if not isinstance(action, str) or not action.strip():
+        raise ValueError("action must be non-empty")
+    err = _finite(error, "prediction_error")
+    if not 0.0 <= err <= 1.0 or type(revision_index) is not int or revision_index < 1:
+        raise ValueError("invalid policy revision inputs")
+    payload = {"action": action.strip(), "prediction_error": err, "revision_index": revision_index}
+    return {**payload, "revision_id": canonical_hash(payload)}

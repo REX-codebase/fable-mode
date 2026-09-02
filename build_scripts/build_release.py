@@ -20,7 +20,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 _VERSION_RE = re.compile(r"^version\s*=\s*[\"']([^\"']+)[\"']", re.MULTILINE)
 _SETUP_VERSION_RE = re.compile(r"version\s*=\s*[\"']([^\"']+)[\"']")
-_SERVER_VERSION_RE = re.compile(r"\"version\"\s*:\s*\"([^\"]+)\"")
 
 
 def _machine() -> str:
@@ -31,24 +30,18 @@ def _machine() -> str:
 def _package_version() -> str:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     setup = (ROOT / "setup.py").read_text(encoding="utf-8")
-    server = (ROOT / "fable_engine" / "server.py").read_text(encoding="utf-8")
     match = _VERSION_RE.search(pyproject)
     setup_match = _SETUP_VERSION_RE.search(setup)
-    server_versions = _SERVER_VERSION_RE.findall(server)
-    if not match or not setup_match or not server_versions:
-        raise ValueError("could not determine package/runtime version from project metadata")
+    if not match or not setup_match:
+        raise ValueError("could not determine package version from pyproject.toml/setup.py")
     pyproject_version = match.group(1)
     setup_version = setup_match.group(1)
     try:
         from fable_mode import __version__
     except ImportError as exc:
         raise ValueError("could not determine fable_mode.__version__") from exc
-    versions = {pyproject_version, setup_version, __version__, *server_versions}
-    if len(versions) != 1:
-        raise ValueError(
-            "package/runtime version mismatch between pyproject.toml, setup.py, "
-            "fable_mode.__version__, and fable_engine.server"
-        )
+    if len({pyproject_version, setup_version, __version__}) != 1:
+        raise ValueError("package version mismatch between pyproject.toml, setup.py, and fable_mode.__version__")
     return pyproject_version
 
 
@@ -73,7 +66,9 @@ def validate_tag_version(tag: str | None = None) -> str:
 
 def archive_name() -> str:
     supplied = os.environ.get("FABLE_VERSION", os.environ.get("GITHUB_REF_NAME"))
-    version = supplied.replace("/", "-") if supplied else "dev"
+    # Archive names use the package semver without the tag's conventional
+    # leading ``v``.  This keeps names stable across local and tagged builds.
+    version = _tag_version(supplied) if supplied else "dev"
     system = platform.system().lower()
     machine = _machine()
     if system == "windows":

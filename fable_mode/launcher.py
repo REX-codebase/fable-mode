@@ -11,12 +11,10 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 
-from .adapters import (RegistrationError, cleanup_recorded_registrations,
-                       detect_hosts, register_hosts, validate_registration_record)
-from .installer import Installer, InstallError, verify_installation
+from .adapters import RegistrationError, detect_hosts, register_hosts
+from .installer import Installer, InstallError, default_data_dir, verify_installation
 from .manifest import ALLOWED_FILES, validate_manifest
 from . import __version__
 
@@ -35,13 +33,7 @@ def _assert_private_path(path: Path) -> None:
         except FileNotFoundError:
             continue
         attrs = int(getattr(st, "st_file_attributes", 0))
-        reparse = bool(attrs & 0x400)
-        junction = bool(getattr(part, "is_junction", lambda: False)())
-        trusted_macos_alias = (
-            sys.platform == "darwin" and str(part) in {"/var", "/tmp"}
-            and str(part.resolve()) in {"/private/var", "/private/tmp"}
-        )
-        if ((reparse or junction or stat.S_ISLNK(st.st_mode)) and not trusted_macos_alias) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+        if attrs & 0x400 or stat.S_ISLNK(st.st_mode) or stat.S_ISSOCK(st.st_mode) or stat.S_ISFIFO(st.st_mode) or stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
             raise RuntimeError("state path contains a symlink, reparse point, or special file")
 
 
@@ -50,10 +42,8 @@ def _data_dir(state_dir: str | None) -> Path:
         path = Path(state_dir).expanduser().absolute()
     elif os.environ.get("FABLE_DATA_DIR"):
         path = Path(os.environ["FABLE_DATA_DIR"]).expanduser().absolute()
-    elif os.name == "nt" and os.environ.get("LOCALAPPDATA"):
-        path = Path(os.environ["LOCALAPPDATA"]) / "FableMode" / "data"
     else:
-        path = Path.home() / ".local" / "share" / "fable-mode" / "data"
+        path = default_data_dir()
     # Do not follow an attacker-controlled final directory or parent.
     _assert_private_path(path)
     try:
@@ -82,11 +72,14 @@ def _kill_process(proc: subprocess.Popen[bytes]) -> None:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
-            # CREATE_NEW_PROCESS_GROUP is used below.  Terminate the direct
-            # child; Windows Job Objects are not available in stdlib, so this
-            # fallback deliberately fails safe rather than invoking a shell.
+            root = Path(os.environ.get("SystemRoot", r"C:\\Windows"))
+            taskkill = root / "System32" / "taskkill.exe"
+            if taskkill.is_file():
+                subprocess.run([str(taskkill), "/PID", str(proc.pid), "/T", "/F"],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=3, check=False)
             proc.kill()
-    except (OSError, ProcessLookupError):
+    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
             proc.kill()
         except OSError:
@@ -106,17 +99,13 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
         shutil.rmtree(probe_home, ignore_errors=True)
         return value
     env = {
-        "PATH": os.pathsep.join(dict.fromkeys([str(Path(sys.executable).parent), os.defpath])),
+        "PATH": os.defpath,
         "HOME": str(probe_home),
         "USERPROFILE": str(probe_home),
         "XDG_CONFIG_HOME": str(probe_home / ".config"),
         "FABLE_DATA_DIR": str(data_dir),
         "PYTHONIOENCODING": "utf-8",
     }
-    if os.name == "nt":
-        for var in ("SystemRoot", "SYSTEMROOT", "windir", "PATHEXT", "TEMP", "TMP"):
-            if var in os.environ:
-                env[var] = os.environ[var]
     kwargs: dict = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "env": env, "cwd": str(data_dir)}
     if os.name == "posix":
         kwargs["start_new_session"] = True
@@ -141,39 +130,12 @@ def _smoke(argv: list[str], data_dir: Path) -> tuple[bool, str]:
                    json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n").encode()
         assert proc.stdin is not None
         proc.stdin.write(request)
-        proc.stdin.flush()
         proc.stdin.close()
         readers = [threading.Thread(target=drain, args=(proc.stdout, "out"), daemon=True),
                    threading.Thread(target=drain, args=(proc.stderr, "err"), daemon=True)]
         for reader in readers:
             reader.start()
-
-        def _has_responses() -> bool:
-            lines = bytes(captured["out"]).splitlines()[:8]
-            seen_ids = set()
-            for line in lines:
-                if not line.strip():
-                    continue
-                try:
-                    item = json.loads(line)
-                    if isinstance(item, dict) and "id" in item:
-                        seen_ids.add(item["id"])
-                except Exception:
-                    pass
-            return {1, 2}.issubset(seen_ids)
-
-        deadline = time.monotonic() + 8.0
-        while time.monotonic() < deadline:
-            if _has_responses() or proc.poll() is not None:
-                break
-            time.sleep(0.05)
-
-        if proc.poll() is None:
-            _kill_process(proc)
-            try:
-                proc.wait(timeout=2)
-            except Exception:
-                pass
+        proc.wait(timeout=8)
         for reader in readers:
             reader.join(timeout=2)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -262,35 +224,6 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def _bind_registration_records(records: list[dict], install_dir: Path,
-                               workspace: Path | None) -> None:
-    """Bind host snapshots to this exact published install before persistence."""
-    install_st = install_dir.lstat()
-    if not stat.S_ISDIR(install_st.st_mode):
-        raise RuntimeError("published installation is not a directory")
-    for record in records:
-        if not isinstance(record, dict):
-            raise RuntimeError("host registration produced an invalid recovery record")
-        record["install_dir"] = str(install_dir)
-        record["install_identity"] = [install_st.st_dev, install_st.st_ino]
-        if record.get("kind") == "file" and Path(record.get("path", "")).parent.name == ".agents":
-            record["workspace"] = str(workspace) if workspace else ""
-        if not validate_registration_record(record, install_dir, Path.home(), transaction=True):
-            raise RuntimeError("host registration produced an invalid recovery record")
-
-
-def _records_for_marker(install_dir: Path, records: list[dict]) -> list[dict]:
-    """Merge new records with still-owned records already in the marker."""
-    marker_data = json.loads((install_dir / ".fable-install.json").read_text(encoding="utf-8"))
-    prior_records = [record for record in marker_data.get("registrations", [])
-                     if isinstance(record, dict)]
-    new_keys = {(record.get("kind"), record.get("host", record.get("path")))
-                for record in records}
-    retained = [record for record in prior_records
-                if (record.get("kind"), record.get("host", record.get("path"))) not in new_keys]
-    return retained + records
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.mode == "version":
@@ -323,7 +256,6 @@ def main(argv: list[str] | None = None) -> int:
         if input(f"Install Fable to {installer.install_dir}? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Installation cancelled.")
             return 0
-    registration_workspace: Path | None = None
     try:
         frozen = Path(sys.executable) if _is_frozen() else None
         result = installer.install(frozen_executable=frozen, dry_run=args.dry_run)
@@ -347,79 +279,42 @@ def main(argv: list[str] | None = None) -> int:
                                       records=registration_records,
                                       owned_records=installer.previous_registrations)
             if registration_records:
-                # Bind and validate marker records against this exact
-                # installation.  Workspace config paths are also recorded
-                # explicitly so uninstall never accepts an arbitrary path from
-                # a marker.
-                _bind_registration_records(registration_records, result.install_dir,
-                                           registration_workspace)
+                # Bind marker records to this exact installation.  Workspace
+                # config paths are also recorded explicitly so uninstall never
+                # accepts a marker-supplied arbitrary path.
+                install_st = result.install_dir.lstat()
+                for record in registration_records:
+                    record["install_dir"] = str(result.install_dir)
+                    record["install_identity"] = [install_st.st_dev, install_st.st_ino]
+                    if record.get("kind") == "file" and Path(record.get("path", "")).parent.name == ".agents":
+                        record["workspace"] = str(registration_workspace) if registration_workspace else ""
                 # Keep ownership records for previously registered hosts that
                 # are now absent/unhealthy; otherwise a reinstall would orphan
                 # those old entries.  Records for hosts touched successfully by
                 # this transaction are replaced by the new exact snapshots.
-                installer.record_registrations(
-                    _records_for_marker(result.install_dir, registration_records))
+                marker_data = json.loads((result.install_dir / ".fable-install.json").read_text(encoding="utf-8"))
+                prior_records = [record for record in marker_data.get("registrations", [])
+                                 if isinstance(record, dict)]
+                new_keys = {(record.get("kind"), record.get("host", record.get("path")))
+                            for record in registration_records}
+                retained = [record for record in prior_records
+                            if (record.get("kind"), record.get("host", record.get("path"))) not in new_keys]
+                installer.record_registrations(retained + registration_records)
         if result.transaction:
             result.transaction.commit()
         print(f"Fable installed at {result.install_dir}")
         if statuses:
             print(json.dumps(statuses, sort_keys=True))
         return 0
-    except Exception as exc:
-        # Host mutation and installation publication form one transaction.  A
-        # marker write or backup commit can fail *after* register_hosts has
-        # successfully changed one or more hosts, so restore those hosts before
-        # removing the runtime they now reference.  If restoration is not
-        # complete, deliberately retain the new installation and its marker so
-        # the registration remains usable/recoverable rather than leaving a
-        # silently stale host entry.
-        cleanup_errors: list[str] = []
-        persistence_error: Exception | None = None
-        preserve_install = False
-        if ('result' in locals() and result.transaction
-                and 'registration_records' in locals() and registration_records):
-            try:
-                cleanup_errors = cleanup_recorded_registrations(
-                    registration_records, strict=True,
-                    install_dir=result.install_dir, home=Path.home(),
-                    _transaction=True)
-            except Exception as cleanup_exc:
-                cleanup_errors = [f"cleanup failed: {cleanup_exc}"]
-            preserve_install = bool(cleanup_errors)
-            if preserve_install:
-                # The first marker write may itself have failed after the
-                # hosts were changed.  Keep the new install genuinely
-                # recoverable: persist the bound snapshots before returning
-                # the failure, even though the normal transaction rollback is
-                # being skipped.  Rebinding also protects this recovery path
-                # if the original failure happened during record preparation.
-                try:
-                    _bind_registration_records(
-                        registration_records, result.install_dir,
-                        registration_workspace)
-                    installer.record_registrations(
-                        _records_for_marker(result.install_dir, registration_records))
-                except Exception as persist_exc:
-                    persistence_error = persist_exc
-        rollback_error: Exception | None = None
-        if not preserve_install and 'result' in locals() and result.transaction:
-            try:
+    except (InstallError, RegistrationError, OSError) as exc:
+        try:
+            if 'result' in locals() and result.transaction:
                 result.transaction.rollback()
-            except Exception as rollback_exc:
-                rollback_error = rollback_exc
-        details = [str(exc)]
-        if cleanup_errors:
-            details.append("host registration cleanup incomplete; installation preserved for recovery: "
-                           + ", ".join(cleanup_errors))
-            if persistence_error:
-                details.append("could not persist registration recovery records; host state and installation were preserved: "
-                               + str(persistence_error))
-        if rollback_error:
-            details.append("installation rollback incomplete; partial state preserved")
-        print("install: " + "; ".join(details), file=sys.stderr)
+        except Exception:
+            pass
+        print(f"install: {exc}", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

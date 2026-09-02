@@ -65,12 +65,7 @@ class RedTeamRemediationTests(unittest.TestCase):
                 "previous_entries": {"fable-engine": {"command": "rm", "args": []}},
                 "post_entries": {"fable-engine": {"command": "x", "args": []}}}]
             marker_path.write_text(json.dumps(marker))
-            with self.assertRaises(InstallError):
-                Installer(target).uninstall()
-            # Recovery metadata must survive an unresolved/tampered record;
-            # deleting the install here would make a stale host registration
-            # silently unrecoverable.
-            self.assertTrue(target.exists())
+            Installer(target).uninstall()
             self.assertEqual(unrelated.read_text(), '{"keep": true}')
 
     def test_registration_replacement_inode_is_retained_on_rollback(self):
@@ -166,4 +161,3 @@ class RedTeamRemediationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

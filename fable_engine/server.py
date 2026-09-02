@@ -2,8 +2,10 @@
 """
 Fable-Engine MCP Server for MCP-compatible agent hosts.
 Implements the fable_session tool for deep cognitive session management,
-epistemic tracking, invariant recording, anti-rush lockout enforcement,
+epistemic tracking, invariant recording, session-local gate telemetry,
 user-controlled time-budgeted pacing telemetry, and session persistence.
+V1 gates are not a host sandbox; host authorization and interruptive controls
+are reported explicitly rather than being implied.
 """
 
 from __future__ import annotations
@@ -20,11 +22,23 @@ import hashlib
 import collections
 import io
 import struct
+import copy
 import tempfile
 import threading
 import stat
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses msvcrt where available
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None
 
 # Reconfigure UTF-8 for Windows stdio
 if sys.stdout.encoding != 'utf-8':
@@ -92,90 +106,6 @@ SESSIONS_DIR = DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 os.chmod(SESSIONS_DIR, 0o700)
 
-# System 3 Architecture Imports
-if str(BASE_DIR.parent) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR.parent))
-
-from fable_v2.system3 import (
-    CausalDAG,
-    CausalNode,
-    CausalEdge,
-    CausalNodeType,
-    BrittlenessReport,
-    InterventionResult,
-    ThesisCandidate,
-    AntithesisCritique,
-    Contradiction,
-    TRIZPrinciple,
-    TRIZContradictionResolver,
-    DialecticalSynthesizer,
-    EmergentSynthesis,
-    CognitiveGenome,
-    CognitiveGenePool,
-    NeuroSymbolicAxiom,
-    AxiomProvenance,
-    AxiomStatus,
-    MetaProofInducer,
-    CognitiveGear,
-    CognitiveBiasType,
-    CognitiveBiasFinding,
-    CognitiveBiasDetector,
-    DynamicSearchHeuristicRewriter,
-    SearchHeuristicConfig,
-    TriLevelArbitrator,
-    System3Executive,
-    # System 3 Hyperbolic
-    PoincareBall,
-    HyperbolicPoint,
-    HyperbolicTreeEmbedder,
-    TreeEmbeddingNode,
-    TreeEmbeddingResult,
-    HyperbolicGeometryError,
-    # System 3 Kripke
-    KripkeStructure,
-    KripkeWorld,
-    KripkeModelChecker,
-    ModelCheckResult,
-    CTLOperator,
-    FormulaNode,
-    FormulaParser,
-    # System 3 Free Energy
-    ActiveInferenceEngine,
-    GenerativeModel,
-    Policy,
-    PolicyEvaluation,
-    FreeEnergyReport,
-    create_default_architecture_pomdp,
-    # System 3 Oracle
-    ProofOracle,
-    CurryHowardVerifier,
-    UndecidabilityDetector,
-    TacticsEngine,
-    FormalProofResult,
-    ProofStatus,
-    Type,
-    Term,
-    Prop,
-    Unit,
-    Void,
-    Implies,
-    And,
-    Or,
-    Not,
-    Eq,
-    Var,
-    Lam,
-    App,
-    Pair,
-    Fst,
-    Snd,
-    Inl,
-    Inr,
-    Case,
-    Refl,
-    Abort,
-)
-
 # Standard Fable Phases
 PHASES = [
     "Phase 1: Epistemic Grounding & Live Research",
@@ -192,16 +122,60 @@ MIN_TIME_BUDGET_MINUTES = 0.1
 MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 MAX_CAS_OBJECT_BYTES = 16 * 1024 * 1024
-MAX_SLICE_RESPONSE_BYTES = 1_000_000
+MAX_CAS_SESSION_BYTES = 64 * 1024 * 1024
+MAX_CAS_SESSION_OBJECTS = 1024
+MAX_ACCUMULATOR_ITEMS = 4096
+# This is a UTF-8 byte quota (the historical name is retained for API
+# compatibility).  Metadata is charged to the same bounded buffer.
+MAX_ACCUMULATOR_CHARS = 8 * 1024 * 1024
+MAX_ACCUMULATOR_METADATA_BYTES = 512 * 1024
+MAX_SLICE_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
 MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
+# V1 cancellation is a pre-dispatch tombstone, not an interruptive control
+# channel.  Keep the tombstone registry bounded even when a peer sends
+# cancellations for requests that never arrive.
+MAX_CANCEL_REQUEST_ID_BYTES = 256
+MAX_CANCEL_TOMBSTONES = 4096
+MAX_CANCEL_TOMBSTONE_BYTES = 1 * 1024 * 1024
+CANCEL_TOMBSTONE_TTL_SECONDS = 300.0
+MAX_TOOL_TEXT_BYTES = 512 * 1024
+MAX_EVIDENCE_BYTES = 512 * 1024
+MAX_REQUEST_DEADLINE_SECONDS = 3600.0
+SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26")
+SERVER_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+# V1 is intentionally single-request-per-line; batches are rejected rather
+# than partially executing them with unclear ordering/notification semantics.
+BATCH_POLICY = "reject"
+# The stdio V1 loop is synchronous.  It cannot read a cancellation notification
+# while a tool call is executing, and Python threads cannot be safely killed.
+# Expose this honestly rather than claiming that post-hoc checks interrupt work.
+INTERRUPTIVE_CONTROL = "unsupported_synchronous_v1"
+
+# Strict MCP control-plane profile.  This is deliberately a separate tool and
+# state machine: the historical fable_session surface remains available only
+# as an explicitly legacy/compatibility API and cannot be mistaken for the
+# enforced control plane.
+CONTROL_PLANE_TOOL_NAME = "fable_control_plane"
+CONTROL_PLANE_PROFILE = "strict-mcp-v1"
+CONTROL_PLANE_ACTIONS = (
+    "observe", "record_prediction", "propose_action", "record_outcome",
+    "request_verification", "finalize",
+)
+CONTROL_PLANE_CAPABILITY_ACTIONS = ("capabilities",)
+CONTROL_PLANE_STATES = (
+    "new", "observed", "predicted", "action_proposed", "outcome_recorded",
+    "verification_requested", "finalized",
+)
+CONTROL_PLANE_IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 SILENT_DELIBERATION_REMINDER = (
-    "\n\n> [!IMPORTANT]\n"
-    "> 🛑 **SILENT-DELIBERATION ACTIVE (Zero-Chat Lockout)**: Do NOT emit conversational responses "
-    "or prompt the user while time-lock is active. Continue internal tool-reasoning, terminal benchmarks "
-    "(`run_command`), artifact authoring, and rethink-refine cycles until the authority deadline elapses."
+    "\n\n> [!NOTE]\n"
+    "> **SILENT-DELIBERATION ACTIVE — ADVISORY ONLY (NOT ENFORCED BY V1)**: V1 does not suppress chat, sandbox host tools, "
+    "or enforce a zero-chat/lockout policy. The host must enforce any tool authorization "
+    "and user-interaction policy; `execution_locked` is session telemetry, not a host boundary."
 )
 
 
@@ -228,6 +202,37 @@ def _validate_session_name(name: str) -> str:
             "and do not include path separators."
         )
     return clean_name
+
+
+def _cas_namespace_for_session(session_id: str) -> str:
+    """Derive a stable, non-secret capability namespace from the session ID."""
+    return "s_" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+
+
+def _validate_session_id(value: Any) -> str:
+    if not isinstance(value, str) or not SESSION_ID_PATTERN.fullmatch(value):
+        raise ValueError("invalid session_id in persisted session")
+    return value
+
+
+_PLACEHOLDER_TEXT = re.compile(
+    r"^(?:n/?a|none|null|todo|tbd|placeholder|dummy|test|proof|rationale|statement|done|ok|true|false|same|unknown|lorem(?: ipsum)?)$",
+    re.IGNORECASE,
+)
+_GENERIC_ACTION_NAME = re.compile(
+    r"^(?:(?:perform|execute|run|do|take|make|apply|invoke|call)\s+)?"
+    r"(?:the\s+)?(?:action|operation|thing|task|change|command|tool|request|mutation)$",
+    re.IGNORECASE,
+)
+
+
+def _require_substantive_text(value: Any, field: str, *, minimum: int = 8) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    clean = " ".join(value.split())
+    if len(clean) < minimum or _PLACEHOLDER_TEXT.fullmatch(clean):
+        raise ValueError(f"{field} must contain substantive, non-placeholder content")
+    return clean
 
 
 # --------------------------------------------------------------------------------
@@ -361,8 +366,25 @@ class FableCASStore:
         root_dir: Optional[Union[str, Path]] = None,
         cache_capacity: int = 256,
         auto_verify: bool = True,
+        namespace: Optional[str] = None,
+        max_namespace_bytes: int = MAX_CAS_SESSION_BYTES,
+        max_namespace_objects: int = MAX_CAS_SESSION_OBJECTS,
     ):
-        self.root_dir = Path(root_dir).expanduser().absolute() if root_dir is not None else DATA_DIR / "cas"
+        base_root = Path(root_dir).expanduser().absolute() if root_dir is not None else DATA_DIR / "cas"
+        if namespace is not None:
+            if not isinstance(namespace, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", namespace):
+                raise FableCASError("invalid CAS capability namespace")
+            self.namespace = namespace
+            self.root_dir = base_root / namespace
+        else:
+            # Direct subsystem users retain an unscoped store; all V1 server
+            # actions use a session-derived namespace below.
+            self.namespace = None
+            self.root_dir = base_root
+        self.max_namespace_bytes = int(max_namespace_bytes)
+        self.max_namespace_objects = int(max_namespace_objects)
+        if self.max_namespace_bytes <= 0 or self.max_namespace_objects <= 0:
+            raise FableCASError("CAS quotas must be positive")
         _assert_private_path(self.root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         _assert_private_path(self.root_dir)
@@ -381,6 +403,51 @@ class FableCASStore:
         self.cache = ThreadSafeLRUCache(capacity=cache_capacity)
         self.auto_verify = auto_verify
         self._write_lock = threading.Lock()
+        # The thread lock above is insufficient when several broker/server
+        # instances share a CAS namespace.  A private lock file serializes the
+        # quota check and publication across processes where the platform has
+        # a reliable advisory file lock.
+        self._quota_lock_path = self.root_dir / ".quota.lock"
+        try:
+            lock_fd = os.open(self._quota_lock_path, os.O_RDWR | os.O_CREAT |
+                              getattr(os, "O_NOFOLLOW", 0), 0o600)
+            os.close(lock_fd)
+            os.chmod(self._quota_lock_path, 0o600)
+        except OSError as exc:
+            raise FableCASError("CAS quota lock cannot be created safely") from exc
+
+    @contextmanager
+    def _quota_guard(self):
+        """Serialize CAS quota accounting across instances/processes.
+
+        POSIX flock is process-safe.  Windows uses an exclusive one-byte
+        msvcrt lock when available; platforms without either primitive retain
+        the per-instance lock and are explicitly best-effort.
+        """
+        if fcntl is not None:
+            fd = os.open(self._quota_lock_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                finally:
+                    os.close(fd)
+            return
+        if msvcrt is not None:  # pragma: no cover - exercised on Windows
+            with open(self._quota_lock_path, "a+b", buffering=0) as handle:
+                handle.seek(0)
+                handle.write(b"\\0")
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+        yield
 
     @classmethod
     def compute_sha256(cls, data: Union[str, bytes]) -> Tuple[str, bytes]:
@@ -483,7 +550,73 @@ class FableCASStore:
             os.close(tmp_fd_dir)
             os.close(shard_fd)
 
-    def put(self, content: Union[str, bytes]) -> str:
+    def _scan_namespace_objects(self) -> Tuple[int, int]:
+        """Count the regular objects in the two-level CAS shard layout.
+
+        ``Path.rglob`` yields the shard directories as well as their files.
+        Treating every non-file as an unexpected node therefore rejects a
+        perfectly valid namespace as soon as a second object is written.  Do
+        an explicit, bounded-depth walk instead: direct children of
+        ``objects`` must be two-character hexadecimal shard directories and
+        each shard child must be a private, regular 62-character hexadecimal
+        object file.  Anything else remains fail-closed.
+        """
+        object_count = 0
+        total_bytes = 0
+        try:
+            _safe_cas_node(self.objects_dir, allow_missing=False)
+            with os.scandir(self.objects_dir) as shards:
+                for shard_entry in shards:
+                    shard_path = Path(shard_entry.path)
+                    if shard_entry.is_symlink() or not shard_entry.is_dir(follow_symlinks=False):
+                        raise FableCASError("unexpected CAS namespace node")
+                    shard = shard_entry.name
+                    if not re.fullmatch(r"[0-9a-f]{2}", shard):
+                        raise FableCASError("unexpected CAS namespace shard")
+                    _safe_cas_node(shard_path, allow_missing=False)
+                    with os.scandir(shard_path) as objects:
+                        for object_entry in objects:
+                            object_path = Path(object_entry.path)
+                            if object_entry.is_symlink() or not object_entry.is_file(follow_symlinks=False):
+                                raise FableCASError("unexpected CAS namespace node")
+                            if not re.fullmatch(r"[0-9a-f]{62}", object_entry.name):
+                                raise FableCASError("unexpected CAS namespace object")
+                            _safe_cas_node(object_path, allow_missing=False)
+                            try:
+                                total_bytes += object_entry.stat(follow_symlinks=False).st_size
+                            except OSError as exc:
+                                raise FableCASError("unable to account CAS namespace quota") from exc
+                            object_count += 1
+        except FableCASError:
+            raise
+        except OSError as exc:
+            raise FableCASError("unable to account CAS namespace quota") from exc
+        return object_count, total_bytes
+
+    def _check_namespace_quota(self, content_hash: str, content_size: int) -> None:
+        """Enforce bounded storage for a scoped capability namespace.
+
+        Hash-addressing deduplicates an existing object, so only a genuinely
+        new hash consumes quota.  The scan accepts the legitimate two-level
+        shard directories but remains fail-closed for unexpected nodes.
+        """
+        if self.namespace is None:
+            return
+        object_count, total_bytes = self._scan_namespace_objects()
+        dest_path = self._get_object_path(content_hash)
+        is_new = not dest_path.exists()
+        if is_new and object_count >= self.max_namespace_objects:
+            raise FableCASError("CAS capability namespace object quota exceeded")
+        if is_new and total_bytes + content_size > self.max_namespace_bytes:
+            raise FableCASError("CAS capability namespace byte quota exceeded")
+
+    def quota_stats(self) -> Dict[str, Any]:
+        object_count, total_bytes = self._scan_namespace_objects()
+        return {"namespace": self.namespace, "objects": object_count,
+                "bytes": total_bytes, "max_objects": self.max_namespace_objects,
+                "max_bytes": self.max_namespace_bytes}
+
+    def _put_unlocked(self, content: Union[str, bytes]) -> str:
         """
         Store content in CAS using lock-free atomic tmp-replace write.
         Returns the standard URI: cas://<sha256_hex>.
@@ -494,6 +627,7 @@ class FableCASStore:
 
         if len(raw_bytes) > MAX_CAS_OBJECT_BYTES:
             raise FableCASError("CAS object exceeds maximum size")
+        self._check_namespace_quota(content_hash, len(raw_bytes))
         if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
             return self._put_posix(content_hash, raw_bytes)
         # Check if already present, but never follow a replaced node.
@@ -543,6 +677,12 @@ class FableCASStore:
         # str, bytes, or bytearray.
         self.cache.put(content_hash, raw_bytes)
         return self.to_uri(content_hash)
+
+    def put(self, content: Union[str, bytes]) -> str:
+        """Store one object atomically while serializing quota accounting."""
+        with self._write_lock:
+            with self._quota_guard():
+                return self._put_unlocked(content)
 
     def get_bytes(self, ref_or_hash: str, verify: Optional[bool] = None) -> bytes:
         """Retrieve bytes, verifying SHA-256 unless explicitly opted out.
@@ -656,7 +796,7 @@ class CompositeFrame:
     @classmethod
     def deserialize_json(cls, data: str) -> CompositeFrame:
         """Deserialize frame from canonical JSON."""
-        parsed = json.loads(data)
+        parsed = _strict_json_loads(data)
         frame = cls(frame_id=parsed["frame_id"], items=parsed["items"])
         frame.created_at = parsed.get("created_at", time.time())
         return frame
@@ -679,6 +819,8 @@ class AdaptiveChunkAccumulator:
         self.max_frame_size = max_frame_size
         self._buffer: List[Dict[str, Any]] = []
         self._buffered_chars: int = 0
+        self._buffered_bytes: int = 0
+        self._buffered_metadata_bytes: int = 0
         self._lock = threading.Lock()
         self._frame_counter: int = 0
 
@@ -700,21 +842,45 @@ class AdaptiveChunkAccumulator:
         """
         if not isinstance(payload, str):
             raise TypeError(f"Payload must be str, got {type(payload).__name__}")
+        payload_len = len(payload)
+        payload_bytes = len(payload.encode("utf-8"))
+        if payload_bytes > MAX_CAS_OBJECT_BYTES:
+            raise FableCASError("accumulator payload exceeds maximum object size")
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise TypeError("accumulator metadata must be an object")
+        try:
+            metadata_bytes = len(json.dumps(metadata, ensure_ascii=False,
+                                            separators=(",", ":")).encode("utf-8"))
+        except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+            raise FableCASError("accumulator metadata is not safely serializable") from exc
+        if metadata_bytes > MAX_ACCUMULATOR_METADATA_BYTES:
+            raise FableCASError("accumulator metadata exceeds maximum size")
 
         flushed_uris: List[str] = []
         with self._lock:
+            if len(self._buffer) >= MAX_ACCUMULATOR_ITEMS:
+                raise FableCASError("accumulator item quota exceeded; flush before adding more payloads")
+            # Charge UTF-8 payload bytes *and* serialized metadata.  Counting
+            # only characters allowed a metadata-heavy stream to exhaust
+            # memory while appearing below the old payload quota.
+            entry_bytes = payload_bytes + metadata_bytes
+            if self._buffered_bytes + entry_bytes > MAX_ACCUMULATOR_CHARS:
+                raise FableCASError("accumulator byte quota exceeded; flush before adding more payloads")
             self.total_payloads_ingested += 1
-            payload_len = len(payload)
             self.total_raw_chars += payload_len
 
             entry = {
                 "idx": len(self._buffer),
                 "payload": payload,
-                "meta": metadata or {},
+                "meta": metadata,
                 "ts": time.time(),
             }
             self._buffer.append(entry)
             self._buffered_chars += payload_len
+            self._buffered_bytes += entry_bytes
+            self._buffered_metadata_bytes += metadata_bytes
 
             if force_flush or self._buffered_chars >= self.min_frame_size:
                 uri = self._flush_internal_locked()
@@ -747,6 +913,8 @@ class AdaptiveChunkAccumulator:
 
         self._buffer.clear()
         self._buffered_chars = 0
+        self._buffered_bytes = 0
+        self._buffered_metadata_bytes = 0
         return uri
 
     def extract_item(self, frame_uri: str, item_index: int) -> Tuple[str, Dict[str, Any]]:
@@ -768,6 +936,9 @@ class AdaptiveChunkAccumulator:
                 "total_cas_bytes_written": self.total_cas_bytes_written,
                 "currently_buffered_items": len(self._buffer),
                 "currently_buffered_chars": self._buffered_chars,
+                "currently_buffered_bytes": self._buffered_bytes,
+                "currently_buffered_metadata_bytes": self._buffered_metadata_bytes,
+                "max_buffered_bytes": MAX_ACCUMULATOR_CHARS,
             }
 
 
@@ -835,7 +1006,7 @@ class FableGrammar333:
                 break
             shift += 7
             if shift > 63:
-                raise ValueError("varint exceeds supported 64-bit integer limit")
+                raise ValueError("varint exceeds supported size")
         return res
 
     @classmethod
@@ -957,7 +1128,7 @@ class FableGrammar333:
                 "action_type": "mcp_call",
                 "server": cls.read_string(stream),
                 "tool": cls.read_string(stream),
-                "arguments": json.loads(cls.read_string(stream)),
+                "arguments": _strict_json_loads(cls.read_string(stream)),
                 "result_ref": cls.read_string(stream),
             }
 
@@ -969,7 +1140,7 @@ class FableGrammar333:
             }
 
         elif opcode == cls.OP_GENERIC_JSON:
-            return json.loads(cls.read_string(stream))
+            return _strict_json_loads(cls.read_string(stream))
 
         else:
             raise ValueError(f"Unknown Grammar333 opcode: 0x{opcode:02X}")
@@ -1077,8 +1248,9 @@ class FableCompress:
     to achieve extreme token compaction with 100% bit-exact lossless recovery.
     """
 
-    def __init__(self, root_dir: Optional[Union[str, Path]] = None):
-        self.cas_store = FableCASStore(root_dir=root_dir)
+    def __init__(self, root_dir: Optional[Union[str, Path]] = None,
+                 namespace: Optional[str] = None):
+        self.cas_store = FableCASStore(root_dir=root_dir, namespace=namespace)
         self.accumulator = AdaptiveChunkAccumulator(self.cas_store)
         self.grammar = FableGrammar333()
         self.slice_viewer = CASSliceViewer(self.cas_store)
@@ -1181,8 +1353,182 @@ class AntiLoopCircuitBreaker:
         return False, "OK"
 
 
+def _reject_non_finite(value: Any, *, path: str = "value") -> None:
+    """Reject JSON numbers which have no interoperable canonical encoding.
+
+    Python's JSON encoder accepts NaN and Infinity by default even though they
+    are not JSON values.  Accepting them here would make receipt/action hashes
+    dependent on the producer and could create values which cannot round-trip
+    through another MCP implementation.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{path} must not contain NaN or Infinity")
+    if isinstance(value, dict):
+        for key, child in value.items():
+            _reject_non_finite(child, path=f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _reject_non_finite(child, path=f"{path}[{index}]")
+
+
+def _canonical_hash(value: Any) -> str:
+    """Hash JSON-compatible values deterministically and reject non-JSON numbers."""
+    _reject_non_finite(value)
+    try:
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                            ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("value must be JSON-compatible and finitely numeric") from exc
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class EvidenceReceiptError(ValueError):
+    """A receipt/evidence object is malformed or not host-attested."""
+
+
+def _validate_host_receipt(receipt: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+    """Validate a host-produced receipt before it can anchor evidence.
+
+    V1 cannot attest a host tool invocation.  Consequently receipts are only
+    accepted through the explicit host integration API (never as an MCP
+    action), and this check verifies their immutable output binding.
+    """
+    if not isinstance(receipt, dict):
+        raise EvidenceReceiptError("receipt must be an object")
+    required = ("receipt_id", "session_id", "capability", "tool_name",
+                "input_hash", "output_hash", "success", "output")
+    missing = [key for key in required if key not in receipt]
+    if missing:
+        raise EvidenceReceiptError(f"receipt missing required fields: {', '.join(missing)}")
+    if receipt.get("session_id") != session_id:
+        raise EvidenceReceiptError("receipt belongs to a different session")
+    for text_field in ("receipt_id", "capability", "tool_name"):
+        if not isinstance(receipt[text_field], str) or not receipt[text_field].strip():
+            raise EvidenceReceiptError(f"receipt {text_field} must be a non-empty string")
+    if not isinstance(receipt["success"], bool):
+        raise EvidenceReceiptError("receipt success must be boolean")
+    for hash_name in ("input_hash", "output_hash"):
+        digest = receipt.get(hash_name)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+            raise EvidenceReceiptError(f"receipt {hash_name} must be a SHA-256 hex digest")
+    output_hash = receipt.get("output_hash")
+    if not hmac.compare_digest(_canonical_hash(receipt.get("output")), output_hash.lower()):
+        raise EvidenceReceiptError("receipt output_hash does not match receipt output")
+    encoded = json.dumps(receipt, ensure_ascii=False).encode("utf-8")
+    if len(encoded) > MAX_EVIDENCE_BYTES:
+        raise EvidenceReceiptError("receipt exceeds maximum size")
+    # Snapshot mutable host payloads so later adapter mutation cannot rewrite
+    # the receipt that an epistemic item references.
+    # When present, tool_input is part of the attested receipt and must itself
+    # agree with input_hash.  Older V1 host bridges omitted this redundant
+    # payload; the strict transition below still binds their hash to the
+    # proposed action arguments.
+    if "tool_input" in receipt:
+        try:
+            if _canonical_hash(receipt["tool_input"]) != receipt["input_hash"].lower():
+                raise EvidenceReceiptError("receipt input_hash does not match receipt tool_input")
+        except (TypeError, ValueError) as exc:
+            if isinstance(exc, EvidenceReceiptError):
+                raise
+            raise EvidenceReceiptError("receipt tool_input must be JSON-compatible and finitely numeric") from exc
+    return copy.deepcopy(receipt)
+
+
+def _normalise_tool_name(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+
+
+def _receipt_matches_action(receipt: Dict[str, Any], proposed: Dict[str, Any]) -> bool:
+    """Check capability and input binding, not merely receipt success."""
+    try:
+        expected_input_hash = _canonical_hash(proposed.get("arguments", {}))
+    except (TypeError, ValueError):
+        return False
+    if not hmac.compare_digest(str(receipt.get("input_hash", "")).lower(), expected_input_hash):
+        return False
+    if "tool_input" in receipt and receipt.get("tool_input") != proposed.get("arguments", {}):
+        return False
+    expected_capability = proposed.get("capability")
+    receipt_capability = receipt.get("capability")
+    if isinstance(expected_capability, str) and expected_capability.strip():
+        return hmac.compare_digest(expected_capability.strip().lower(), str(receipt_capability).strip().lower())
+    # Compatibility for old proposals: the host tool name is still required
+    # to identify the proposed operation; an unrelated capability is not.
+    return (_normalise_tool_name(receipt_capability) == _normalise_tool_name(proposed.get("action_name"))
+            or _normalise_tool_name(receipt.get("tool_name")) == _normalise_tool_name(proposed.get("action_name")))
+
+
+def _receipt_matches_outcome(receipt: Dict[str, Any], proposed: Dict[str, Any],
+                             outcome_record: Dict[str, Any]) -> bool:
+    if not _receipt_matches_action(receipt, proposed):
+        return False
+    try:
+        expected_hash = _canonical_hash(outcome_record.get("outcome"))
+    except (TypeError, ValueError):
+        return False
+    return (hmac.compare_digest(expected_hash, str(receipt.get("output_hash", "")).lower())
+            and hmac.compare_digest(expected_hash, str(outcome_record.get("outcome_hash", "")).lower()))
+
+
+def _is_verifier_receipt(receipt: Dict[str, Any]) -> bool:
+    metadata = receipt.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("role") in {"verifier", "broker_verifier", "host_verifier"}:
+        return True
+    return any("verif" in str(receipt.get(field, "")).strip().lower()
+               for field in ("capability", "tool_name"))
+
+
+def _validate_verifier_receipt_binding(verification_id: str, pending: Dict[str, Any],
+                                       checked: Dict[str, Any]) -> None:
+    """Validate verifier role and binding; called both at ingress and finalize."""
+    if not _is_verifier_receipt(checked):
+        raise EvidenceReceiptError("receipt is not identified as a host/broker verifier receipt")
+    expected_checks = pending.get("checks")
+    output = checked.get("output")
+    if not isinstance(output, dict) or output.get("verified") is not True:
+        raise EvidenceReceiptError("verifier receipt output must assert verified: true")
+    if output.get("checks") != expected_checks:
+        raise EvidenceReceiptError("verifier receipt checks are not bound to the requested checks")
+    if "outcome_id" in output and output.get("outcome_id") != pending.get("outcome_id"):
+        raise EvidenceReceiptError("verifier receipt outcome_id is not bound to the requested outcome")
+    if "outcome_hash" in output and output.get("outcome_hash") != pending.get("outcome_hash"):
+        raise EvidenceReceiptError("verifier receipt outcome_hash is not bound to the requested outcome")
+
+    expected_input = {
+        "verification_id": verification_id,
+        "outcome_id": pending.get("outcome_id"),
+        "outcome_hash": pending.get("outcome_hash"),
+        "checks": expected_checks,
+    }
+    if "tool_input" in checked:
+        tool_input = checked.get("tool_input")
+        if not isinstance(tool_input, dict):
+            raise EvidenceReceiptError("verifier receipt tool_input must be an object")
+        for key in ("verification_id", "outcome_id", "checks"):
+            if tool_input.get(key) != expected_input[key]:
+                raise EvidenceReceiptError("verifier receipt input is not bound to the requested outcome/checks")
+        if "outcome_hash" in tool_input and tool_input.get("outcome_hash") != expected_input["outcome_hash"]:
+            raise EvidenceReceiptError("verifier receipt input outcome_hash is not bound to the requested outcome")
+    else:
+        # The full request hash is the preferred broker form.  The reduced
+        # form is retained solely for old host bridges that omitted tool_input.
+        accepted_input_hashes = {
+            _canonical_hash(expected_input),
+            _canonical_hash({"verification_id": verification_id}),
+        }
+        if str(checked.get("input_hash", "")).lower() not in accepted_input_hashes:
+            raise EvidenceReceiptError("verifier receipt input_hash is not bound to the verification request")
+
+
 class EpistemicEvidenceValidator:
-    """Validates that [PROVEN] evidence strings map to real filesystem files, line ranges, URLs, or CLI stdout."""
+    """Validate legacy citations and receipt-bound typed evidence.
+
+    Text citations remain parseable for old clients, but are explicitly marked
+    legacy by FableSession and can never satisfy a PROVEN gate.  New callers
+    must use evidence objects referring to a host-registered successful receipt.
+    """
 
     CITATION_PATTERN = re.compile(r"^(.*?)(?::(?:L)?(\d+)(?:-(?:L)?(\d+))?)?$")
 
@@ -1268,36 +1614,6 @@ class DelegationContractCompiler:
         self.file_regex = re.compile(r"(TargetFile|FileBoundary):\s*[`\"]?([A-Za-z0-9_./\\:-]+)[`\"]?", re.IGNORECASE)
         self.cmd_regex = re.compile(r"(VerificationCommand|TestCommand):\s*[`\"]?([^`\"\n]+)[`\"]?", re.IGNORECASE)
 
-    @staticmethod
-    def inject_system3_micro_scaffolds(prompt: str, parsed: Dict[str, str]) -> str:
-        """Inject System 3 Micro-Scaffolds into the delegation contract for weak-model frontier uplift."""
-        target_file = parsed.get("TargetFile", "src/target.py")
-        verif_cmd = parsed.get("VerificationCommand", "python -m unittest")
-
-        scaffold = f"""
-### 🛡️ SYSTEM 3 MICRO-SCAFFOLD (WEAK-MODEL FRONTIER UPLIFT)
-
-#### 1. Kripke Safety Invariant Contract ($AG(\\text{{safe}})$):
-- $AG(\\text{{NoHallucination}} \\land \\text{{TypeSoundness}})$: Never invent non-existent APIs or variables.
-- $AX(\\text{{TargetFileBoundary}})$: Modify ONLY `{target_file}`. Zero modifications outside `{target_file}`.
-- $AF(\\text{{VerificationPass}})$: Every execution must satisfy `{verif_cmd}` with exit code 0.
-
-#### 2. Causal Failure Mode Boundaries ($do(\\cdot)$ Sensitivities):
-- Invariant under intervention: $P(\\text{{SystemError}} \\mid do(\\text{{Edit}}({target_file}))) = 0$.
-- Pre-condition validation: Inspect and verify exact file line bounds before applying replacements.
-- Post-condition validation: Run `{verif_cmd}` immediately after edit to confirm 0 regressions.
-
-#### 3. TRIZ Transcendent Resolution Guidelines:
-- Avoid lazy compromises (do NOT comment out tests or catch-and-ignore exceptions).
-- Apply TRIZ Principle 1 (Segmentation): Decompose complex logic into pure helper functions.
-- Apply TRIZ Principle 10 (Preliminary Action): Validate all preconditions before mutating state.
-
-#### 4. Structured Output Regex Acceptance Constraint:
-- Your response MUST strictly adhere to atomic execution formatting:
-  Pattern: `^```(?:python|json|diff)[\\s\\S]*?```$`
-"""
-        return prompt.strip() + "\n\n" + scaffold.strip()
-
     def compile_and_validate(self, prompt: str) -> Tuple[bool, List[str], Dict[str, str]]:
         errors = []
         parsed = {}
@@ -1320,15 +1636,42 @@ class DelegationContractCompiler:
         if not any(k.lower() in prompt.lower() for k in ["strictconstraints", "invariants", "non-negotiable", "constraints"]):
             errors.append("Missing 'StrictConstraints' or 'Invariants'. Subagents must be constrained against regressions.")
 
+        # Section labels alone are not a contract. Reject the common red-team
+        # bypass of supplying only placeholder prose after a valid label.
+        for label in ("InterfaceContract", "StrictConstraints"):
+            line = re.search(rf"{label}\s*:\s*([^\n]+)", prompt, re.I)
+            if line and _PLACEHOLDER_TEXT.fullmatch(line.group(1).strip().strip('`"')):
+                errors.append(f"{label} must contain substantive typed constraints, not placeholder prose.")
+
         is_valid = len(errors) == 0
-        if is_valid:
-            parsed["system3_micro_scaffold"] = self.inject_system3_micro_scaffolds(prompt, parsed)
-            parsed["compiled_prompt"] = parsed["system3_micro_scaffold"]
         return is_valid, errors, parsed
+
+
+class ControlPlaneError(ValueError):
+    """Structured strict-profile transition failure."""
+
+    def __init__(self, code: str, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
 
 
 class FableSession:
     """Represents an active Fable reasoning & pacing session."""
+
+    _SEALED_AUTHORITY_FIELDS = frozenset({
+        "start_time", "time_budget_minutes", "time_budget_seconds",
+        "_authority_deadline_wall", "_authority_deadline_monotonic",
+    })
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # A pacing call may only update the separate pacing fields.  Prevent
+        # in-process callers (including model-facing integration glue) from
+        # shortening or extending the authority deadline after construction.
+        if name in self._SEALED_AUTHORITY_FIELDS and name in self.__dict__:
+            raise AttributeError(f"{name} is immutable for the lifetime of a session")
+        object.__setattr__(self, name, value)
 
     def __init__(
         self,
@@ -1345,7 +1688,9 @@ class FableSession:
         self._wall_clock = wall_clock or time.time
         self._monotonic_clock = monotonic_clock or time.monotonic
         self.start_time = start_time if start_time is not None else self._wall_clock()
-        self.session_id = session_id or f"fable_{session_name}_{int(self.start_time)}"
+        candidate_session_id = session_id or f"fable_{session_name}_{int(self.start_time)}"
+        self.session_id = _validate_session_id(candidate_session_id)
+        self.cas_namespace = _cas_namespace_for_session(self.session_id)
         
         # The authority budget is immutable after session creation.  A separate
         # pacing timer may be shortened by the agent, but it can never grant
@@ -1364,11 +1709,25 @@ class FableSession:
         
         self.active_phase = PHASES[0]
         self.execution_locked = True
+        # This is a model-facing cognitive gate, not a host sandbox. The host
+        # must enforce tool authorization (ideally through a broker).
+        self.host_enforcement = "external_host_required"
+        self.host_tools_enforced = False
+        self._host_authorization_hook = None
+        self.host_receipts: Dict[str, Dict[str, Any]] = {}
         self.can_execute_code = False
+
+        # Strict MCP control-plane state.  Only transitions implemented below
+        # can advance this state; model text is data, never an authorization
+        # token.  Host tool enforcement remains advisory unless a broker calls
+        # the explicit host authorization/attestation hooks.
+        self.control_plane: Dict[str, Any] = self._new_control_plane_state()
+        self.host_verifications: Dict[str, Dict[str, Any]] = {}
         
         self.epistemic_ledger: List[Dict[str, Any]] = []
         self.invariants: List[Dict[str, Any]] = []
         self.refinement_cycles: List[Dict[str, Any]] = []
+        self.delegation_contracts: List[Dict[str, Any]] = []
         self.phase_history: List[Dict[str, Any]] = [
             {
                 "phase": self.active_phase,
@@ -1379,20 +1738,315 @@ class FableSession:
         self.unlock_details: Optional[Dict[str, Any]] = None
         self._restored_untrusted = False
 
-        # System 3 Meta-Cognitive State
-        self.system3_causal_graphs: List[Dict[str, Any]] = []
-        self.system3_syntheses: List[Dict[str, Any]] = []
-        self.system3_gene_pools: List[Dict[str, Any]] = []
-        self.system3_axioms: List[Dict[str, Any]] = []
-        self.system3_reflections: List[Dict[str, Any]] = []
-        self.system3_orchestrations: List[Dict[str, Any]] = []
-        self.system3_hyperbolic_embeddings: List[Dict[str, Any]] = []
-        self.system3_kripke_verifications: List[Dict[str, Any]] = []
-        self.system3_active_inferences: List[Dict[str, Any]] = []
-        self.system3_proof_oracle_verifications: List[Dict[str, Any]] = []
-        self.active_free_energy: Optional[Dict[str, Any]] = None
-        self.active_kripke_safety: Optional[Dict[str, Any]] = None
-        self.active_biases: List[Dict[str, Any]] = []
+    @staticmethod
+    def _new_control_plane_state() -> Dict[str, Any]:
+        return {
+            "profile": CONTROL_PLANE_PROFILE,
+            "state": "new",
+            "observation_id": None,
+            "prediction_id": None,
+            "proposed_action_id": None,
+            "outcome_id": None,
+            "verification_id": None,
+            "finalized": False,
+            "observations": [],
+            "predictions": [],
+            "actions": [],
+            "outcomes": [],
+            "verifications": [],
+            "idempotency": {},
+        }
+
+    def control_plane_enforcement(self) -> Dict[str, Any]:
+        """Report exactly which parts this process can and cannot enforce."""
+        brokered = self._host_authorization_hook is not None
+        return {
+            "profile": CONTROL_PLANE_PROFILE,
+            "control_plane": "enforced",
+            "sequence_invariants": "enforced",
+            "session_binding": "enforced",
+            "idempotency": "enforced",
+            "host_tool_authorization": "enforced_via_broker" if brokered else "advisory_external_host_required",
+            "host_receipt_attestation": "broker_or_host_only",
+            "native_host_tools": "not_controlled_unless_routed_through_broker",
+            "broker_routed": brokered,
+            "model_can_mint_receipts": False,
+            "model_can_authorize_finalization": False,
+        }
+
+    def _control_error(self, code: str, message: str) -> "ControlPlaneError":
+        return ControlPlaneError(code, message)
+
+    def _check_control_profile(self, profile: Any) -> None:
+        if profile is not None and profile != CONTROL_PLANE_PROFILE:
+            raise self._control_error("profile_mismatch", f"profile must be {CONTROL_PLANE_PROFILE!r}")
+
+    @staticmethod
+    def _control_key(value: Any) -> str:
+        if not isinstance(value, str) or not CONTROL_PLANE_IDEMPOTENCY_PATTERN.fullmatch(value.strip()):
+            raise ControlPlaneError("invalid_idempotency_key", "idempotency_key must match the strict profile key format")
+        return value.strip()
+
+    def _control_begin(self, action: str, args: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
+        self._check_control_profile(args.get("profile"))
+        forbidden = {"tag", "proven", "final_authorized", "authorized", "authorization", "approval"}
+        supplied = forbidden.intersection(args)
+        if supplied:
+            raise self._control_error("model_authorization_forbidden", "model-supplied PROVEN/final authorization fields are not accepted")
+        key = self._control_key(args.get("idempotency_key"))
+        digest_args = {k: v for k, v in args.items() if k not in {"idempotency_key", "profile"}}
+        try:
+            digest = _canonical_hash(digest_args)
+        except Exception as exc:
+            raise self._control_error("invalid_arguments", "control-plane arguments must be JSON-compatible") from exc
+        prior = self.control_plane["idempotency"].get(key)
+        if prior is not None:
+            if prior.get("digest") != digest:
+                raise self._control_error("idempotency_conflict", "idempotency_key was already used with different arguments")
+            replay = copy.deepcopy(prior.get("response"))
+            if isinstance(replay, dict):
+                replay["idempotent_replay"] = True
+            return key, replay
+        return key, None
+
+    def _control_commit(self, key: str, digest_args: Dict[str, Any], response: Dict[str, Any]) -> None:
+        self.control_plane["idempotency"][key] = {
+            "digest": _canonical_hash(digest_args),
+            "response": copy.deepcopy(response),
+        }
+        # Bound persisted replay data; active state remains authoritative.
+        if len(self.control_plane["idempotency"]) > 256:
+            oldest = next(iter(self.control_plane["idempotency"]))
+            self.control_plane["idempotency"].pop(oldest, None)
+
+    def strict_control_plane(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute one typed transition in the strict MCP control-plane FSM.
+
+        This method is intentionally independent of legacy fable_session
+        prose actions.  It never accepts a model assertion of PROVEN or final
+        authorization; attestation enters only through register_host_receipt
+        and register_host_verification.
+        """
+        if not isinstance(arguments, dict):
+            raise ControlPlaneError("invalid_arguments", "arguments must be an object")
+        action = arguments.get("action")
+        if action not in CONTROL_PLANE_ACTIONS:
+            raise ControlPlaneError("unknown_action", f"action must be one of {', '.join(CONTROL_PLANE_ACTIONS)}")
+        allowed_fields = {"action", "profile", "session_id", "session_name", "objective", "observation",
+                          "prediction", "prediction_id", "action_name", "capability", "arguments", "input_hash", "mutating", "action_id",
+                          "outcome", "receipt_id", "outcome_id", "checks", "verification_id", "idempotency_key",
+                          "tag", "proven", "final_authorized", "authorized", "authorization", "approval"}
+        extras = sorted(set(arguments) - allowed_fields)
+        if extras:
+            raise ControlPlaneError("unknown_field", "strict profile rejects unknown fields: " + ", ".join(extras))
+        key, replay = self._control_begin(action, arguments)
+        if replay is not None:
+            return replay
+        digest_args = {k: v for k, v in arguments.items() if k not in {"idempotency_key", "profile"}}
+        cp = self.control_plane
+        state = cp["state"]
+        session_id = self.session_id
+        if action == "observe":
+            if state != "new":
+                raise self._control_error("invalid_transition", "observe is only allowed as the first strict transition")
+            observation = arguments.get("observation")
+            if observation is None or observation == "":
+                raise self._control_error("missing_observation", "observation is required and cannot be skipped")
+            if isinstance(observation, str):
+                observation = _require_substantive_text(observation, "observation")
+            elif not isinstance(observation, (dict, list, int, float, bool)):
+                raise self._control_error("invalid_observation", "observation must be structured JSON or substantive text")
+            elif isinstance(observation, (dict, list)) and not observation:
+                raise self._control_error("missing_observation", "observation cannot be an empty structure")
+            try:
+                _reject_non_finite(observation, path="observation")
+                # Force a canonical round-trip at ingress, even though the
+                # observation is telemetry rather than a receipt payload.
+                _canonical_hash(observation)
+            except (TypeError, ValueError) as exc:
+                raise self._control_error("invalid_observation", str(exc)) from exc
+            oid = "obs_" + uuid.uuid4().hex
+            record = {"id": oid, "observation": copy.deepcopy(observation), "timestamp": self._wall_clock()}
+            cp["observations"].append(record); cp["observation_id"] = oid; cp["state"] = "observed"
+            result = record
+        elif action == "record_prediction":
+            if state != "observed":
+                raise self._control_error("prediction_requires_observation", "record_prediction requires a prior observe transition")
+            prediction = arguments.get("prediction")
+            if not isinstance(prediction, str):
+                raise self._control_error("invalid_prediction", "prediction must be substantive text")
+            prediction = _require_substantive_text(prediction, "prediction")
+            pid = "pred_" + uuid.uuid4().hex
+            record = {"id": pid, "prediction": prediction, "observation_id": cp["observation_id"], "timestamp": self._wall_clock()}
+            cp["predictions"].append(record); cp["prediction_id"] = pid; cp["state"] = "predicted"
+            result = record
+        elif action == "propose_action":
+            if state != "predicted":
+                raise self._control_error("prediction_required_before_action", "mutating actions require record_prediction first")
+            if arguments.get("mutating") is not True:
+                raise self._control_error("mutating_action_must_be_explicit", "propose_action requires mutating: true")
+            if arguments.get("prediction_id") != cp["prediction_id"]:
+                raise self._control_error("prediction_binding_mismatch", "prediction_id must reference the current prediction")
+            name = arguments.get("action_name")
+            if not isinstance(name, str):
+                raise self._control_error("invalid_action", "action_name is required")
+            name = _require_substantive_text(name, "action_name", minimum=2)
+            if _GENERIC_ACTION_NAME.fullmatch(name):
+                raise self._control_error("invalid_action", "action_name must identify a concrete operation, not generic boilerplate")
+            capability = arguments.get("capability")
+            if capability is not None:
+                if not isinstance(capability, str) or not capability.strip():
+                    raise self._control_error("invalid_capability", "capability must be a non-empty string")
+                capability = capability.strip()
+            if "arguments" in arguments and not isinstance(arguments["arguments"], dict):
+                raise self._control_error("invalid_action_arguments", "proposed action arguments must be an object")
+            action_arguments = copy.deepcopy(arguments.get("arguments", {}))
+            try:
+                _reject_non_finite(action_arguments, path="action arguments")
+                action_input_hash = _canonical_hash(action_arguments)
+            except (TypeError, ValueError) as exc:
+                raise self._control_error("invalid_action_arguments", str(exc)) from exc
+            requested_input_hash = arguments.get("input_hash")
+            if requested_input_hash is not None:
+                if (not isinstance(requested_input_hash, str)
+                        or not re.fullmatch(r"[0-9a-fA-F]{64}", requested_input_hash)
+                        or not hmac.compare_digest(requested_input_hash.lower(), action_input_hash)):
+                    raise self._control_error("invalid_action_arguments", "input_hash must match the canonical proposed action arguments")
+            action_id = "act_" + uuid.uuid4().hex
+            record = {"id": action_id, "action_name": name, "capability": capability,
+                      "arguments": action_arguments, "input_hash": action_input_hash,
+                      "mutating": True, "prediction_id": cp["prediction_id"], "timestamp": self._wall_clock()}
+            cp["actions"].append(record); cp["proposed_action_id"] = action_id; cp["state"] = "action_proposed"
+            result = record
+        elif action == "record_outcome":
+            if state != "action_proposed":
+                raise self._control_error("outcome_requires_action", "record_outcome requires a prior proposed action")
+            if arguments.get("action_id") != cp["proposed_action_id"]:
+                raise self._control_error("action_binding_mismatch", "action_id must reference the current proposed action")
+            receipt_id = arguments.get("receipt_id")
+            receipt = self.host_receipts.get(receipt_id) if isinstance(receipt_id, str) else None
+            if receipt is None:
+                raise self._control_error("host_receipt_required", "record_outcome requires a receipt_id registered by the host/broker")
+            if receipt.get("success") is not True:
+                raise self._control_error("failed_receipt", "record_outcome requires a successful host receipt")
+            proposed = cp["actions"][-1]
+            if not _receipt_matches_action(receipt, proposed):
+                raise self._control_error(
+                    "action_receipt_binding_mismatch",
+                    "receipt capability and input_hash must match the proposed action")
+            outcome = arguments.get("outcome")
+            if outcome is None:
+                raise self._control_error("missing_outcome", "outcome is required")
+            try:
+                _reject_non_finite(outcome, path="outcome")
+                outcome_hash = _canonical_hash(outcome)
+            except (TypeError, ValueError) as exc:
+                raise self._control_error("invalid_outcome", str(exc)) from exc
+            if not hmac.compare_digest(outcome_hash, str(receipt.get("output_hash", "")).lower()):
+                raise self._control_error(
+                    "outcome_receipt_binding_mismatch",
+                    "outcome payload must match the successful receipt output")
+            oid = "out_" + uuid.uuid4().hex
+            record = {"id": oid, "outcome": copy.deepcopy(outcome), "outcome_hash": outcome_hash,
+                      "action_id": cp["proposed_action_id"], "receipt_id": receipt_id, "timestamp": self._wall_clock()}
+            cp["outcomes"].append(record); cp["outcome_id"] = oid; cp["state"] = "outcome_recorded"
+            result = record
+        elif action == "request_verification":
+            if state != "outcome_recorded":
+                raise self._control_error("outcome_receipt_required_before_verification", "request_verification requires a recorded outcome backed by a host receipt")
+            if arguments.get("outcome_id") != cp["outcome_id"]:
+                raise self._control_error("outcome_binding_mismatch", "outcome_id must reference the current outcome")
+            outcome_record = cp["outcomes"][-1]
+            bound_receipt = self.host_receipts.get(outcome_record.get("receipt_id"))
+            try:
+                if isinstance(bound_receipt, dict):
+                    bound_receipt = _validate_host_receipt(bound_receipt, self.session_id)
+            except EvidenceReceiptError:
+                bound_receipt = None
+            if (not isinstance(bound_receipt, dict) or bound_receipt.get("success") is not True
+                    or not _receipt_matches_outcome(bound_receipt, cp["actions"][-1], outcome_record)):
+                raise self._control_error("host_receipt_binding_mismatch", "request_verification requires the original action receipt and outcome to remain bound")
+            checks = arguments.get("checks", ["host_receipt", "action_outcome_binding"])
+            if not isinstance(checks, list) or not checks or not all(isinstance(item, str) and item.strip() for item in checks):
+                raise self._control_error("invalid_verification_request", "checks must be a non-empty list of strings")
+            vid = "ver_" + uuid.uuid4().hex
+            record = {"id": vid, "outcome_id": cp["outcome_id"], "receipt_id": cp["outcomes"][-1]["receipt_id"],
+                      "outcome_hash": outcome_record.get("outcome_hash"), "checks": list(checks),
+                      "timestamp": self._wall_clock()}
+            cp["verifications"].append(record); cp["verification_id"] = vid; cp["state"] = "verification_requested"
+            result = record
+        else:  # finalize
+            if state != "verification_requested":
+                raise self._control_error("verification_required_before_finalize", "finalize requires request_verification and host verification")
+            if arguments.get("verification_id") != cp["verification_id"]:
+                raise self._control_error("verification_binding_mismatch", "verification_id must reference the current request")
+            if cp["verification_id"] not in self.host_verifications:
+                raise self._control_error("host_verification_required", "final authorization must come from a host/broker verification, not model input")
+            attestation = self.host_verifications[cp["verification_id"]]
+            if attestation.get("success") is not True:
+                raise self._control_error("verification_failed", "host verification did not succeed")
+            try:
+                # Re-check the immutable receipt hash at the decision point as
+                # well as at registration; mutable in-process dictionaries are
+                # not allowed to turn a prior success into a new attestation.
+                attestation = _validate_host_receipt(attestation, self.session_id)
+            except EvidenceReceiptError as exc:
+                raise self._control_error("verification_binding_mismatch", str(exc)) from exc
+            outcome_record = cp.get("outcomes", [])[-1] if cp.get("outcomes") else None
+            bound_receipt = self.host_receipts.get(outcome_record.get("receipt_id")) if isinstance(outcome_record, dict) else None
+            try:
+                if isinstance(bound_receipt, dict):
+                    bound_receipt = _validate_host_receipt(bound_receipt, self.session_id)
+            except EvidenceReceiptError:
+                bound_receipt = None
+            if (not isinstance(outcome_record, dict) or not isinstance(bound_receipt, dict)
+                    or not _receipt_matches_outcome(bound_receipt, cp["actions"][-1], outcome_record)):
+                raise self._control_error("outcome_receipt_binding_mismatch", "finalization requires the original action receipt and outcome")
+            pending = next((v for v in cp.get("verifications", [])
+                            if v.get("id") == cp["verification_id"]), None)
+            if not isinstance(pending, dict):
+                raise self._control_error("verification_failed", "verification request is not present")
+            try:
+                _validate_verifier_receipt_binding(cp["verification_id"], pending, attestation)
+            except EvidenceReceiptError as exc:
+                raise self._control_error("verification_binding_mismatch", str(exc)) from exc
+            cp["state"] = "finalized"; cp["finalized"] = True
+            result = {"finalized": True, "verification_id": cp["verification_id"], "attestation_receipt_id": attestation["receipt_id"]}
+        response = {"ok": True, "profile": CONTROL_PLANE_PROFILE, "action": action,
+                    "session_id": session_id, "state": cp["state"], "result": result,
+                    "enforcement": self.control_plane_enforcement(), "idempotent_replay": False}
+        self._control_commit(key, digest_args, response)
+        return response
+
+    @property
+    def control_plane_state(self) -> str:
+        return str(self.control_plane.get("state", "new"))
+
+    def register_host_verification(self, verification_id: str, receipt: Dict[str, Any]) -> Dict[str, Any]:
+        """Register a verifier receipt bound to one pending request.
+
+        A successful tool receipt is not automatically a verification receipt:
+        the attestation must identify a verifier and prove the exact outcome and
+        checks requested by this session's pending verification.
+        """
+        checked = _validate_host_receipt(receipt, self.session_id)
+        if not isinstance(verification_id, str) or not verification_id.strip():
+            raise EvidenceReceiptError("verification_id must be a non-empty string")
+        if checked.get("success") is not True:
+            raise EvidenceReceiptError("host verification receipt must be successful")
+        pending = next((v for v in self.control_plane.get("verifications", [])
+                        if v.get("id") == verification_id), None)
+        if not isinstance(pending, dict):
+            raise EvidenceReceiptError("verification_id is not a pending strict control-plane request")
+        if verification_id in self.host_verifications:
+            raise EvidenceReceiptError("duplicate host verification")
+        _validate_verifier_receipt_binding(verification_id, pending, checked)
+        self.host_verifications[verification_id] = checked
+        return {"verification_id": verification_id, "receipt_id": checked["receipt_id"], "registered": True}
+
+    # Explicit host/broker naming keeps the trust boundary visible.
+    register_verification = register_host_verification
+    register_broker_verification = register_host_verification
 
     @property
     def pacing_deadline_time(self) -> float:
@@ -1438,10 +2092,37 @@ class FableSession:
     def _gate_report(self) -> Dict[str, Any]:
         """Return auditable gate state instead of relying on raw item counts."""
         proven_items = [i for i in self.epistemic_ledger if i.get("tag") == "PROVEN" and not i.get("_restored_untrusted")]
-        proven_with_evidence = [i for i in proven_items if str(i.get("evidence", "")).strip()]
-        invariants_with_proof = [
-            inv for inv in self.invariants if not inv.get("_restored_untrusted") and str(inv.get("proof_or_rationale", "")).strip()
-        ]
+        # Only immutable, host-registered receipt bindings count.  Legacy
+        # citation strings remain visible but cannot unlock execution.
+        def receipt_bound(item: Dict[str, Any]) -> bool:
+            receipt_id = item.get("evidence_receipt_id")
+            evidence = item.get("evidence")
+            receipt = self.host_receipts.get(receipt_id) if receipt_id else None
+            if not isinstance(evidence, dict) or not isinstance(receipt, dict):
+                return False
+            content_hash = evidence.get("content_hash")
+            return (
+                item.get("evidence_integrity_bound") is True
+                and receipt.get("success") is True
+                and evidence.get("session_id", self.session_id) == self.session_id
+                and isinstance(content_hash, str)
+                and hmac.compare_digest(content_hash.lower(), str(receipt.get("output_hash", "")).lower())
+                and hmac.compare_digest(_canonical_hash(evidence.get("content", receipt.get("output"))), content_hash.lower())
+            )
+        proven_with_evidence = [i for i in proven_items if receipt_bound(i)]
+        def substantive_invariant(inv: Dict[str, Any]) -> bool:
+            if inv.get("_restored_untrusted") or inv.get("domain") not in {"architecture", "design", "coding"}:
+                return False
+            statement = str(inv.get("formal_statement", "")).strip()
+            proof = str(inv.get("proof_or_rationale", "")).strip()
+            return (
+                len(statement) >= 8 and len(proof) >= 8
+                and not _PLACEHOLDER_TEXT.fullmatch(statement)
+                and not _PLACEHOLDER_TEXT.fullmatch(proof)
+                and bool(re.search(r"(?:<=|>=|==|!=|\bmust\b|\bshall\b|\bwhen\b|\bif\b.*\bthen\b|\bforall\b|\b∀\b|\balways\b|\bnever\b)", statement, re.I))
+                and bool(re.search(r"(?:because|enforc|invariant|proof|induct|bound|check|test|guarantee|derive|ensur|case|since|via)", proof, re.I))
+            )
+        invariants_with_proof = [inv for inv in self.invariants if substantive_invariant(inv)]
         # Restored phase is reset to Phase 1; subsequent in-process
         # transitions are legitimate fresh gates.
         phase_index = PHASE_INDEX_MAP.get(self.active_phase, 1)
@@ -1498,7 +2179,13 @@ class FableSession:
             "total_phases": len(PHASES),
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
+            "host_enforcement": self.host_enforcement,
+            "host_tools_enforced": self.host_tools_enforced,
+            "host_authorization_hook_configured": self._host_authorization_hook is not None,
+            "host_receipts_count": len(self.host_receipts),
+            "interruptive_control": INTERRUPTIVE_CONTROL,
             "silent_deliberation_active": self.execution_locked,
+            "silent_deliberation_advisory_only": True,
             "epistemic_counts": {
                 "proven": proven_count,
                 "hypothesis": hypothesis_count,
@@ -1509,34 +2196,7 @@ class FableSession:
             "refinement_count": len(self.refinement_cycles),
             "refinement_cycles": self.refinement_cycles,
             "cognitive_gates": self._gate_report(),
-            "unlock_details": self.unlock_details,
-            "system3_cognitive_state": {
-                "free_energy_f": self.active_free_energy.get("variational_free_energy_f", 1.25) if self.active_free_energy else 1.25,
-                "complexity_kl": self.active_free_energy.get("complexity_kl", 0.35) if self.active_free_energy else 0.35,
-                "accuracy_log_likelihood": self.active_free_energy.get("accuracy_log_likelihood", -0.90) if self.active_free_energy else -0.90,
-                "kripke_safety_invariant": "AG(safe) -> True" if (self.active_kripke_safety.get("is_satisfied", True) if self.active_kripke_safety else True) else "AG(safe) -> VIOLATED",
-                "kripke_safety_verified": self.active_kripke_safety.get("is_satisfied", True) if self.active_kripke_safety else True,
-                "active_biases_count": len(self.active_biases),
-                "active_biases": self.active_biases,
-                "contradiction_density": round(sum(len(s.get("resolved_contradictions", [])) for s in self.system3_syntheses) / max(1, len(self.system3_syntheses)), 2) if self.system3_syntheses else 0.0,
-                "hyperbolic_metric": {
-                    "embeddings_count": len(self.system3_hyperbolic_embeddings),
-                    "curvature": 1.0,
-                    "status": "CONVERGED_POINCARE_BALL" if self.system3_hyperbolic_embeddings else "INITIALIZED",
-                },
-            },
-            "system3_counts": {
-                "causal_graphs": len(self.system3_causal_graphs),
-                "syntheses": len(self.system3_syntheses),
-                "gene_pools": len(self.system3_gene_pools),
-                "axioms": len(self.system3_axioms),
-                "reflections": len(self.system3_reflections),
-                "orchestrations": len(self.system3_orchestrations),
-                "hyperbolic_embeddings": len(self.system3_hyperbolic_embeddings),
-                "kripke_verifications": len(self.system3_kripke_verifications),
-                "active_inferences": len(self.system3_active_inferences),
-                "proof_oracle_verifications": len(self.system3_proof_oracle_verifications),
-            }
+            "unlock_details": self.unlock_details
         }
 
     @staticmethod
@@ -1552,8 +2212,35 @@ class FableSession:
         else:
             return f"{s}s"
 
-    def advance_phase(self, next_phase: str, phase_summary: str) -> Dict[str, Any]:
-        """Advances the session to the requested phase and records history."""
+    def advance_phase(self, next_phase: str, phase_summary: str,
+                      phase_evidence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Advance one phase only after typed, substantive prerequisites.
+
+        The summary is a human-readable explanation, not an authority token.
+        For callers that can provide machine-verifiable bindings,
+        ``phase_evidence`` contains receipt/invariant/refinement IDs; unknown
+        IDs are rejected instead of silently treating prose as proof.
+        """
+        phase_summary = _require_substantive_text(phase_summary, "phase_summary")
+        if phase_evidence is not None:
+            if not isinstance(phase_evidence, dict):
+                raise ValueError("phase_evidence must be an object")
+            for key in ("receipt_ids", "invariant_ids", "refinement_ids"):
+                values = phase_evidence.get(key, [])
+                if not isinstance(values, list) or not all(isinstance(v, str) and v.strip() for v in values):
+                    raise ValueError(f"phase_evidence.{key} must be a list of non-empty strings")
+            for rid in phase_evidence.get("receipt_ids", []):
+                receipt = self.host_receipts.get(rid)
+                if receipt is None:
+                    raise EvidenceReceiptError(f"phase evidence references unknown receipt: {rid}")
+                if receipt.get("success") is not True:
+                    raise EvidenceReceiptError(f"phase evidence references failed receipt: {rid}")
+            known_inv = {x.get("id") for x in self.invariants}
+            known_ref = {x.get("cycle_number") for x in self.refinement_cycles}
+            if any(i not in known_inv for i in phase_evidence.get("invariant_ids", [])):
+                raise ValueError("phase evidence references an unknown invariant")
+            if any(str(i) not in {str(x) for x in known_ref} for i in phase_evidence.get("refinement_ids", [])):
+                raise ValueError("phase evidence references an unknown refinement cycle")
         matched_phase = None
         for p in PHASES:
             if next_phase.strip().lower() == p.lower() or next_phase.strip().lower() in p.lower():
@@ -1574,86 +2261,152 @@ class FableSession:
                 f"Phase {current_phase_idx} to Phase {current_phase_idx + 1}."
             )
 
+        # Phase 3 is the first adversarial gate: a phase label and prose alone
+        # cannot claim that grounding and a blueprint occurred. Later phases
+        # likewise require the concrete artefact produced by their predecessor.
+        prerequisite_errors = []
+        if target_phase_idx >= 2 and not any(not i.get("_restored_untrusted") for i in self.epistemic_ledger):
+            prerequisite_errors.append("at least one epistemic ledger item before the blueprint phase")
+        if target_phase_idx >= 3:
+            if not any(i.get("tag") in {"PROVEN", "HYPOTHESIS", "UNKNOWN"} and not i.get("_restored_untrusted")
+                       for i in self.epistemic_ledger):
+                prerequisite_errors.append("at least one epistemic ledger item")
+            if self._gate_report()["invariants_with_proof"] < 1:
+                prerequisite_errors.append("at least one substantive recorded invariant")
+            if self._gate_report()["proven_with_evidence"] < 1:
+                prerequisite_errors.append("at least one host-receipt-bound PROVEN item")
+        if target_phase_idx >= 4 and not any(not r.get("_restored_untrusted") for r in self.refinement_cycles):
+            prerequisite_errors.append("at least one refinement cycle")
+        if target_phase_idx >= 5 and not self.delegation_contracts:
+            prerequisite_errors.append("at least one compiled delegation contract")
+        if prerequisite_errors:
+            raise ValueError("Phase prerequisite(s) missing: " + ", ".join(prerequisite_errors))
+
         now = self._wall_clock()
         self.active_phase = matched_phase
         self.phase_history.append({
             "phase": matched_phase,
             "entered_at": now,
-            "summary": phase_summary
+            "summary": phase_summary,
+            "evidence": copy.deepcopy(phase_evidence) if phase_evidence is not None else None
         })
-
-        # Run System 3 Executive bias detection & reflection
-        detector = CognitiveBiasDetector()
-        findings = detector.audit_session({
-            "epistemic_ledger": self.epistemic_ledger,
-            "refinement_cycles": self.refinement_cycles,
-            "phase_history": self.phase_history,
-            "invariants": self.invariants,
-        })
-        self.active_biases = [f.to_dict() for f in findings]
-        if findings:
-            self.system3_reflections.append({
-                "phase": matched_phase,
-                "findings": self.active_biases,
-                "timestamp": now,
-            })
-
-        # Update live Free Energy F
-        pomdp_model = create_default_architecture_pomdp()
-        fe_engine = ActiveInferenceEngine(pomdp_model)
-        proven_count = sum(1 for i in self.epistemic_ledger if i.get("tag") == "PROVEN")
-        obs = "HIGH_THROUGHPUT_CLEAN" if proven_count >= 2 else "LOCK_CONTENTION_WARN"
-        fe_policies = [Policy(policy_id=f"p_{act}", actions=[act]) for act in pomdp_model.actions]
-        fe_report = fe_engine.select_action(obs, fe_policies)
-        self.active_free_energy = {
-            "variational_free_energy_f": round(fe_report.variational_free_energy_f, 4),
-            "complexity_kl": round(fe_report.complexity_kl, 4),
-            "accuracy_log_likelihood": round(fe_report.accuracy_log_likelihood, 4),
-            "selected_action": fe_report.selected_action,
-            "observation": obs,
-            "phase": matched_phase,
-            "timestamp": now,
-        }
-        self.system3_active_inferences.append(self.active_free_energy)
-
-        # Update Kripke Safety Invariant
-        kripke = KripkeStructure()
-        kripke.add_world("w0", propositions={"entered", "safe"})
-        kripke.add_world("w_phase", propositions={f"phase_{target_phase_idx}", "safe"})
-        kripke.add_transition("w0", "w_phase")
-        kripke.add_transition("w_phase", "w_phase")
-        checker = KripkeModelChecker(kripke)
-        k_res = checker.check("AG(safe)", "w0")
-        self.active_kripke_safety = {
-            "formula": "AG(safe)",
-            "is_satisfied": k_res.is_satisfied,
-            "active_phase": matched_phase,
-        }
-
         return self.get_telemetry()
 
-    def log_epistemic_item(self, tag: str, claim: str, evidence: Optional[str] = None) -> Dict[str, Any]:
-        """Logs an epistemic fact/hypothesis/unknown with structured tracking and evidence validation."""
+    def register_host_receipt(self, receipt: Dict[str, Any]) -> Dict[str, Any]:
+        """Register a receipt supplied by a trusted host adapter.
+
+        This method is intentionally not exposed as an MCP action. A host
+        adapter/broker should call it after the real tool invocation. A model
+        may reference, but cannot mint, a receipt through the tool interface.
+        """
+        checked = _validate_host_receipt(receipt, self.session_id)
+        receipt_id = checked["receipt_id"]
+        if receipt_id in self.host_receipts:
+            raise EvidenceReceiptError(f"duplicate receipt: {receipt_id}")
+        # A second receipt for the same successful output is not independent
+        # evidence, even when an adapter invents a fresh identifier.
+        if any(r.get("success") is True and
+               hmac.compare_digest(str(r.get("output_hash", "")).lower(), checked["output_hash"].lower())
+               for r in self.host_receipts.values()):
+            raise EvidenceReceiptError("receipt output duplicates an existing receipt; evidence must be independent")
+        self.host_receipts[receipt_id] = checked
+        return {"receipt_id": receipt_id, "registered": True,
+                "success": checked["success"], "output_hash": checked["output_hash"]}
+
+    # Clear aliases make the host integration point discoverable without
+    # exposing a self-authorizing MCP operation.
+    register_tool_receipt = register_host_receipt
+    register_receipt = register_host_receipt
+
+    def set_host_authorization_hook(self, hook: Any) -> None:
+        """Install a host/broker authorization callback (never model supplied)."""
+        if hook is not None and not callable(hook):
+            raise TypeError("authorization hook must be callable or None")
+        self._host_authorization_hook = hook
+
+    def authorize_host_action(self, action: Dict[str, Any]) -> bool:
+        """Ask the host whether an action may run; V1 never authorizes itself."""
+        if self._host_authorization_hook is None:
+            return False
+        return bool(self._host_authorization_hook(action, self))
+
+    def log_epistemic_item(self, tag: str, claim: str, evidence: Optional[Any] = None) -> Dict[str, Any]:
+        """Log an epistemic item, requiring typed receipt evidence for gates.
+
+        String evidence is retained as a non-authoritative compatibility
+        representation for old clients. It is deliberately excluded from the
+        unlock gate, so keyword/free-text claims cannot self-authorize.
+        """
         tag_upper = tag.strip().upper()
         if tag_upper not in ("PROVEN", "HYPOTHESIS", "UNKNOWN"):
             raise ValueError(f"Invalid epistemic tag '{tag}'. Must be 'PROVEN', 'HYPOTHESIS', or 'UNKNOWN'.")
 
         if not claim or not claim.strip():
             raise ValueError("Claim description cannot be empty.")
+        evidence_receipt_id = None
+        evidence_integrity_bound = False
+        stored_evidence: Any = evidence
         if tag_upper == "PROVEN":
-            if not str(evidence or "").strip():
-                raise ValueError("PROVEN claims require concrete evidence (file, command output, test, or URL).")
-            validator = EpistemicEvidenceValidator()
-            valid, reason = validator.validate_proven_claim(claim, str(evidence))
-            if not valid:
-                raise ValueError(f"Epistemic Evidence Validation Failed: {reason}")
+            if isinstance(evidence, dict):
+                if len(json.dumps(evidence, ensure_ascii=False).encode("utf-8")) > MAX_EVIDENCE_BYTES:
+                    raise ValueError("Epistemic evidence exceeds maximum size.")
+                required_evidence_fields = ("receipt_id", "session_id", "content_hash", "source_output_hash", "claim")
+                missing_evidence = [key for key in required_evidence_fields if key not in evidence]
+                if missing_evidence:
+                    raise EvidenceReceiptError("typed evidence missing required fields: " + ", ".join(missing_evidence))
+                receipt_id = evidence.get("receipt_id")
+                if not isinstance(receipt_id, str) or not receipt_id.strip():
+                    raise EvidenceReceiptError("typed evidence requires receipt_id")
+                receipt = self.host_receipts.get(receipt_id)
+                if receipt is None:
+                    raise EvidenceReceiptError("evidence references an unknown host receipt")
+                if any(i.get("tag") == "PROVEN" and i.get("evidence_receipt_id") == receipt_id
+                       for i in self.epistemic_ledger):
+                    raise EvidenceReceiptError("each PROVEN item requires a distinct receipt ID")
+                if any(i.get("tag") == "PROVEN" and i.get("evidence", {}).get("content_hash") == evidence.get("content_hash")
+                       for i in self.epistemic_ledger if isinstance(i.get("evidence"), dict)):
+                    raise EvidenceReceiptError("each PROVEN item requires independent evidence output")
+                if not receipt.get("success"):
+                    raise EvidenceReceiptError("evidence cannot reference a failed host receipt")
+                if evidence.get("session_id", self.session_id) != self.session_id:
+                    raise EvidenceReceiptError("evidence belongs to a different session")
+                content = evidence.get("content", receipt.get("output"))
+                content_hash = evidence.get("content_hash")
+                if not isinstance(content_hash, str):
+                    raise EvidenceReceiptError("typed evidence requires content_hash")
+                if not hmac.compare_digest(content_hash.lower(), receipt["output_hash"].lower()):
+                    raise EvidenceReceiptError("evidence content_hash is not bound to receipt output_hash")
+                if not hmac.compare_digest(_canonical_hash(content), content_hash.lower()):
+                    raise EvidenceReceiptError("evidence content does not match content_hash")
+                if evidence.get("source_output_hash", content_hash) != receipt["output_hash"]:
+                    raise EvidenceReceiptError("evidence source_output_hash is not bound to receipt")
+                if evidence.get("claim") not in (None, claim):
+                    raise EvidenceReceiptError("evidence claim does not match the ledger claim")
+                evidence_receipt_id = receipt_id
+                evidence_integrity_bound = True
+                stored_evidence = dict(evidence)
+                stored_evidence["session_id"] = self.session_id
+                stored_evidence["content_hash"] = content_hash.lower()
+                stored_evidence["source_output_hash"] = receipt["output_hash"]
+            elif isinstance(evidence, str) and evidence.strip():
+                # Compatibility only: legacy text is validated for shape but
+                # is never considered receipt-bound or gate-satisfying.
+                validator = EpistemicEvidenceValidator()
+                valid, reason = validator.validate_proven_claim(claim, evidence)
+                if not valid:
+                    raise ValueError(f"Epistemic Evidence Validation Failed: {reason}")
+                stored_evidence = evidence.strip()
+            else:
+                raise ValueError("PROVEN claims require typed receipt evidence (or a legacy citation that cannot satisfy gates).")
 
         item_id = f"epi_{len(self.epistemic_ledger) + 1:03d}"
         item = {
             "id": item_id,
             "tag": tag_upper,
             "claim": claim.strip(),
-            "evidence": (evidence or "").strip(),
+            "evidence": stored_evidence,
+            "evidence_receipt_id": evidence_receipt_id,
+            "evidence_integrity_bound": evidence_integrity_bound,
             "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
@@ -1668,24 +2421,30 @@ class FableSession:
         domain: str = "architecture"
     ) -> Dict[str, Any]:
         """Records a domain invariant with formal statement and proof."""
+        if not isinstance(domain, str):
+            raise ValueError("domain must be one of architecture, design, or coding")
         dom_clean = domain.strip().lower()
         if dom_clean not in ("architecture", "design", "coding"):
-            dom_clean = "architecture"
+            raise ValueError("domain must be one of architecture, design, or coding")
 
-        if not invariant_name or not invariant_name.strip():
-            raise ValueError("Invariant name cannot be empty.")
-        if not formal_statement or not formal_statement.strip():
-            raise ValueError("Formal statement cannot be empty.")
-        if not proof_or_rationale or not proof_or_rationale.strip():
-            raise ValueError("Invariant proof or rationale cannot be empty.")
+        name_clean = _require_substantive_text(invariant_name, "invariant_name", minimum=3)
+        statement_clean = _require_substantive_text(formal_statement, "formal_statement", minimum=8)
+        proof_clean = _require_substantive_text(proof_or_rationale, "proof_or_rationale", minimum=8)
+        # A gate-worthy invariant must state a checkable relation or bound;
+        # arbitrary English such as "the system is correct" is not a formal
+        # contract.  The proof must also refer to an actual reasoning method.
+        if not (re.search(r"(?:<=|>=|==|!=|\bmust\b|\bshall\b|\bwhen\b|\bif\b.*\bthen\b|\bforall\b|\b∀\b|\balways\b|\bnever\b)", statement_clean, re.I)):
+            raise ValueError("formal_statement must contain a checkable relation, bound, or temporal obligation")
+        if not re.search(r"(?:because|enforc|invariant|proof|induct|bound|check|test|guarantee|derive|ensur|case|since|via)", proof_clean, re.I):
+            raise ValueError("proof_or_rationale must explain how the invariant is established")
 
         inv_id = f"inv_{len(self.invariants) + 1:03d}"
         inv = {
             "id": inv_id,
-            "name": invariant_name.strip(),
+            "name": name_clean,
             "domain": dom_clean,
-            "formal_statement": formal_statement.strip(),
-            "proof_or_rationale": (proof_or_rationale or "").strip(),
+            "formal_statement": statement_clean,
+            "proof_or_rationale": proof_clean,
             "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
@@ -1702,87 +2461,24 @@ class FableSession:
         artifact_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """Logs a structured rethink-refine cycle to continuously deepen cognitive quality."""
-        if not refinement_type or not str(refinement_type).strip():
-            raise ValueError("Refinement type cannot be empty.")
-        if not focus_area or not str(focus_area).strip():
-            raise ValueError("Focus area cannot be empty.")
-        if not critique_or_bottleneck or not str(critique_or_bottleneck).strip():
-            raise ValueError("Critique or bottleneck cannot be empty.")
-        if not architectural_refinement or not str(architectural_refinement).strip():
-            raise ValueError("Architectural refinement cannot be empty.")
+        refinement_type_clean = _require_substantive_text(refinement_type, "refinement_type", minimum=3)
+        focus_clean = _require_substantive_text(focus_area, "focus_area")
+        critique_clean = _require_substantive_text(critique_or_bottleneck, "critique_or_bottleneck")
+        refinement_clean = _require_substantive_text(architectural_refinement, "architectural_refinement")
 
         cycle_num = len(self.refinement_cycles) + 1
         entry = {
             "cycle_number": cycle_num,
-            "refinement_type": str(refinement_type).strip(),
-            "focus_area": str(focus_area).strip(),
-            "critique_or_bottleneck": str(critique_or_bottleneck).strip(),
-            "architectural_refinement": str(architectural_refinement).strip(),
+            "refinement_type": refinement_type_clean,
+            "focus_area": focus_clean,
+            "critique_or_bottleneck": critique_clean,
+            "architectural_refinement": refinement_clean,
             "terminal_probe_results": (terminal_probe_results or "").strip() if terminal_probe_results else None,
             "artifact_path": (artifact_path or "").strip() if artifact_path else None,
             "timestamp": self._wall_clock(),
             "phase": self.active_phase
         }
         self.refinement_cycles.append(entry)
-
-        # Update Session Active Free Energy F
-        fe_engine = ActiveInferenceEngine(create_default_architecture_pomdp())
-        obs = "HIGH_THROUGHPUT_CLEAN" if terminal_probe_results and any(
-            kw in terminal_probe_results.lower() for kw in ("pass", "ok", "success")
-        ) else "LOCK_CONTENTION_WARN"
-        f_val, comp, acc = fe_engine.update_beliefs(obs)
-        self.active_free_energy = {
-            "variational_free_energy_f": round(f_val, 4),
-            "complexity_kl": round(comp, 4),
-            "accuracy_log_likelihood": round(acc, 4),
-            "observation": obs,
-            "cycle_number": cycle_num,
-            "timestamp": self._wall_clock(),
-        }
-
-        # Update Causal DAG nodes (initialize default DAG if none exists)
-        if not self.system3_causal_graphs:
-            self.system3_causal_graphs.append({
-                "dag": {"name": f"Session_{self.session_name}_DAG", "nodes": [], "edges": []},
-                "nodes": [],
-                "edges": [],
-                "topological_order": [],
-                "timestamp": self._wall_clock(),
-            })
-        if self.system3_causal_graphs:
-            causal_node_id = f"refine_cycle_{cycle_num}"
-            causal_node_data = {
-                "node_id": causal_node_id,
-                "name": f"Refinement {cycle_num}: {focus_area}",
-                "node_type": "INTERVENTION",
-                "value": 1.0,
-                "parents": [f"refine_cycle_{cycle_num - 1}"] if cycle_num > 1 else [],
-                "metadata": {
-                    "refinement_type": refinement_type,
-                    "focus_area": focus_area,
-                    "critique": critique_or_bottleneck,
-                }
-            }
-            latest_graph = self.system3_causal_graphs[-1]
-            if "nodes" in latest_graph and isinstance(latest_graph["nodes"], list):
-                if not any(n.get("node_id") == causal_node_id for n in latest_graph["nodes"] if isinstance(n, dict)):
-                    latest_graph["nodes"].append(causal_node_data)
-            inner_dag = latest_graph.get("dag", latest_graph)
-            nodes = inner_dag.setdefault("nodes", [])
-            if isinstance(nodes, list):
-                if not any(n.get("node_id") == causal_node_id for n in nodes if isinstance(n, dict)):
-                    nodes.append(causal_node_data)
-            elif isinstance(nodes, dict):
-                nodes[causal_node_id] = causal_node_data
-            if cycle_num > 1:
-                prev_id = f"refine_cycle_{cycle_num - 1}"
-                edge_data = {"source": prev_id, "target": causal_node_id, "weight": 1.0, "mechanism": "refinement_evolution"}
-                if "edges" in latest_graph and isinstance(latest_graph["edges"], list):
-                    latest_graph["edges"].append(edge_data)
-                edges = inner_dag.setdefault("edges", [])
-                if isinstance(edges, list):
-                    edges.append(edge_data)
-
         return entry
 
     @staticmethod
@@ -1871,7 +2567,18 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.2.3",
+            "version": "1.2.0",
+            "control_plane": copy.deepcopy(self.control_plane),
+            "security_model": {
+                "control_plane_profile": CONTROL_PLANE_PROFILE,
+                "host_enforcement": self.host_enforcement,
+                "host_tools_enforced": self.host_tools_enforced,
+                "interruptive_control": INTERRUPTIVE_CONTROL,
+                "cas_namespace": "session_derived",
+                "receipt_authority": "external_host_only",
+            },
+            "cas_namespace": self.cas_namespace,
+            "objective_authority": "session_local",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,
@@ -1890,58 +2597,54 @@ class FableSession:
             "epistemic_ledger": self.epistemic_ledger,
             "invariants": self.invariants,
             "refinement_cycles": self.refinement_cycles,
+            "delegation_contracts": self.delegation_contracts,
             "phase_history": self.phase_history,
             "unlock_details": self.unlock_details,
-            "system3_causal_graphs": self.system3_causal_graphs,
-            "system3_syntheses": self.system3_syntheses,
-            "system3_gene_pools": self.system3_gene_pools,
-            "system3_axioms": self.system3_axioms,
-            "system3_reflections": self.system3_reflections,
-            "system3_orchestrations": self.system3_orchestrations,
-            "system3_hyperbolic_embeddings": self.system3_hyperbolic_embeddings,
-            "system3_kripke_verifications": self.system3_kripke_verifications,
-            "system3_active_inferences": self.system3_active_inferences,
-            "system3_proof_oracle_verifications": self.system3_proof_oracle_verifications,
-            "active_free_energy": self.active_free_energy,
-            "active_kripke_safety": self.active_kripke_safety,
-            "active_biases": self.active_biases,
+            "host_verifications": copy.deepcopy(self.host_verifications),
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FableSession":
+    def from_dict(cls, data: Dict[str, Any], *, expected_name: str | None = None,
+                  expected_namespace: str | None = None) -> "FableSession":
         """Restore data without importing persisted execution authority.
 
         Persistence is an interchange format, not an authority token.  The
-        deadline, phase, evidence, invariants, and unlock flags are all treated
-        as untrusted; a restored process starts a fresh locked authority clock.
-        Historical data remains visible, but cannot satisfy fresh gates.
+        filename, session name, session ID, and derived CAS namespace are one
+        binding.  All are checked before any restored object is made available;
+        this prevents copying a valid session file into another name from
+        granting access to the original session's CAS namespace.
         """
+        if not isinstance(data, dict):
+            raise ValueError("persisted session must be an object")
+        persisted_name = _validate_session_name(data.get("session_name", ""))
+        if expected_name is not None and persisted_name != _validate_session_name(expected_name):
+            raise ValueError("persisted session name does not match its filename")
+        persisted_id = _validate_session_id(data.get("session_id"))
+        derived_namespace = _cas_namespace_for_session(persisted_id)
+        persisted_namespace = data.get("cas_namespace")
+        if persisted_namespace != derived_namespace:
+            raise ValueError("persisted CAS namespace is not bound to session_id")
+        if expected_namespace is not None and persisted_namespace != expected_namespace:
+            raise ValueError("persisted CAS namespace does not match requested capability")
         budget = data.get("time_budget_minutes", 60.0)
-        session = cls(session_name=data["session_name"], objective=data.get("objective", ""),
-                      time_budget_minutes=budget, session_id=data.get("session_id"))
+        session = cls(session_name=persisted_name, objective=data.get("objective", ""),
+                      time_budget_minutes=budget, session_id=persisted_id)
         session._restored_untrusted = True
+        # Never import strict control-plane authority from a file. A restored
+        # session starts a fresh, host-attested FSM; this is an explicit safe
+        # compatibility path, not a persisted authorization token.
+        session.control_plane = cls._new_control_plane_state()
+        session.host_verifications = {}
         session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
         session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
         session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
+        session.delegation_contracts = []
         session.active_phase = PHASES[0]
         session.phase_history = [{"phase": PHASES[0], "entered_at": session.start_time,
                                  "summary": "Restored in safe locked state; fresh gates required"}]
         session.execution_locked = True
         session.can_execute_code = False
         session.unlock_details = None
-        session.system3_causal_graphs = data.get("system3_causal_graphs", [])
-        session.system3_syntheses = data.get("system3_syntheses", [])
-        session.system3_gene_pools = data.get("system3_gene_pools", [])
-        session.system3_axioms = data.get("system3_axioms", [])
-        session.system3_reflections = data.get("system3_reflections", [])
-        session.system3_orchestrations = data.get("system3_orchestrations", [])
-        session.system3_hyperbolic_embeddings = data.get("system3_hyperbolic_embeddings", [])
-        session.system3_kripke_verifications = data.get("system3_kripke_verifications", [])
-        session.system3_active_inferences = data.get("system3_active_inferences", [])
-        session.system3_proof_oracle_verifications = data.get("system3_proof_oracle_verifications", [])
-        session.active_free_energy = data.get("active_free_energy")
-        session.active_kripke_safety = data.get("active_kripke_safety")
-        session.active_biases = data.get("active_biases", [])
         return session
 
     def save(self, target_path: Optional[Path] = None) -> Path:
@@ -2021,7 +2724,11 @@ def get_or_load_session(session_name: str) -> FableSession:
     """Retrieves session from memory or loads from disk if exists."""
     clean_name = _validate_session_name(session_name)
     if clean_name in ACTIVE_SESSIONS:
-        return ACTIVE_SESSIONS[clean_name]
+        active = ACTIVE_SESSIONS[clean_name]
+        if (active.session_name != clean_name or
+                active.cas_namespace != _cas_namespace_for_session(active.session_id)):
+            raise RuntimeError("active session identity binding is invalid")
+        return active
 
     file_path = SESSIONS_DIR / f"{clean_name}.json"
     if file_path.exists() or file_path.is_symlink():
@@ -2029,7 +2736,10 @@ def get_or_load_session(session_name: str) -> FableSession:
             _safe_session_file(file_path)
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            session = FableSession.from_dict(data)
+            session = FableSession.from_dict(
+                data, expected_name=clean_name,
+                expected_namespace=_cas_namespace_for_session(
+                    _validate_session_id(data.get("session_id"))))
             ACTIVE_SESSIONS[clean_name] = session
             return session
         except Exception as e:
@@ -2039,14 +2749,275 @@ def get_or_load_session(session_name: str) -> FableSession:
     raise ValueError(f"Session '{clean_name}' does not exist. Call 'create_session' first.")
 
 
+def register_host_receipt(session_name: str, receipt: Dict[str, Any]) -> Dict[str, Any]:
+    """Host-only receipt registration hook for adapters and brokers."""
+    return get_or_load_session(session_name).register_host_receipt(receipt)
+
+
+def register_host_verification(session_name: str, verification_id: str,
+                               receipt: Dict[str, Any]) -> Dict[str, Any]:
+    """Broker-only final verification hook; never exposed as an MCP action."""
+    return get_or_load_session(session_name).register_host_verification(verification_id, receipt)
+
+
+register_broker_verification = register_host_verification
+
+
+def control_plane_capabilities() -> Dict[str, Any]:
+    """Machine-readable strict profile and honest enforcement declaration."""
+    return {
+        "profile": CONTROL_PLANE_PROFILE,
+        "tool": CONTROL_PLANE_TOOL_NAME,
+        "actions": list(CONTROL_PLANE_ACTIONS),
+        "state_machine": list(CONTROL_PLANE_STATES),
+        "invariants": [
+            "observe must precede record_prediction",
+            "record_prediction must precede mutating propose_action",
+            "record_outcome must reference a successful host receipt bound to the proposed capability and input_hash",
+            "outcome payload must equal the bound receipt output",
+            "outcome and receipt must precede request_verification",
+            "verification must be a verifier receipt bound to the requested outcome and checks",
+            "finalize requires that bound host/broker verification; unrelated successful receipts are rejected",
+        ],
+        "enforcement": {
+            "control_plane": "enforced",
+            "sequence_invariants": "enforced",
+            "session_binding": "enforced",
+            "idempotency": "enforced",
+            "host_tools": "advisory_external_host_required",
+            "native_tools": "not_controlled_unless_routed_through_broker",
+            "receipt_authority": "external_host_or_broker_only",
+        },
+        "legacy": {
+            "tool": "fable_session",
+            "mode": "explicit_compatibility_path",
+            "compatibility_mode": "legacy_v1",
+        },
+    }
+
+
+def _session_for_control_plane(arguments: Dict[str, Any]) -> FableSession:
+    action = arguments.get("action")
+    supplied_id = arguments.get("session_id")
+    session_name = arguments.get("session_name")
+    if supplied_id is not None and (not isinstance(supplied_id, str) or not SESSION_ID_PATTERN.fullmatch(supplied_id)):
+        raise ControlPlaneError("invalid_session_binding", "session_id must be a valid session identifier")
+    if session_name is not None and (not isinstance(session_name, str) or not session_name.strip()):
+        raise ControlPlaneError("invalid_session_binding", "session_name must be a non-empty string")
+    if supplied_id:
+        matches = [s for s in ACTIVE_SESSIONS.values() if s.session_id == supplied_id]
+        if not matches and session_name:
+            candidate = get_or_load_session(session_name.strip())
+            matches = [candidate] if candidate.session_id == supplied_id else []
+        if not matches:
+            raise ControlPlaneError("unknown_session", "session_id is not bound to an active session")
+        session = matches[0]
+        if session_name and session.session_name != session_name.strip():
+            raise ControlPlaneError("invalid_session_binding", "session_name does not match session_id")
+        return session
+    if action != "observe":
+        raise ControlPlaneError("session_binding_required", "strict actions require session_id; observe may create a session with session_name")
+    if not session_name:
+        raise ControlPlaneError("session_binding_required", "observe requires session_name when creating a strict session")
+    clean_name = _validate_session_name(session_name)
+    if clean_name in ACTIVE_SESSIONS:
+        raise ControlPlaneError("session_already_exists", "observe cannot create a second strict session with this name")
+    path = SESSIONS_DIR / f"{clean_name}.json"
+    if path.exists() or path.is_symlink():
+        raise ControlPlaneError("session_already_exists", "session_name already exists; use its bound session_id")
+    objective = arguments.get("objective")
+    if not isinstance(objective, str):
+        raise ControlPlaneError("objective_required", "observe session creation requires objective")
+    objective = _require_substantive_text(objective, "objective")
+    budget = arguments.get("time_budget_minutes", 60.0)
+    try:
+        session = FableSession(clean_name, objective, budget)
+    except (TypeError, ValueError) as exc:
+        raise ControlPlaneError("invalid_arguments", str(exc)) from exc
+    ACTIVE_SESSIONS[clean_name] = session
+    return session
+
+
+def handle_fable_control_plane(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Strict typed MCP control-plane entrypoint with structured errors."""
+    if not isinstance(arguments, dict):
+        return {"ok": False, "profile": CONTROL_PLANE_PROFILE,
+                "error": {"code": "invalid_arguments", "message": "arguments must be an object"}}
+    if arguments.get("action") in CONTROL_PLANE_CAPABILITY_ACTIONS:
+        allowed = {"action", "profile"}
+        forbidden = {"tag", "proven", "final_authorized", "authorized", "authorization", "approval"}
+        if forbidden.intersection(arguments):
+            return {"ok": False, "profile": CONTROL_PLANE_PROFILE, "action": "capabilities",
+                    "enforcement": control_plane_capabilities()["enforcement"],
+                    "error": {"code": "model_authorization_forbidden", "message": "model-supplied authorization fields are not accepted"}}
+        extras = sorted(set(arguments) - allowed)
+        if extras:
+            return {"ok": False, "profile": CONTROL_PLANE_PROFILE, "action": "capabilities",
+                    "enforcement": control_plane_capabilities()["enforcement"],
+                    "error": {"code": "unknown_field", "message": "capabilities rejects unknown fields: " + ", ".join(extras)}}
+        if arguments.get("profile") not in (None, CONTROL_PLANE_PROFILE):
+            return {"ok": False, "profile": CONTROL_PLANE_PROFILE,
+                    "error": {"code": "profile_mismatch", "message": f"profile must be {CONTROL_PLANE_PROFILE!r}"}}
+        return {"ok": True, "profile": CONTROL_PLANE_PROFILE, "action": "capabilities",
+                "capabilities": control_plane_capabilities(), "enforcement": control_plane_capabilities()["enforcement"]}
+    action = arguments.get("action")
+    try:
+        if action not in CONTROL_PLANE_ACTIONS:
+            raise ControlPlaneError("unknown_action", f"action must be one of {', '.join(CONTROL_PLANE_ACTIONS)}")
+        if arguments.get("profile") not in (None, CONTROL_PLANE_PROFILE):
+            raise ControlPlaneError("profile_mismatch", f"profile must be {CONTROL_PLANE_PROFILE!r}")
+        forbidden = {"tag", "proven", "final_authorized", "authorized", "authorization", "approval"}
+        supplied = forbidden.intersection(arguments)
+        if supplied:
+            raise ControlPlaneError("model_authorization_forbidden", "model-supplied PROVEN/final authorization fields are not accepted")
+        session = _session_for_control_plane(arguments)
+        response = session.strict_control_plane(arguments)
+        session.save()
+        return response
+    except ControlPlaneError as exc:
+        session_id = arguments.get("session_id") if isinstance(arguments.get("session_id"), str) else None
+        current_state = "unknown"
+        if session_id:
+            for candidate in ACTIVE_SESSIONS.values():
+                if candidate.session_id == session_id:
+                    current_state = candidate.control_plane.get("state", "unknown")
+                    break
+        return {"ok": False, "profile": CONTROL_PLANE_PROFILE, "action": action,
+                "session_id": session_id, "state": current_state,
+                "enforcement": control_plane_capabilities()["enforcement"],
+                "error": {"code": exc.code, "message": exc.message, "details": exc.details}}
+    except (ValueError, TypeError) as exc:
+        return {"ok": False, "profile": CONTROL_PLANE_PROFILE, "action": action,
+                "enforcement": control_plane_capabilities()["enforcement"],
+                "error": {"code": "invalid_arguments", "message": str(exc), "details": {}}}
+
+
+SESSION_CAS_ENGINES: Dict[str, FableCompress] = {}
+
+
+def _session_cas_engine(session: FableSession) -> FableCompress:
+    """Return a CAS engine confined to this session's capability namespace."""
+    if session.cas_namespace != _cas_namespace_for_session(session.session_id):
+        raise PermissionError("session CAS capability binding is invalid")
+    engine = SESSION_CAS_ENGINES.get(session.session_id)
+    if engine is None:
+        engine = FableCompress(root_dir=FABLE_CAS_DIR, namespace=session.cas_namespace)
+        SESSION_CAS_ENGINES[session.session_id] = engine
+    return engine
+
+
+CAS_ACTIONS = {"compress_payload", "decompress_payload", "view_slice",
+               "accumulate_payload", "flush_accumulator", "get_compression_stats"}
+
+
+ACTION_ALIASES = {
+    "init": "create_session", "create": "create_session",
+    "update_timer": "set_timer", "timer": "set_timer",
+    "telemetry": "get_status", "status": "get_status",
+    "next_phase": "advance_phase", "advance": "advance_phase",
+    "log_item": "log_epistemic_item", "epistemic_log": "log_epistemic_item",
+    "add_invariant": "record_invariant", "invariant": "record_invariant",
+    "record_refinement": "log_refinement_cycle", "refine": "log_refinement_cycle",
+    "unlock": "unlock_execution", "save_session": "checkpoint_session",
+    "checkpoint": "checkpoint_session", "load_session": "restore_session",
+    "restore": "restore_session", "load": "restore_session", "list": "list_sessions",
+    "compile_contract": "compile_delegation_contract", "validate_contract": "compile_delegation_contract",
+    "compress": "compress_payload", "cas_put": "compress_payload", "cas_store": "compress_payload",
+    "decompress": "decompress_payload", "cas_get": "decompress_payload", "cas_read": "decompress_payload",
+    "cas_slice": "view_slice", "slice": "view_slice", "accumulate": "accumulate_payload",
+    "cas_accumulate": "accumulate_payload", "flush_cas": "flush_accumulator", "cas_flush": "flush_accumulator",
+    "compression_stats": "get_compression_stats", "cas_stats": "get_compression_stats",
+}
+ACTION_NAMES = {
+    "create_session", "set_timer", "get_status", "advance_phase", "log_epistemic_item",
+    "record_invariant", "log_refinement_cycle", "unlock_execution", "checkpoint_session",
+    "restore_session", "list_sessions", "compile_delegation_contract", "compress_payload",
+    "decompress_payload", "view_slice", "accumulate_payload", "flush_accumulator",
+    "get_compression_stats",
+}
+ACTION_REQUIRED = {
+    "create_session": ("session_name", "objective"), "set_timer": ("session_name", "time_budget_minutes"),
+    "get_status": ("session_name",), "advance_phase": ("session_name", "next_phase", "phase_summary"),
+    "log_epistemic_item": ("session_name", "tag", "claim"), "record_invariant": ("session_name", "invariant_name", "formal_statement", "proof_or_rationale"),
+    "log_refinement_cycle": ("session_name", "refinement_type", "focus_area", "critique_or_bottleneck", "architectural_refinement"),
+    "unlock_execution": ("session_name", "rationale"), "checkpoint_session": ("session_name",),
+    "restore_session": ("session_name",), "compile_delegation_contract": ("subagent_prompt",),
+    "compress_payload": ("content",), "decompress_payload": ("cas_ref",), "view_slice": ("cas_ref",),
+    "accumulate_payload": ("payload",),
+}
+ACTION_STRING_FIELDS = {"action", "compatibility_mode", "session_name", "objective", "next_phase", "phase_summary", "tag", "claim", "invariant_name", "formal_statement", "proof_or_rationale", "refinement_type", "focus_area", "critique_or_bottleneck", "architectural_refinement", "terminal_probe_results", "artifact_path", "rationale", "subagent_prompt", "prompt", "contract", "content", "payload", "cas_ref", "ref_or_hash", "label"}
+
+
+def _validate_tool_arguments(arguments: Any) -> Tuple[Optional[str], Optional[str]]:
+    if not isinstance(arguments, dict):
+        return None, "arguments must be an object"
+    try:
+        _reject_non_finite(arguments, path="arguments")
+        argument_bytes = len(json.dumps(arguments, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        return None, str(exc) if isinstance(exc, ValueError) else "arguments must contain JSON-compatible values"
+    if argument_bytes > MAX_EVIDENCE_BYTES:
+        return None, "arguments exceed maximum size"
+    raw_action = arguments.get("action")
+    if not isinstance(raw_action, str) or not raw_action.strip():
+        return None, "'action' must be a non-empty string"
+    if "compatibility_mode" in arguments and arguments.get("compatibility_mode") != "legacy_v1":
+        return None, "'compatibility_mode' must be 'legacy_v1' when supplied"
+    action = ACTION_ALIASES.get(raw_action.strip().lower(), raw_action.strip().lower())
+    if action not in ACTION_NAMES:
+        return action, f"Unknown action '{action}'"
+    for field in ACTION_STRING_FIELDS:
+        if field in arguments and not isinstance(arguments[field], str):
+            if field == "phase_summary" and isinstance(arguments[field], dict):
+                continue
+            return action, f"'{field}' must be a string"
+    if "phase_evidence" in arguments and not isinstance(arguments["phase_evidence"], (dict, str)):
+        return action, "'phase_evidence' must be an object"
+    if "time_budget_minutes" in arguments:
+        value = arguments["time_budget_minutes"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            return action, "'time_budget_minutes' must be a finite number"
+    for field in ("start_line", "end_line"):
+        if field in arguments and (isinstance(arguments[field], bool) or not isinstance(arguments[field], int)):
+            return action, f"'{field}' must be an integer"
+    for field in ("include_line_numbers", "force_flush"):
+        if field in arguments and not isinstance(arguments[field], bool):
+            return action, f"'{field}' must be a boolean"
+    if "metadata" in arguments and not isinstance(arguments["metadata"], (dict, str)):
+        return action, "'metadata' must be an object or JSON string"
+    for field in ACTION_REQUIRED.get(action, ()):
+        # Compatibility aliases satisfy canonical requirements.
+        if field not in arguments or (isinstance(arguments[field], str) and not arguments[field].strip()):
+            if field == "content" and "payload" in arguments: continue
+            if field == "payload" and "content" in arguments: continue
+            if field == "subagent_prompt" and any(k in arguments for k in ("prompt", "contract")): continue
+            return action, f"'{field}' is required"
+    if action == "log_epistemic_item" and str(arguments.get("tag", "")).upper() == "PROVEN" and "evidence" not in arguments:
+        return action, "PROVEN claims require typed receipt evidence"
+    if action in CAS_ACTIONS and (not isinstance(arguments.get("session_name"), str)
+                                  or not arguments.get("session_name", "").strip()):
+        return action, "'session_name' is required to bind CAS access to a session capability namespace"
+    return action, None
+
+
 def handle_fable_session(arguments: Dict[str, Any]) -> str:
     """Main dispatch handler for fable_session tool actions."""
     try:
-        action = arguments.get("action", "").strip().lower()
-        session_name = arguments.get("session_name", "").strip()
-
-        if not action:
-            return "Error: Missing required parameter 'action'."
+        action, validation_error = _validate_tool_arguments(arguments)
+        if validation_error:
+            return f"Error: Invalid arguments: {validation_error}"
+        action = action or ""
+        session_name = arguments.get("session_name", "")
+        session_name = session_name.strip() if isinstance(session_name, str) else ""
+        # CAS actions are always scoped to a live session.  The derived
+        # namespace prevents a valid hash from one session being a capability
+        # to read another session's objects.
+        cas_engine = None
+        if action in CAS_ACTIONS:
+            if not session_name:
+                return "Error: 'session_name' is required to bind CAS access to a session capability namespace."
+            cas_session = get_or_load_session(session_name)
+            cas_engine = _session_cas_engine(cas_session)
 
         # 1. CREATE SESSION
         if action in ("create_session", "init", "create"):
@@ -2076,9 +3047,10 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Time Budget**: `{session.time_budget_minutes}` minutes ({tel['remaining_formatted']})\n"
                 f"- **Active Phase**: `{session.active_phase}`\n"
                 f"- **Execution Lock**: `LOCKED (can_execute_code: False)` 🛑\n"
-                f"- **Cognitive Gates**: 0/2 [PROVEN] items, 0/1 Invariant recorded\n\n"
+                f"- **Host Enforcement**: `EXTERNAL HOST REQUIRED` (V1 does not sandbox or authorize host tools)\n"
+                f"- **Cognitive Gates**: 0/2 receipt-bound [PROVEN] items, 0/1 Invariant recorded\n\n"
                 f"> [!IMPORTANT]\n"
-                f"> Anti-Rush Lockout is ACTIVE. Proceed with epistemic grounding, research, and invariant modeling before requesting execution unlock."
+                f"> Anti-Rush session gate is ACTIVE (advisory to the model; it does not sandbox or authorize host tools). Proceed with epistemic grounding, research, and invariant modeling before requesting execution unlock."
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
@@ -2141,24 +3113,17 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 ref_lines.append(f"- **Cycle #{ref['cycle_number']}** `[{ref['refinement_type'].upper()}]` ({ref['focus_area']}): {ref['architectural_refinement']}")
             ref_preview = "\n".join(ref_lines) if ref_lines else "- No refinement cycles recorded yet."
 
-            cog_state = tel.get("system3_cognitive_state", {})
             return (
                 f"### 📊 Fable Session Status & Telemetry (`{session.session_name}`)\n\n"
                 f"- **Objective**: {session.objective}\n"
                 f"- **Active Phase**: `{session.active_phase}` (Phase {tel['phase_index']}/{tel['total_phases']})\n"
                 f"- **Execution Lock**: {lock_badge}\n"
+                f"- **Host Enforcement**: `{tel['host_enforcement']}` (V1 does not sandbox or authorize host tools)\n"
                 f"- **Pacing**: `{tel['elapsed_formatted']}` elapsed / `{tel['pacing_remaining_formatted']}` remaining (`{tel['pacing_percentage']}` budget used)\n"
                 f"- **Authority**: `{tel['authority_remaining_formatted']}` remaining (immutable outer deadline)\n"
                 f"- **Epistemic Breakdown**: `{counts['proven']} PROVEN`, `{counts['hypothesis']} HYPOTHESIS`, `{counts['unknown']} UNKNOWN` (Total: `{counts['total']}`)\n"
                 f"- **Invariants Recorded**: `{tel['invariants_count']}`\n"
                 f"- **Refinement Cycles**: `{tel['refinement_count']}`\n\n"
-                f"#### 🧠 System 3 Meta-Cognitive State:\n"
-                f"- **Variational Free Energy $F$**: `{cog_state.get('free_energy_f', 'N/A')}` "
-                f"(Complexity $D_{{KL}}$: `{cog_state.get('complexity_kl', 'N/A')}`, Accuracy: `{cog_state.get('accuracy_log_likelihood', 'N/A')}`)\n"
-                f"- **Kripke Safety Invariant**: `{cog_state.get('kripke_safety_invariant', 'AG(safe) -> True')}`\n"
-                f"- **Active Biases Tracked**: `{cog_state.get('active_biases_count', 0)}`\n"
-                f"- **Contradiction Density**: `{cog_state.get('contradiction_density', 0.0)}`\n"
-                f"- **Hyperbolic Metric**: `{cog_state.get('hyperbolic_metric', {}).get('status', 'INITIALIZED')}`\n\n"
                 f"#### 🔍 Recent Epistemic Ledger Items:\n{ledger_preview}\n\n"
                 f"#### 📐 Invariants Specification:\n{inv_preview}\n\n"
                 f"#### 🔄 Recent Refinement Cycles:\n{ref_preview}"
@@ -2172,26 +3137,20 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             next_phase = arguments.get("next_phase", "").strip()
             if not next_phase:
                 return "Error: 'next_phase' is required for action 'advance_phase'."
-            phase_summary = arguments.get("phase_summary", "").strip() or "Advanced phase transition."
-
+            phase_summary = arguments.get("phase_summary", "")
+            if isinstance(phase_summary, dict):
+                raw_phase_evidence = phase_summary.get("evidence", arguments.get("phase_evidence"))
+                phase_summary = phase_summary.get("summary", "")
+            else:
+                raw_phase_evidence = arguments.get("phase_evidence")
+            if isinstance(raw_phase_evidence, str):
+                try:
+                    raw_phase_evidence = _strict_json_loads(raw_phase_evidence)
+                except Exception:
+                    return "Error: phase_evidence must be a JSON object"
             session = get_or_load_session(session_name)
-            tel = session.advance_phase(next_phase, phase_summary)
+            tel = session.advance_phase(next_phase, phase_summary, raw_phase_evidence)
             session.save()
-
-            cog_state = tel.get("system3_cognitive_state", {})
-            bias_lines = ""
-            if session.active_biases:
-                bias_items = "\n".join([f"  * ⚠️ **{b['bias_type']}** ({b['severity']}): {b['description']} -> *{b['mitigation_recommendation']}*" for b in session.active_biases])
-                bias_lines = f"\n- **Active Biases Intercepted** ({len(session.active_biases)}):\n{bias_items}"
-
-            sys3_advisory = (
-                f"\n\n### 🧠 System 3 Meta-Cognitive Advisory & Active Inference\n"
-                f"- **Live Free Energy $F$**: `{cog_state.get('free_energy_f', 'N/A')}` "
-                f"(Complexity $D_{{KL}}$: `{cog_state.get('complexity_kl', 'N/A')}`, Accuracy: `{cog_state.get('accuracy_log_likelihood', 'N/A')}`)\n"
-                f"- **Kripke Safety Invariant**: `{cog_state.get('kripke_safety_invariant', 'AG(safe) -> True')}`\n"
-                f"- **Contradiction Density**: `{cog_state.get('contradiction_density', 0.0)}`"
-                f"{bias_lines}"
-            )
 
             return (
                 f"### 🚀 Fable Phase Advanced Successfully\n\n"
@@ -2201,7 +3160,6 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Execution Status**: `{'LOCKED 🛑' if session.execution_locked else 'UNLOCKED 🟢'}`\n"
                 f"- **Pacing Remaining**: `{tel['pacing_remaining_formatted']}` (`{tel['pacing_percentage']}` used)\n"
                 f"- **Authority Remaining**: `{tel['authority_remaining_formatted']}`"
-                f"{sys3_advisory}"
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
@@ -2426,15 +3384,23 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                     f"> 4. `VerificationCommand: <exact CLI test command>`"
                 )
 
-            compiled_scaffold = parsed.get("compiled_prompt", prompt)
+            if session_name:
+                contract_session = get_or_load_session(session_name)
+                contract_session.delegation_contracts.append({
+                    "target_file": parsed.get("TargetFile"),
+                    "verification_command": parsed.get("VerificationCommand"),
+                    "prompt_hash": _canonical_hash(str(prompt)),
+                    "timestamp": contract_session._wall_clock(),
+                    "phase": contract_session.active_phase,
+                })
+                contract_session.save()
+
             return (
-                f"### ✅ Subagent Delegation Contract Compiled Successfully (with System 3 Micro-Scaffolds)\n\n"
+                f"### ✅ Subagent Delegation Contract Compiled Successfully\n\n"
                 f"- **Target File**: `{parsed.get('TargetFile', 'Declared')}`\n"
                 f"- **Verification Command**: `{parsed.get('VerificationCommand', 'Declared')}`\n"
                 f"- **Contract Status**: `100% BOUNDED & VALIDATED`\n"
-                f"- **System 3 Micro-Scaffolds**: `INJECTED (Kripke AG(safe), Causal do(·) bounds, TRIZ Transcendence, Regex Constraints)`\n"
                 f"- **Dispatch Readiness**: `READY_FOR_SUBAGENT_DISPATCH` 🚀\n\n"
-                f"```markdown\n{compiled_scaffold}\n```\n\n"
                 f"> [!TIP]\n"
                 f"> You may now dispatch a worker subagent (`type: self`) with this validated contract once execution is unlocked."
             )
@@ -2451,24 +3417,30 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             if len(content_text.encode("utf-8")) > MAX_CAS_OBJECT_BYTES:
                 return "Error: payload exceeds maximum CAS object size."
 
-            compressed_node = CAS_ENGINE.compress_payload_to_cas(content_text, label=label)
+            compressed_node = cas_engine.compress_payload_to_cas(content_text, label=label)
             raw_len = len(content_text)
-            raw_tokens = CAS_ENGINE.estimate_token_count(content_text)
+            raw_tokens = cas_engine.estimate_token_count(content_text)
             comp_repr = json.dumps(compressed_node, separators=(",", ":"))
-            comp_tokens = CAS_ENGINE.estimate_token_count(comp_repr)
-            ratio = CAS_ENGINE.calculate_token_ratio(content_text, comp_repr)
+            comp_tokens = cas_engine.estimate_token_count(comp_repr)
+            ratio = cas_engine.calculate_token_ratio(content_text, comp_repr)
 
-            invariant_met = ratio <= 0.003 if raw_len >= 10000 else True
-            badge = "✅ PASS (<= 0.003 tokens/char)" if invariant_met else f"⚠️ Ratio: {ratio:.6f} tokens/char"
+            heuristic_target_applies = raw_len >= 10000
+            heuristic_target_met = ratio <= 0.003 if heuristic_target_applies else False
+            if not heuristic_target_applies:
+                badge = "ℹ️ HEURISTIC NOT EVALUATED (payload is under 10,000 characters)"
+            elif heuristic_target_met:
+                badge = "✅ HEURISTIC TARGET MET (estimated ratio <= 0.003 tokens/char; not a guarantee)"
+            else:
+                badge = f"⚠️ HEURISTIC ESTIMATE ABOVE TARGET (estimated ratio: {ratio:.6f} tokens/char)"
 
             return (
                 f"### 🗜️ Fable CAS Payload Compressed\n\n"
                 f"- **CAS URI**: `{compressed_node['cas_ref']}`\n"
                 f"- **Line Count**: `{compressed_node['lines']}`\n"
-                f"- **Raw Size**: `{raw_len}` characters (~`{raw_tokens}` tokens)\n"
-                f"- **Compressed Reference Size**: `{len(comp_repr)}` characters (~`{comp_tokens}` tokens)\n"
-                f"- **Token Compression Ratio**: `{ratio:.6f}` tokens/char\n"
-                f"- **Invariant Status**: {badge}\n"
+                f"- **Raw Size**: `{raw_len}` characters (~`{raw_tokens}` estimated tokens)\n"
+                f"- **Compressed Reference Size**: `{len(comp_repr)}` characters (~`{comp_tokens}` estimated tokens)\n"
+                f"- **Estimated Token Compression Ratio (heuristic)**: `{ratio:.6f}` estimated tokens/char\n"
+                f"- **Heuristic Check (not a measured guarantee)**: {badge}\n"
                 f"- **JSON Descriptor**:\n```json\n{json.dumps(compressed_node, indent=2)}\n```\n\n"
                 f"> [!TIP]\n"
                 f"> Use action `view_slice` with `cas_ref` to inspect specific line windows without loading full payload."
@@ -2480,10 +3452,10 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             if not cas_ref:
                 return "Error: 'cas_ref' is required for action 'decompress_payload'."
             try:
-                text = CAS_ENGINE.cas_store.get_text(cas_ref, verify=True)
+                text = cas_engine.cas_store.get_text(cas_ref, verify=True)
                 if len(text.encode("utf-8")) > MAX_RPC_RESPONSE_BYTES // 2:
                     return "Error: decompressed response exceeds maximum size; use view_slice."
-                lines = CAS_ENGINE.slice_viewer.get_line_count(cas_ref)
+                lines = cas_engine.slice_viewer.get_line_count(cas_ref)
                 return (
                     f"### 📦 Fable CAS Payload Retrieved\n\n"
                     f"- **CAS URI**: `{cas_ref}`\n"
@@ -2504,10 +3476,10 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             include_line_numbers = bool(arguments.get("include_line_numbers", False))
 
             try:
-                slice_text = CAS_ENGINE.slice_viewer.view_slice(
+                slice_text = cas_engine.slice_viewer.view_slice(
                     cas_ref, start_line, end_line, include_line_numbers=include_line_numbers
                 )
-                total_lines = CAS_ENGINE.slice_viewer.get_line_count(cas_ref)
+                total_lines = cas_engine.slice_viewer.get_line_count(cas_ref)
                 return (
                     f"### 🔍 Fable CAS Slice View (`{start_line}` - `{end_line}` of `{total_lines}` lines)\n\n"
                     f"- **CAS URI**: `{cas_ref}`\n"
@@ -2527,19 +3499,19 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             metadata = arguments.get("metadata")
             if isinstance(metadata, str):
                 try:
-                    metadata = json.loads(metadata)
+                    metadata = _strict_json_loads(metadata)
                 except Exception:
                     metadata = {"raw": metadata}
             force_flush = bool(arguments.get("force_flush", False))
 
-            flushed = CAS_ENGINE.accumulator.add(str(payload), metadata=metadata, force_flush=force_flush)
-            stats = CAS_ENGINE.accumulator.get_stats()
+            flushed = cas_engine.accumulator.add(str(payload), metadata=metadata, force_flush=force_flush)
+            stats = cas_engine.accumulator.get_stats()
 
             flushed_str = "\n".join([f"- Flushed Composite Frame: `{u}`" for u in flushed]) if flushed else "- No frame flushed yet (buffering micro-payload)."
             return (
                 f"### 📥 Micro-Payload Ingested\n\n"
                 f"- **Buffered Items**: `{stats['currently_buffered_items']}`\n"
-                f"- **Buffered Chars**: `{stats['currently_buffered_chars']}` / `{CAS_ENGINE.accumulator.min_frame_size}` bytes threshold\n"
+                f"- **Buffered Chars**: `{stats['currently_buffered_chars']}` / `{cas_engine.accumulator.min_frame_size}` bytes threshold\n"
                 f"- **Total Ingested**: `{stats['total_payloads_ingested']}`\n"
                 f"- **Total Frames Flushed**: `{stats['total_frames_flushed']}`\n\n"
                 f"{flushed_str}"
@@ -2547,8 +3519,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 
         # 17. FLUSH ACCUMULATOR
         elif action in ("flush_accumulator", "flush_cas", "cas_flush"):
-            flushed = CAS_ENGINE.accumulator.flush()
-            stats = CAS_ENGINE.accumulator.get_stats()
+            flushed = cas_engine.accumulator.flush()
+            stats = cas_engine.accumulator.get_stats()
             if flushed:
                 flushed_str = "\n".join([f"- Flushed Frame: `{u}`" for u in flushed])
                 return (
@@ -2565,764 +3537,20 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 
         # 18. GET COMPRESSION STATS
         elif action in ("get_compression_stats", "compression_stats", "cas_stats"):
-            stats = CAS_ENGINE.accumulator.get_stats()
+            stats = cas_engine.accumulator.get_stats()
+            quota = cas_engine.cas_store.quota_stats()
             return (
                 f"### 📊 Fable Token Compression Subsystem Telemetry\n\n"
-                f"- **CAS Storage Root**: `{CAS_ENGINE.cas_store.root_dir}`\n"
-                f"- **Memory Cache Capacity**: `{CAS_ENGINE.cas_store.cache.capacity}` entries (Current: `{len(CAS_ENGINE.cas_store.cache)}`)\n"
+                f"- **CAS Capability Namespace**: `{quota['namespace']}`\n"
+                f"- **CAS Storage Root**: `{cas_engine.cas_store.root_dir}`\n"
+                f"- **Namespace Quota**: `{quota['bytes']}` / `{quota['max_bytes']}` bytes, `{quota['objects']}` / `{quota['max_objects']}` objects\n"
+                f"- **Memory Cache Capacity**: `{cas_engine.cas_store.cache.capacity}` entries (Current: `{len(cas_engine.cas_store.cache)}`)\n"
                 f"- **Micro-Payloads Ingested**: `{stats['total_payloads_ingested']}`\n"
                 f"- **Composite Frames Flushed**: `{stats['total_frames_flushed']}`\n"
                 f"- **Total Raw Characters**: `{stats['total_raw_chars']}`\n"
                 f"- **Total CAS Bytes Written**: `{stats['total_cas_bytes_written']}`\n"
                 f"- **Currently Buffered Items**: `{stats['currently_buffered_items']}` (`{stats['currently_buffered_chars']}` chars)\n"
-                f"- **Token Compression Invariant**: `<= 0.003 tokens/character`"
-            )
-
-        # 19. SYSTEM 3: DIALECTICAL SYNTHESIS
-        elif action in ("system3_dialectical_synthesis", "dialectical_synthesis", "triz_synthesis", "synthesis"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_dialectical_synthesis'."
-            thesis_title = arguments.get("thesis_title") or arguments.get("title") or "Architectural Thesis"
-            thesis_desc = arguments.get("thesis_description") or arguments.get("description") or arguments.get("thesis") or "Primary architectural candidate."
-            antithesis_title = arguments.get("antithesis_title") or arguments.get("critique_title") or arguments.get("critique") or "Adversarial Critique"
-
-            raw_contradictions = arguments.get("contradictions") or arguments.get("contradiction_list") or []
-            parsed_contradictions = []
-            if isinstance(raw_contradictions, str):
-                try:
-                    loaded = json.loads(raw_contradictions)
-                    if isinstance(loaded, list):
-                        raw_contradictions = loaded
-                    elif isinstance(loaded, dict):
-                        raw_contradictions = [loaded]
-                except Exception:
-                    raw_contradictions = [
-                        {"improving_parameter": "performance", "worsening_parameter": "safety", "description": line.strip(), "severity": 0.7}
-                        for line in raw_contradictions.splitlines() if line.strip()
-                    ]
-
-            if isinstance(raw_contradictions, list):
-                for idx, c in enumerate(raw_contradictions):
-                    if isinstance(c, dict):
-                        parsed_contradictions.append(Contradiction(
-                            contradiction_id=c.get("contradiction_id", f"c_{idx+1:03d}"),
-                            improving_parameter=c.get("improving_parameter", "performance"),
-                            worsening_parameter=c.get("worsening_parameter", "safety"),
-                            description=c.get("description", "Architectural trade-off"),
-                            severity=float(c.get("severity", 0.7)),
-                        ))
-                    elif isinstance(c, str):
-                        parsed_contradictions.append(Contradiction(
-                            contradiction_id=f"c_{idx+1:03d}",
-                            improving_parameter="performance",
-                            worsening_parameter="safety",
-                            description=c,
-                            severity=0.7,
-                        ))
-
-            failure_modes = arguments.get("failure_modes") or []
-            if isinstance(failure_modes, str):
-                try:
-                    failure_modes = json.loads(failure_modes)
-                except Exception:
-                    failure_modes = [f.strip() for f in failure_modes.splitlines() if f.strip()]
-
-            thesis = ThesisCandidate(
-                thesis_id=f"th_{session_name}_{int(time.time()*1000)%10000}",
-                title=thesis_title,
-                description=thesis_desc,
-            )
-            critique = AntithesisCritique(
-                critique_id=f"cr_{session_name}_{int(time.time()*1000)%10000}",
-                thesis_id=thesis.thesis_id,
-                title=antithesis_title,
-                contradictions=parsed_contradictions,
-                failure_modes=failure_modes if isinstance(failure_modes, list) else [str(failure_modes)],
-                severity_score=float(arguments.get("severity_score", 0.75)),
-            )
-
-            max_rounds = int(arguments.get("max_debate_rounds", 4))
-            threshold = float(arguments.get("target_residual_threshold", 0.15))
-
-            synthesizer = DialecticalSynthesizer()
-            synthesis = synthesizer.synthesize(
-                thesis, critique, max_debate_rounds=max_rounds, target_residual_threshold=threshold
-            )
-
-            session = get_or_load_session(session_name)
-            session.system3_syntheses.append(synthesis.to_dict())
-
-            session.log_refinement_cycle(
-                refinement_type="system3_dialectical_synthesis",
-                focus_area=f"{thesis_title} vs {antithesis_title}",
-                critique_or_bottleneck=f"Contradictions: {len(parsed_contradictions)} parameter conflicts analyzed.",
-                architectural_refinement=synthesis.pareto_improvement_claim,
-            )
-            session.save()
-
-            principles_list = "\n".join([f"- **TRIZ Principle #{p.number} ({p.name})**: {p.description}" for p in synthesis.transcended_principles]) or "- No principles transcended."
-            contra_list = "\n".join([f"- `{c.improving_parameter}` vs `{c.worsening_parameter}`: {c.description} (Severity: {c.severity})" for c in synthesis.resolved_contradictions]) or "- None declared."
-
-            return (
-                f"### ⚡ System 3 Dialectical Synthesis Emerged\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Synthesis Title**: **{synthesis.title}** (`{synthesis.synthesis_id}`)\n"
-                f"- **Debate Rounds Executed**: `{synthesis.debate_rounds_executed}`\n"
-                f"- **Initial Contradiction Severity**: `{synthesis.initial_contradiction_score:.2f}`\n"
-                f"- **Residual Contradiction Severity**: `{synthesis.residual_contradiction_score:.2f}`\n"
-                f"- **Convergence Achieved**: `{'✅ YES' if synthesis.convergence_achieved else '⚠️ PARTIAL'}`\n\n"
-                f"#### 🧬 Transcended TRIZ Inventive Principles:\n{principles_list}\n\n"
-                f"#### ⚔️ Resolved Contradictions:\n{contra_list}\n\n"
-                f"#### 🏛️ Synthesized Architectural Blueprint:\n{synthesis.synthesized_architecture}\n\n"
-                f"> [!TIP]\n"
-                f"> {synthesis.pareto_improvement_claim}"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 20. SYSTEM 3: CAUSAL SIMULATION & PEARL DO-CALCULUS
-        elif action in ("system3_causal_simulate", "causal_simulate", "causal_graph", "do_calculus"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_causal_simulate'."
-            model_name = arguments.get("model_name", "System3CausalModel")
-            nodes_input = arguments.get("nodes", [])
-            edges_input = arguments.get("edges", [])
-            interventions_input = arguments.get("interventions", {})
-            target_metric = arguments.get("target_metric")
-
-            if isinstance(nodes_input, str):
-                try:
-                    nodes_input = json.loads(nodes_input)
-                except Exception:
-                    nodes_input = []
-            if isinstance(edges_input, str):
-                try:
-                    edges_input = json.loads(edges_input)
-                except Exception:
-                    edges_input = []
-            if isinstance(interventions_input, str):
-                try:
-                    interventions_input = json.loads(interventions_input)
-                except Exception:
-                    interventions_input = {}
-
-            dag = CausalDAG(name=model_name)
-            for n in nodes_input:
-                if isinstance(n, dict):
-                    dag.add_node(
-                        node_id=n.get("node_id", n.get("id")),
-                        name=n.get("name"),
-                        node_type=CausalNodeType(n.get("node_type", "endogenous")),
-                        value=float(n.get("value", 0.0)),
-                        default_value=float(n["default_value"]) if "default_value" in n else None,
-                        min_value=float(n["min_value"]) if "min_value" in n else None,
-                        max_value=float(n["max_value"]) if "max_value" in n else None,
-                        description=n.get("description", ""),
-                    )
-
-            for e in edges_input:
-                if isinstance(e, dict):
-                    dag.add_edge(
-                        source=e["source"],
-                        target=e["target"],
-                        weight=float(e.get("weight", 1.0)),
-                        relation_type=e.get("relation_type", "linear"),
-                        description=e.get("description", ""),
-                    )
-
-            is_acyclic, cycle = dag.check_acyclicity()
-            if not is_acyclic:
-                return f"Error: Graph contains a cycle: {' -> '.join(cycle)}. Causal models must be valid DAGs."
-
-            topo_order = dag.topological_sort()
-            factual_values = dag.compute_forward()
-
-            interv_res = None
-            if interventions_input and isinstance(interventions_input, dict):
-                interv_map = {k: float(v) for k, v in interventions_input.items()}
-                interv_res = dag.do_intervention(interv_map)
-
-            brittleness_rep = None
-            if target_metric and target_metric in dag.nodes:
-                brittleness_rep = dag.evaluate_brittleness(target_metric)
-
-            session = get_or_load_session(session_name)
-            new_graph_entry = {
-                "dag": dag.to_dict(),
-                "nodes": dag.to_dict().get("nodes", []),
-                "edges": dag.to_dict().get("edges", []),
-                "topological_order": topo_order,
-                "factual_values": factual_values,
-                "intervention": interv_res.to_dict() if interv_res else None,
-                "brittleness": brittleness_rep.to_dict() if brittleness_rep else None,
-                "timestamp": time.time(),
-            }
-            if len(session.system3_causal_graphs) == 1 and session.system3_causal_graphs[0].get("dag", {}).get("name") == f"Session_{session.session_name}_DAG":
-                session.system3_causal_graphs[0] = new_graph_entry
-            else:
-                session.system3_causal_graphs.append(new_graph_entry)
-            session.save()
-
-            lines = [
-                f"### 🌐 System 3 Pearl's Do-Calculus & Causal Simulation\n\n",
-                f"- **Model**: `{dag.name}` ({len(dag.nodes)} nodes, {len(dag.edges)} directed causal edges)\n",
-                f"- **Topological Order**: `{' -> '.join(topo_order)}`\n",
-            ]
-
-            if interv_res:
-                lines.append(f"\n#### ✂️ Pearl's Do-Operator Intervention: `do({interv_res.interventions})`\n")
-                lines.append(f"- **Severed Edges**: `{len(interv_res.severed_edges)}` ({interv_res.severed_edges})\n")
-                lines.append(f"- **Impacted Nodes**: `{', '.join(interv_res.impacted_nodes)}`\n\n")
-                lines.append("| Node | Factual Value | Counterfactual Value | Delta (Δ) |\n")
-                lines.append("|---|---|---|---|\n")
-                for nid in topo_order:
-                    f_val = interv_res.original_values.get(nid, 0.0)
-                    cf_val = interv_res.counterfactual_values.get(nid, 0.0)
-                    delta = interv_res.deltas.get(nid, 0.0)
-                    delta_str = f"+{delta:.4f}" if delta > 0 else f"{delta:.4f}"
-                    lines.append(f"| `{nid}` | {f_val:.4f} | **{cf_val:.4f}** | `{delta_str}` |\n")
-
-            if brittleness_rep:
-                lines.append(f"\n#### 🔬 Structural Brittleness Report (`{brittleness_rep.target_metric}`)\n")
-                lines.append(f"- **Overall Brittleness Score**: `{brittleness_rep.overall_brittleness_score:.4f}` / 1.0\n")
-                spof_str = ", ".join(brittleness_rep.single_points_of_failure) if brittleness_rep.single_points_of_failure else "None (Resilient)"
-                lines.append(f"- **Single Points of Failure**: `{spof_str}`\n")
-                for rec in brittleness_rep.recommendations:
-                    lines.append(f"- 💡 {rec}\n")
-
-            if session.execution_locked:
-                lines.append(SILENT_DELIBERATION_REMINDER)
-
-            return "".join(lines)
-
-        # 21. SYSTEM 3: EVOLVE PARADIGMS (10D PARETO FRONTIER OPTIMIZER)
-        elif action in ("system3_evolve_paradigms", "evolve_paradigms", "evolution_generation", "genetic_optimize"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_evolve_paradigms'."
-            generations = int(arguments.get("generations", 3))
-            pop_size = int(arguments.get("population_size", 12))
-            mutation_rate = float(arguments.get("mutation_rate", 0.15))
-            crossover_rate = float(arguments.get("crossover_rate", 0.80))
-            seed_paradigms = arguments.get("seed_paradigms")
-            if isinstance(seed_paradigms, str):
-                try:
-                    seed_paradigms = json.loads(seed_paradigms)
-                except Exception:
-                    seed_paradigms = None
-
-            weights = arguments.get("objective_weights")
-            if isinstance(weights, str):
-                try:
-                    weights = json.loads(weights)
-                except Exception:
-                    weights = None
-
-            pool = CognitiveGenePool(
-                population_size=pop_size,
-                mutation_rate=mutation_rate,
-                crossover_rate=crossover_rate,
-            )
-            pool.initialize_population(seed_paradigms=seed_paradigms)
-
-            for _ in range(generations):
-                pool.evolve_generation()
-
-            pareto_frontier = pool.get_pareto_frontier()
-            best_genome = pool.get_best_genome(weights)
-
-            session = get_or_load_session(session_name)
-            session.system3_gene_pools.append(pool.to_dict())
-
-            session.log_refinement_cycle(
-                refinement_type="system3_evolutionary_optimization",
-                focus_area=f"10D Pareto Frontier Search across {generations} generations",
-                critique_or_bottleneck=f"Optimized {pop_size} genomes across 10 dimensions.",
-                architectural_refinement=f"Evolved top paradigm '{best_genome.paradigm_name}' with scalar fitness {best_genome.compute_scalar_fitness(weights):.4f}.",
-            )
-            session.save()
-
-            table_rows = []
-            for g in pareto_frontier[:5]:
-                f = g.fitness_scores
-                table_rows.append(
-                    f"| `{g.genome_id}` | **{g.paradigm_name[:24]}** | `{f.get('latency',0):.2f}` | "
-                    f"`{f.get('throughput',0):.2f}` | `{f.get('memory_efficiency',0):.2f}` | "
-                    f"`{f.get('fault_tolerance',0):.2f}` | `{f.get('modularity',0):.2f}` | "
-                    f"`{f.get('security',0):.2f}` | `{f.get('token_compaction',0):.2f}` | `{g.compute_scalar_fitness(weights):.4f}` |"
-                )
-
-            table_str = "\n".join(table_rows)
-
-            return (
-                f"### 🧬 System 3 Evolutionary Paradigm Engine\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Generations Evolved**: `{pool.generation_count}` (Population: `{len(pool.population)}`)\n"
-                f"- **Rank 1 Pareto Frontier Size**: `{len(pareto_frontier)}` non-dominated solutions\n"
-                f"- **Top Archetype**: **{best_genome.paradigm_name}** (`{best_genome.genome_id}`)\n\n"
-                f"#### 🏆 Top Rank 1 Non-Dominated Pareto Frontier:\n"
-                f"| ID | Paradigm | Lat | Tput | Mem | Fault | Mod | Sec | Token | Score |\n"
-                f"|---|---|---|---|---|---|---|---|---|---|\n"
-                f"{table_str}\n\n"
-                f"#### 🧬 Winning Gene Allocation (`{best_genome.genome_id}`):\n"
-                + "\n".join([f"- **{k}**: `{v}`" for k, v in best_genome.genes.items()])
-                + f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 22. SYSTEM 3: INDUCE AXIOMS (NEURO-SYMBOLIC META-PROOF INDUCTION)
-        elif action in ("system3_induce_axioms", "induce_axioms", "neuro_symbolic_induction", "formalize_axioms"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_induce_axioms'."
-            session = get_or_load_session(session_name)
-            domain = arguments.get("domain", "architecture")
-
-            inducer = MetaProofInducer()
-            axioms = inducer.induce_axioms_from_session(
-                receipts=[],
-                evidence=[],
-                session_telemetry=session.get_telemetry(),
-                domain_hints=[domain],
-            )
-
-            for ax in axioms:
-                session.system3_axioms.append(ax.to_dict())
-                if not any(i.get("name") == ax.name for i in session.invariants):
-                    session.record_invariant(
-                        invariant_name=ax.name,
-                        formal_statement=ax.symbolic_expression,
-                        proof_or_rationale=ax.proof_sketch or ax.natural_language,
-                        domain=ax.domain if ax.domain in ("architecture", "design", "coding") else "architecture",
-                    )
-
-            session.save()
-
-            axiom_blocks = []
-            for ax in axioms:
-                axiom_blocks.append(
-                    f"#### 📜 `{ax.axiom_id}`: **{ax.name}** `[{ax.domain.upper()}]`\n"
-                    f"- **Symbolic Expression**: `{ax.symbolic_expression}`\n"
-                    f"- **Natural Language**: {ax.natural_language}\n"
-                    f"- **Epistemic Confidence**: `{ax.confidence * 100:.1f}%` (`{ax.status.value.upper()}`)\n"
-                    f"- **Proof Rationale**: {ax.proof_sketch}\n"
-                )
-
-            return (
-                f"### 📐 System 3 Neuro-Symbolic Invariant Induction\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Axioms Induced**: `{len(axioms)}`\n"
-                f"- **Auto-Recorded Invariants**: `{len(session.invariants)}` total in session\n\n"
-                + "\n".join(axiom_blocks)
-                + f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 23. SYSTEM 3: META REFLECTION & COGNITIVE BIAS AUDIT
-        elif action in ("system3_meta_reflect", "meta_reflect", "cognitive_audit", "meta_cognition"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_meta_reflect'."
-            session = get_or_load_session(session_name)
-            focus_area = arguments.get("focus_area", "Full Deliberation Trace")
-
-            executive = System3Executive()
-            report = executive.meta_reflect(session.to_dict())
-
-            session.system3_reflections.append(report)
-
-            bias_summary = f"{len(report['bias_findings'])} biases flagged" if report['bias_findings'] else "0 biases detected (Clean)"
-            session.log_refinement_cycle(
-                refinement_type="system3_meta_reflection",
-                focus_area=focus_area,
-                critique_or_bottleneck=f"Meta-cognitive audit: {bias_summary}. Contradiction density: {report['contradiction_density']:.2f}.",
-                architectural_refinement=f"Shifted cognitive gear to {report['cognitive_gear']}. Updated search heuristics temperature: {report['updated_search_heuristics']['exploration_temperature']}.",
-            )
-            session.save()
-
-            bias_lines = []
-            for b in report["bias_findings"]:
-                bias_lines.append(
-                    f"- ⚠️ **{b['bias_type'].upper()}** (Severity: `{b['severity']}` in *{b['detected_in']}*):\n"
-                    f"  - *Evidence*: {b['evidence_trail']}\n"
-                    f"  - *Mitigation*: {b['mitigation_strategy']}"
-                )
-            bias_block = "\n".join(bias_lines) if bias_lines else "✅ Zero cognitive biases detected. Epistemic reasoning is well-calibrated."
-
-            directives_block = "\n".join([f"- 🎯 {d}" for d in report["directives"]])
-
-            return (
-                f"### 🧠 System 3 Meta-Cognitive Deliberation Audit\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Recommended Cognitive Gear**: `{report['cognitive_gear'].upper()}`\n"
-                f"- **Contradiction Density**: `{report['contradiction_density']:.2f}`\n"
-                f"- **Arbitration Rationale**: {report['arbitration_rationale']}\n\n"
-                f"#### 🔍 Cognitive Bias Diagnostics:\n{bias_block}\n\n"
-                f"#### 🚀 System 3 Executive Directives:\n{directives_block}\n\n"
-                f"#### ⚙️ Dynamic Search Heuristics:\n"
-                f"- **Exploration Temperature**: `{report['updated_search_heuristics']['exploration_temperature']}`\n"
-                f"- **Pruning Cutoff Threshold**: `{report['updated_search_heuristics']['pruning_threshold']}`\n"
-                f"- **Max Branching Factor**: `{report['updated_search_heuristics']['max_branching_factor']}`\n"
-                f"- **Falsification Intensity**: `{report['updated_search_heuristics']['falsification_intensity']}`"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 24. SYSTEM 3: TRI-LEVEL COGNITIVE ORCHESTRATION
-        elif action in ("system3_tri_level_orchestrate", "tri_level_orchestrate", "cognitive_gear_shift", "arbitrate_cognition"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_tri_level_orchestrate'."
-            complexity = float(arguments.get("task_complexity", 0.75))
-            density = float(arguments.get("contradiction_density", 0.60))
-            failures = int(arguments.get("failure_count", 0))
-            uncertainty = float(arguments.get("epistemic_uncertainty", 0.40))
-
-            arbitrator = TriLevelArbitrator()
-            decision = arbitrator.arbitrate(
-                task_complexity=complexity,
-                contradiction_density=density,
-                failure_count=failures,
-                epistemic_uncertainty=uncertainty,
-            )
-
-            session = get_or_load_session(session_name)
-            session.system3_orchestrations.append({
-                "decision": decision,
-                "timestamp": time.time(),
-                "inputs": {
-                    "complexity": complexity,
-                    "density": density,
-                    "failures": failures,
-                    "uncertainty": uncertainty,
-                }
-            })
-            session.save()
-
-            directives_str = "\n".join([f"- {d}" for d in decision["directives"]])
-
-            return (
-                f"### 🎛️ System 3 Tri-Level Cognitive Arbitration\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Recommended Operating Gear**: `⚙️ {decision['recommended_gear'].upper()}`\n"
-                f"- **Composite Difficulty Index**: `{decision['composite_difficulty']:.3f}` / 1.0\n"
-                f"- **Arbitration Rationale**: {decision['rationale']}\n\n"
-                f"#### 🧭 Prescribed Cognitive Action Directives:\n{directives_str}"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 25. SYSTEM 3: HYPERBOLIC MANIFOLD TREE EMBEDDING
-        elif action in ("system3_hyperbolic_embed", "hyperbolic_embed", "poincare_embed", "hyperbolic_tree"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_hyperbolic_embed'."
-            tree_input = arguments.get("tree")
-            if tree_input is None:
-                return "Error: 'tree' is required for action 'system3_hyperbolic_embed'."
-            if isinstance(tree_input, str):
-                try:
-                    tree_input = json.loads(tree_input)
-                except Exception:
-                    return "Error: Failed to parse 'tree' as JSON."
-
-            root_id = arguments.get("root_id")
-            dimension = int(arguments.get("dimension", 2))
-            curvature = float(arguments.get("curvature", 1.0))
-            base_step = float(arguments.get("base_step", 1.0))
-            node_labels = arguments.get("node_labels")
-            if isinstance(node_labels, str):
-                try:
-                    node_labels = json.loads(node_labels)
-                except Exception:
-                    node_labels = None
-
-            embedder = HyperbolicTreeEmbedder(dimension=dimension, curvature=curvature, base_step_distance=base_step)
-            result = embedder.embed_hierarchy(tree=tree_input, root_id=root_id, node_labels=node_labels)
-
-            session = get_or_load_session(session_name)
-            session.system3_hyperbolic_embeddings.append(result.to_dict())
-
-            session.log_refinement_cycle(
-                refinement_type="system3_hyperbolic_embedding",
-                focus_area=f"Hierarchical Poincaré Manifold Embedding ({result.total_nodes} nodes, depth {result.tree_depth})",
-                critique_or_bottleneck=f"Embedded hierarchy into {dimension}D Poincaré ball with curvature c={curvature:.2f}.",
-                architectural_refinement=(
-                    f"Manifold tree embedding verified: avg_distortion={result.average_distortion:.4f}, "
-                    f"max_distortion={result.max_distortion:.4f}, stress={result.stress:.4f}, "
-                    f"exponential capacity ratio={result.hierarchical_capacity_ratio:.2f}x."
-                ),
-            )
-            session.save()
-
-            node_table = []
-            for nid, node in list(result.nodes.items())[:10]:
-                coords_str = f"({', '.join([f'{c:.4f}' for c in node.coords])})"
-                node_table.append(
-                    f"| `{node.node_id}` | **{node.label[:20]}** | `{node.depth}` | `{node.subtree_size}` | `{coords_str}` |"
-                )
-            node_table_str = "\n".join(node_table)
-
-            return (
-                f"### 🌐 System 3 Poincaré Hyperbolic Manifold Embedding\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Manifold**: Poincaré Ball $\\mathbb{{B}}^{{{result.dimension}}}_{{c={result.curvature:.2f}}}$\n"
-                f"- **Hierarchy**: Root `{result.root_id}` ({result.total_nodes} nodes, max depth `{result.tree_depth}`)\n"
-                f"- **Mean Metric Distortion**: `{result.average_distortion:.4f}` (Max: `{result.max_distortion:.4f}`)\n"
-                f"- **Metric Stress Metric**: `{result.stress:.4f}`\n"
-                f"- **Hyperbolic Volume Expansion Ratio**: `{result.hierarchical_capacity_ratio:.2f}x` vs Euclidean $\\mathbb{{R}}^{{{result.dimension}}}$\n\n"
-                f"#### 📍 Top Embedded Nodes in $\\mathbb{{B}}^{{{result.dimension}}}$:\n"
-                f"| Node ID | Label | Depth | Subtree | Poincaré Coordinates |\n"
-                f"|---|---|---|---|---|\n"
-                f"{node_table_str}\n"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 26. SYSTEM 3: KRIPKE MODAL MODEL CHECKING & CTL* VERIFICATION
-        elif action in ("system3_kripke_verify", "kripke_verify", "modal_verify", "ctl_check"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_kripke_verify'."
-            formula = arguments.get("formula", "").strip()
-            if not formula:
-                return "Error: 'formula' is required for action 'system3_kripke_verify'."
-            model_name = arguments.get("model_name", "System3KripkeModel")
-            worlds_input = arguments.get("worlds", [])
-            transitions_input = arguments.get("transitions", [])
-            initial_world = arguments.get("initial_world")
-
-            if isinstance(worlds_input, str):
-                try:
-                    worlds_input = json.loads(worlds_input)
-                except Exception:
-                    worlds_input = []
-            if isinstance(transitions_input, str):
-                try:
-                    transitions_input = json.loads(transitions_input)
-                except Exception:
-                    transitions_input = []
-
-            structure = KripkeStructure(name=model_name)
-            for w in worlds_input:
-                if isinstance(w, dict):
-                    structure.add_world(
-                        world_id=w.get("world_id", w.get("id")),
-                        propositions=w.get("propositions", w.get("props", [])),
-                        name=w.get("name", ""),
-                        is_initial=w.get("is_initial", False),
-                        metadata=w.get("metadata", {}),
-                    )
-                elif isinstance(w, str):
-                    structure.add_world(world_id=w)
-
-            if isinstance(transitions_input, dict):
-                for src, targets in transitions_input.items():
-                    for tgt in (targets if isinstance(targets, list) else [targets]):
-                        structure.add_transition(src, tgt)
-            elif isinstance(transitions_input, list):
-                for t in transitions_input:
-                    if isinstance(t, dict) and "source" in t and "target" in t:
-                        structure.add_transition(t["source"], t["target"])
-                    elif isinstance(t, (list, tuple)) and len(t) >= 2:
-                        structure.add_transition(str(t[0]), str(t[1]))
-
-            checker = KripkeModelChecker(structure)
-            res = checker.check(formula=formula, initial_world=initial_world)
-
-            session = get_or_load_session(session_name)
-            session.system3_kripke_verifications.append(res.to_dict())
-
-            session.log_refinement_cycle(
-                refinement_type="system3_kripke_verification",
-                focus_area=f"Modal / CTL Verification: {res.formula}",
-                critique_or_bottleneck=f"Evaluated Kripke model '{structure.name}' ({res.total_worlds} worlds).",
-                architectural_refinement=(
-                    f"Model checking result: {'✅ SATISFIED' if res.is_satisfied else '❌ VIOLATED'}. "
-                    f"Satisfied worlds: {len(res.satisfied_worlds)}/{res.total_worlds}. "
-                    f"Witness/Counterexample: {res.witness_path or res.counterexample_path}."
-                ),
-            )
-            session.save()
-
-            trace_block = ""
-            if res.counterexample_path:
-                trace_block = f"\n#### ❌ Counterexample Violation Trace:\n`{' -> '.join(res.counterexample_path)}`\n"
-            elif res.witness_path:
-                trace_block = f"\n#### ✅ Witness Path:\n`{' -> '.join(res.witness_path)}`\n"
-
-            return (
-                f"### 🛡️ System 3 Kripke Modal Model Verification\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Model**: `{structure.name}` ({res.total_worlds} worlds)\n"
-                f"- **Formula**: `{res.formula}`\n"
-                f"- **Status**: `{'✅ SATISFIED' if res.is_satisfied else '❌ VIOLATED'}` at initial world `{res.initial_world}`\n"
-                f"- **Satisfied Worlds**: `{', '.join(res.satisfied_worlds) if res.satisfied_worlds else 'None'}`\n"
-                f"- **Violated Worlds**: `{', '.join(res.violated_worlds) if res.violated_worlds else 'None'}`\n"
-                f"{trace_block}\n"
-                f"> [!TIP]\n"
-                f"> {res.details}"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 27. SYSTEM 3: FRISTON ACTIVE INFERENCE & VARIATIONAL FREE ENERGY
-        elif action in ("system3_active_inference", "active_inference", "free_energy", "fe_step"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_active_inference'."
-            obs = arguments.get("observation", "HIGH_THROUGHPUT_CLEAN").strip()
-            gamma = float(arguments.get("gamma", 16.0))
-            policies_input = arguments.get("policies")
-            if isinstance(policies_input, str):
-                try:
-                    policies_input = json.loads(policies_input)
-                except Exception:
-                    policies_input = None
-
-            parsed_policies = []
-            if policies_input and isinstance(policies_input, list):
-                for p in policies_input:
-                    if isinstance(p, dict) and "policy_id" in p and "actions" in p:
-                        parsed_policies.append(Policy.from_dict(p))
-                    elif isinstance(p, str):
-                        parsed_policies.append(Policy(policy_id=f"pol_{p}", actions=[p]))
-
-            # Check if custom model components provided
-            states = arguments.get("states")
-            observations = arguments.get("observations")
-            actions = arguments.get("actions")
-            a_mat = arguments.get("a_matrix")
-            b_mats = arguments.get("b_matrices")
-            c_pref = arguments.get("c_preferences")
-            d_prior = arguments.get("d_prior")
-
-            if all(x is not None for x in [states, observations, actions, a_mat, b_mats, c_pref, d_prior]):
-                if isinstance(states, str): states = json.loads(states)
-                if isinstance(observations, str): observations = json.loads(observations)
-                if isinstance(actions, str): actions = json.loads(actions)
-                if isinstance(a_mat, str): a_mat = json.loads(a_mat)
-                if isinstance(b_mats, str): b_mats = json.loads(b_mats)
-                if isinstance(c_pref, str): c_pref = json.loads(c_pref)
-                if isinstance(d_prior, str): d_prior = json.loads(d_prior)
-                gen_model = GenerativeModel(
-                    states=states,
-                    observations=observations,
-                    actions=actions,
-                    a_matrix=a_mat,
-                    b_matrices=b_mats,
-                    c_preferences=c_pref,
-                    d_prior=d_prior,
-                )
-            else:
-                gen_model = create_default_architecture_pomdp()
-
-            engine = ActiveInferenceEngine(generative_model=gen_model, policy_precision_gamma=gamma)
-            report = engine.select_action(observation=obs, candidate_policies=parsed_policies)
-
-            session = get_or_load_session(session_name)
-            session.system3_active_inferences.append(report.to_dict())
-
-            session.log_refinement_cycle(
-                refinement_type="system3_active_inference",
-                focus_area=f"Free Energy Minimization for observation '{obs}'",
-                critique_or_bottleneck=(
-                    f"Variational Free Energy F={report.variational_free_energy_f:.4f} "
-                    f"(Complexity KL={report.complexity_kl:.4f}, Accuracy={report.accuracy_log_likelihood:.4f})."
-                ),
-                architectural_refinement=(
-                    f"Selected optimal policy '{report.selected_policy.policy_id}' ({report.selected_action}) "
-                    f"with Expected Free Energy G={report.selected_policy.expected_free_energy_g:.4f}, "
-                    f"Information Gain={report.selected_policy.epistemic_information_gain:.4f}, "
-                    f"Goal Utility={report.selected_policy.pragmatic_goal_utility:.4f}."
-                ),
-            )
-            session.save()
-
-            policy_table = []
-            for p in report.evaluated_policies:
-                opt_mark = "🏆 OPTIMAL" if p.is_optimal else ""
-                policy_table.append(
-                    f"| `{p.policy_id}` | `{p.actions}` | `{p.expected_free_energy_g:.4f}` | "
-                    f"`{p.risk_pragmatic_divergence:.4f}` | `{p.ambiguity_expected_entropy:.4f}` | "
-                    f"`{p.epistemic_information_gain:.4f}` | `{p.pragmatic_goal_utility:.4f}` | "
-                    f"`{p.probability * 100:.1f}%` | {opt_mark} |"
-                )
-            pol_table_str = "\n".join(policy_table)
-
-            belief_table = "\n".join([f"- **{k}**: `{v * 100:.1f}%`" for k, v in report.belief_state.items()])
-
-            return (
-                f"### ⚡ System 3 Friston Active Inference & Variational Free Energy\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Ingested Observation**: `{report.current_observation}`\n"
-                f"- **Variational Free Energy (F)**: `{report.variational_free_energy_f:.4f}` (Surprisal Bound)\n"
-                f"  - *Complexity (KL)*: `{report.complexity_kl:.4f}`\n"
-                f"  - *Accuracy (Log-Likelihood)*: `{report.accuracy_log_likelihood:.4f}`\n"
-                f"- **Selected Policy**: **{report.selected_policy.policy_id}** -> Action: `🎯 {report.selected_action}`\n\n"
-                f"#### 🧠 Updated Hidden State Belief Distribution $q(s)$:\n{belief_table}\n\n"
-                f"#### 📊 Evaluated Policy Landscape ($G(\\pi) = \\text{{Risk}} + \\text{{Ambiguity}}$):\n"
-                f"| Policy ID | Actions | EFE ($G$) | Risk | Ambiguity | Epistemic Info Gain | Goal Utility | Prob | Status |\n"
-                f"|---|---|---|---|---|---|---|---|---|\n"
-                f"{pol_table_str}\n"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
-
-        # 28. SYSTEM 3: GODELIAN PROOF ORACLE & CURRY-HOWARD VERIFICATION
-        elif action in ("system3_proof_oracle", "proof_oracle", "curry_howard", "formal_prove"):
-            if not session_name:
-                return "Error: 'session_name' is required for action 'system3_proof_oracle'."
-            claim = arguments.get("claim")
-            if not claim:
-                return "Error: 'claim' is required for action 'system3_proof_oracle'."
-
-            context = arguments.get("context")
-            if isinstance(context, str):
-                try:
-                    context = json.loads(context)
-                except Exception:
-                    context = None
-
-            axioms = arguments.get("axioms")
-            if isinstance(axioms, str):
-                try:
-                    axioms = json.loads(axioms)
-                except Exception:
-                    axioms = None
-
-            oracle = ProofOracle()
-            res = oracle.verify_proposition(claim=claim, context=context, axioms=axioms)
-
-            session = get_or_load_session(session_name)
-            session.system3_proof_oracle_verifications.append(res.to_dict())
-
-            # Auto-record invariant if proved and sound
-            if res.status == ProofStatus.DECIDABLE_PROVED and res.is_sound:
-                inv_name = f"INV-ORACLE: {str(claim)[:32]}"
-                if not any(i.get("name") == inv_name for i in session.invariants):
-                    session.record_invariant(
-                        invariant_name=inv_name,
-                        formal_statement=res.proposition,
-                        proof_or_rationale=f"Curry-Howard Constructive Proof Term: {res.proof_term_repr}",
-                        domain="architecture",
-                    )
-
-            session.log_refinement_cycle(
-                refinement_type="system3_proof_oracle",
-                focus_area=f"Curry-Howard Constructive Proof: {res.proposition}",
-                critique_or_bottleneck=f"Evaluated status: {res.status.value.upper()}.",
-                architectural_refinement=(
-                    f"Proof Oracle verdict: {res.status.value.upper()} (Sound: {res.is_sound}). "
-                    f"Proof Term: {res.proof_term_repr or 'None'}."
-                ),
-            )
-            session.save()
-
-            steps_str = "\n".join([f"- {s}" for s in res.verification_steps])
-            undec_str = ""
-            if res.undecidability_diagnostics:
-                undec_str = (
-                    f"\n#### 🛑 Gödelian Boundary Diagnostics:\n"
-                    f"- **Boundary Type**: `{res.undecidability_diagnostics.get('boundary_type')}`\n"
-                    f"- **Explanation**: {res.undecidability_diagnostics.get('explanation')}\n"
-                )
-
-            return (
-                f"### 📜 System 3 Gödelian Auto-Formalizing Proof Oracle\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Proposition**: `{res.proposition}`\n"
-                f"- **Decision Status**: `{'✅ ' if res.status == ProofStatus.DECIDABLE_PROVED else '⚡ ' if res.status == ProofStatus.DECIDABLE_REFUTED else '🛑 '}{res.status.value.upper()}`\n"
-                f"- **Soundness Verified**: `{'✅ TRUE' if res.is_sound else '❌ UNVERIFIED'}`\n"
-                + (f"- **Constructive Proof Term**: `{res.proof_term_repr}`\n" if res.proof_term_repr else "")
-                + f"{undec_str}\n"
-                f"#### 🔍 Verification Trace:\n{steps_str}\n"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+                f"- **Compression Target (heuristic only)**: estimated ratio `<= 0.003 tokens/character` for payloads of at least 10,000 characters; diagnostic only, not a measured guarantee"
             )
 
         else:
@@ -3331,9 +3559,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'create_session', 'set_timer', 'get_status', 'telemetry', 'advance_phase', "
                 f"'log_epistemic_item', 'record_invariant', 'log_refinement_cycle', 'unlock_execution', "
                 f"'checkpoint_session', 'restore_session', 'list_sessions', 'compile_delegation_contract', "
-                f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
-                f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
-                f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle'."
+                f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -3343,14 +3569,65 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
 # JSON-RPC 2.0 MCP Protocol Stdio Loop
 # --------------------------------------------------------------------------------
 
+CONTROL_PLANE_TOOL_SCHEMA = {
+    "name": CONTROL_PLANE_TOOL_NAME,
+    "description": (
+        "Strict MCP control-plane for observe → predict → propose → outcome → verify → finalize. "
+        "Sequence, session binding, and idempotency are enforced here. Host/native tool authorization "
+        "is advisory unless the invocation is routed through a broker; model-supplied PROVEN/final authorization is rejected."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "profile": {"type": "string", "const": CONTROL_PLANE_PROFILE},
+            "action": {"type": "string", "enum": list(CONTROL_PLANE_ACTIONS) + ["capabilities"]},
+            "session_id": {"type": "string", "pattern": SESSION_ID_PATTERN.pattern},
+            "session_name": {"type": "string", "pattern": SESSION_NAME_PATTERN.pattern},
+            "objective": {"type": "string", "minLength": 8},
+            "observation": {},
+            "prediction": {"type": "string", "minLength": 8},
+            "prediction_id": {"type": "string"},
+            "action_name": {"type": "string", "minLength": 2, "description": "Concrete host operation; generic boilerplate names are rejected."},
+            "capability": {"type": "string", "minLength": 1, "description": "Capability name which the host receipt must attest."},
+            "arguments": {"type": "object"},
+            "input_hash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$", "description": "Optional explicit hash; it must equal the canonical action arguments."},
+            "mutating": {"type": "boolean", "const": True},
+            "action_id": {"type": "string"},
+            "outcome": {},
+            "receipt_id": {"type": "string"},
+            "outcome_id": {"type": "string"},
+            "checks": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "verification_id": {"type": "string"},
+            "idempotency_key": {"type": "string", "pattern": CONTROL_PLANE_IDEMPOTENCY_PATTERN.pattern},
+            # Explicitly named forbidden fields make the contract auditable;
+            # server-side validation rejects them even if a host ignores JSON Schema.
+            "tag": {"not": {}}, "proven": {"not": {}}, "final_authorized": {"not": {}},
+            "authorized": {"not": {}}, "authorization": {"not": {}}, "approval": {"not": {}},
+        },
+        "required": ["action"],
+        "allOf": [
+            {"if": {"properties": {"action": {"enum": list(CONTROL_PLANE_ACTIONS)}}},
+             "then": {"required": ["idempotency_key"]}},
+        ],
+    },
+    "outputSchema": {
+        "type": "object", "required": ["ok", "profile", "action", "enforcement"],
+        "properties": {"ok": {"type": "boolean"}, "profile": {"type": "string"},
+                       "action": {"type": ["string", "null"]}, "session_id": {"type": ["string", "null"]},
+                       "state": {"type": ["string", "null"]}, "result": {}, "error": {},
+                       "enforcement": {"type": "object"}},
+        "additionalProperties": True,
+    },
+}
+
 TOOL_SCHEMA = {
     "name": "fable_session",
     "description": (
-        "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\n"
+        "Legacy fable_session compatibility surface for MCP-compatible agent hosts; compatibility_mode is optional and, when supplied, must be legacy_v1.\n"
         "Enforces DeepThink cognitive rigor, hard mechanical time-lock, anti-rush execution lockout, epistemic truth logging (PROVEN/HYPOTHESIS/UNKNOWN),\n"
         "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, subagent delegation contract compilation,\n"
-        "live user-controlled time-budgeted pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant),\n"
-        "and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction)."
+        "live user-controlled time-budgeted pacing telemetry, and token compression subsystem (Content-Addressed Storage; token counts and ratios are rough character-based estimates, not measured model-token usage or guarantees)."
     ),
     "inputSchema": {
         "type": "object",
@@ -3376,19 +3653,13 @@ TOOL_SCHEMA = {
                     "view_slice",
                     "accumulate_payload",
                     "flush_accumulator",
-                    "get_compression_stats",
-                    "system3_dialectical_synthesis",
-                    "system3_causal_simulate",
-                    "system3_evolve_paradigms",
-                    "system3_induce_axioms",
-                    "system3_meta_reflect",
-                    "system3_tri_level_orchestrate",
-                    "system3_hyperbolic_embed",
-                    "system3_kripke_verify",
-                    "system3_active_inference",
-                    "system3_proof_oracle"
+                    "get_compression_stats"
                 ],
                 "description": "The Fable session action to perform."
+            },
+            "compatibility_mode": {
+                "type": "string", "enum": ["legacy_v1"],
+                "description": "Optional selector for the legacy fable_session compatibility surface; when supplied it must be legacy_v1. This is not the strict control plane."
             },
             "session_name": {
                 "type": "string",
@@ -3408,8 +3679,24 @@ TOOL_SCHEMA = {
                 "description": "Target phase to advance the session into."
             },
             "phase_summary": {
-                "type": "string",
-                "description": "Concise summary of findings or deliverables completed in the previous phase."
+                "oneOf": [
+                    {"type": "string", "minLength": 8},
+                    {"type": "object", "required": ["summary"], "properties": {
+                        "summary": {"type": "string", "minLength": 8},
+                        "evidence": {"type": "object"}
+                    }, "additionalProperties": False}
+                ],
+                "description": "Substantive phase summary; an object may carry typed evidence bindings."
+            },
+            "phase_evidence": {
+                "type": "object",
+                "properties": {
+                    "receipt_ids": {"type": "array", "items": {"type": "string"}},
+                    "invariant_ids": {"type": "array", "items": {"type": "string"}},
+                    "refinement_ids": {"type": "array", "items": {"type": "string"}}
+                },
+                "additionalProperties": False,
+                "description": "Typed phase prerequisite bindings validated within the session."
             },
             "tag": {
                 "type": "string",
@@ -3421,8 +3708,16 @@ TOOL_SCHEMA = {
                 "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger."
             },
             "evidence": {
-                "type": "string",
-                "description": "Source file, command output, line number, or URL supporting the claim."
+                "description": "Receipt-bound evidence object. Legacy citation strings are accepted for display only and cannot satisfy an unlock gate.",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "object", "required": ["receipt_id", "session_id", "content_hash", "source_output_hash", "claim"], "properties": {
+                        "receipt_id": {"type": "string"}, "session_id": {"type": "string"},
+                        "content": {}, "content_hash": {"type": "string"},
+                        "source_output_hash": {"type": "string"}, "claim": {"type": "string"},
+                        "kind": {"type": "string"}, "source": {"type": "string"}
+                    }, "additionalProperties": True}
+                ]
             },
             "invariant_name": {
                 "type": "string",
@@ -3508,215 +3803,37 @@ TOOL_SCHEMA = {
             "metadata": {
                 "type": "object",
                 "description": "Optional metadata dictionary attached to accumulated micro-payload."
-            },
-            "thesis_title": {
-                "type": "string",
-                "description": "Title of the thesis paradigm for System 3 dialectical synthesis."
-            },
-            "thesis_description": {
-                "type": "string",
-                "description": "Core architecture description and assumptions for the thesis candidate."
-            },
-            "antithesis_title": {
-                "type": "string",
-                "description": "Title of the antithesis / adversarial critique."
-            },
-            "contradictions": {
-                "description": "List of parameter trade-offs / contradictions to resolve with TRIZ principles.",
-                "type": ["array", "string"]
-            },
-            "failure_modes": {
-                "description": "List of adversarial failure modes identified in critique.",
-                "type": ["array", "string"]
-            },
-            "max_debate_rounds": {
-                "type": "integer",
-                "description": "Maximum number of dialectical debate rounds for synthesis (default 4)."
-            },
-            "target_residual_threshold": {
-                "type": "number",
-                "description": "Target residual contradiction score threshold for convergence (default 0.15)."
-            },
-            "model_name": {
-                "type": "string",
-                "description": "Name for the causal DAG model in System 3 simulation."
-            },
-            "nodes": {
-                "description": "List of node dictionaries for Causal DAG construction.",
-                "type": ["array", "string"]
-            },
-            "edges": {
-                "description": "List of directed edge dictionaries for Causal DAG construction.",
-                "type": ["array", "string"]
-            },
-            "interventions": {
-                "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
-                "type": ["object", "string"]
-            },
-            "target_metric": {
-                "type": "string",
-                "description": "Target KPI node ID for sensitivity and structural brittleness analysis."
-            },
-            "generations": {
-                "type": "integer",
-                "description": "Number of evolutionary generations to run (default 3)."
-            },
-            "population_size": {
-                "type": "integer",
-                "description": "Population size for evolutionary gene pool (default 12)."
-            },
-            "mutation_rate": {
-                "type": "number",
-                "description": "Genetic mutation rate probability (default 0.15)."
-            },
-            "crossover_rate": {
-                "type": "number",
-                "description": "Genetic crossover rate probability (default 0.80)."
-            },
-            "seed_paradigms": {
-                "description": "Optional list of initial paradigm definitions to seed the gene pool.",
-                "type": ["array", "string"]
-            },
-            "objective_weights": {
-                "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
-                "type": ["object", "string"]
-            },
-            "task_complexity": {
-                "type": "number",
-                "description": "Task complexity index [0.0, 1.0] for tri-level cognitive arbitration."
-            },
-            "contradiction_density": {
-                "type": "number",
-                "description": "Contradiction density index [0.0, 1.0] for cognitive gear shifting."
-            },
-            "failure_count": {
-                "type": "integer",
-                "description": "Historical failure count for tri-level cognitive gear arbitration."
-            },
-            "epistemic_uncertainty": {
-                "type": "number",
-                "description": "Epistemic uncertainty index [0.0, 1.0] for arbitration."
-            },
-            "tree": {
-                "description": "Tree hierarchy adjacency list or nested dict for hyperbolic embedding.",
-                "type": ["object", "array", "string"]
-            },
-            "root_id": {
-                "type": "string",
-                "description": "Root node ID for hyperbolic tree embedding or initial world."
-            },
-            "dimension": {
-                "type": "integer",
-                "description": "Dimension of Poincaré ball manifold (default 2)."
-            },
-            "curvature": {
-                "type": "number",
-                "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0)."
-            },
-            "base_step": {
-                "type": "number",
-                "description": "Base geodesic step distance for hyperbolic tree embedding (default 1.0)."
-            },
-            "node_labels": {
-                "description": "Optional mapping of node IDs to readable labels.",
-                "type": ["object", "string"]
-            },
-            "worlds": {
-                "description": "List of world/state definitions for Kripke structure.",
-                "type": ["array", "string"]
-            },
-            "transitions": {
-                "description": "List of transitions or adjacency dictionary for Kripke structure.",
-                "type": ["array", "object", "string"]
-            },
-            "formula": {
-                "type": "string",
-                "description": "CTL / modal formula string to verify against Kripke structure (e.g. 'AG(safe)', 'EF(goal)')."
-            },
-            "initial_world": {
-                "type": "string",
-                "description": "Initial world ID for Kripke model checking."
-            },
-            "observation": {
-                "type": "string",
-                "description": "Current sensory observation for Active Inference belief updating."
-            },
-            "policies": {
-                "description": "List of candidate action sequence policies for Expected Free Energy evaluation.",
-                "type": ["array", "string"]
-            },
-            "gamma": {
-                "type": "number",
-                "description": "Policy precision inverse temperature gamma for Active Inference softmax (default 16.0)."
-            },
-            "states": {
-                "description": "List of hidden state identifiers for Active Inference POMDP.",
-                "type": ["array", "string"]
-            },
-            "observations": {
-                "description": "List of observation identifiers for Active Inference POMDP.",
-                "type": ["array", "string"]
-            },
-            "actions": {
-                "description": "List of control action identifiers for Active Inference POMDP.",
-                "type": ["array", "string"]
-            },
-            "a_matrix": {
-                "description": "Observation likelihood matrix A [O x S] for Active Inference.",
-                "type": ["array", "string"]
-            },
-            "b_matrices": {
-                "description": "State transition matrices B [Action -> S x S] for Active Inference.",
-                "type": ["object", "string"]
-            },
-            "c_preferences": {
-                "description": "Prior preference distribution C over observations for Active Inference.",
-                "type": ["array", "string"]
-            },
-            "d_prior": {
-                "description": "Prior initial state belief distribution D for Active Inference.",
-                "type": ["array", "string"]
-            },
-            "context": {
-                "description": "Hypothesis typing context dictionary {name: type} for proof oracle.",
-                "type": ["object", "string"]
-            },
-            "axioms": {
-                "description": "List of reference axiom names or strings for proof oracle.",
-                "type": ["array", "string"]
             }
         },
-        "required": ["action"]
+        "required": ["action"],
+        "allOf": [{
+            "if": {"properties": {"action": {"enum": sorted(CAS_ACTIONS)}}},
+            "then": {"required": ["session_name"]}
+        }]
+    },
+    "outputSchema": {
+        "type": "object",
+        "required": ["ok", "action", "text", "isError"],
+        "properties": {
+            "ok": {"type": "boolean"}, "action": {"type": ["string", "null"]},
+            "text": {"type": "string"}, "isError": {"type": "boolean"},
+            "error": {"type": ["object", "null"]},
+            "host_honesty": {"type": "object"}
+        },
+        "additionalProperties": True
     }
 }
 
 
 def send_response(response_dict: Dict[str, Any]):
-    """Writes a bounded JSON-RPC response to stdout with UTF-8 safety."""
-    encoded = json.dumps(response_dict, ensure_ascii=False)
-    encoded_bytes = encoded.encode("utf-8")
-    if len(encoded_bytes) > MAX_RPC_RESPONSE_BYTES:
-        response_dict = {
-            "jsonrpc": "2.0",
-            "id": response_dict.get("id") if isinstance(response_dict, dict) else None,
-            "error": {"code": -32000, "message": "Response exceeds maximum size"}
-        }
-        encoded = json.dumps(response_dict, ensure_ascii=False)
-        encoded_bytes = encoded.encode("utf-8")
-    payload = encoded_bytes + b"\n"
-    if hasattr(sys.stdout, "buffer") and sys.stdout.buffer is not None:
-        try:
-            sys.stdout.buffer.write(payload)
-            sys.stdout.buffer.flush()
-            return
-        except Exception:
-            pass
-    try:
-        sys.stdout.write(encoded + "\n")
-        sys.stdout.flush()
-    except UnicodeEncodeError:
-        sys.stdout.write(payload.decode("utf-8", errors="replace"))
-        sys.stdout.flush()
+    """Writes a bounded JSON-RPC response to stdout."""
+    encoded = json.dumps(response_dict)
+    if len(encoded.encode("utf-8")) > MAX_RPC_RESPONSE_BYTES:
+        response_dict = {"jsonrpc": "2.0", "id": response_dict.get("id"),
+                         "error": {"code": -32000, "message": "Response exceeds maximum size"}}
+        encoded = json.dumps(response_dict)
+    sys.stdout.write(encoded + "\n")
+    sys.stdout.flush()
 
 
 def _bounded_lines(stream, limit: int):
@@ -3759,139 +3876,418 @@ def _bounded_lines(stream, limit: int):
                     del pending[limit:]
 
 
+class RequestCancellationRegistry:
+    """Bounded pre-dispatch cancellation tombstones for synchronous V1.
+
+    V1 cannot interrupt an active handler, so a cancellation notification is
+    retained only long enough to reject a request that is about to dispatch.
+    Tombstones are deliberately bounded and expiring: a peer can send
+    arbitrary notifications, including IDs for requests that never arrive,
+    but cannot grow this process's memory without limit.
+    """
+
+    def __init__(self):
+        self._cancelled: dict[str, float] = {}
+        self._cancelled_bytes = 0
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def key(request_id: Any) -> str:
+        """Canonicalize and bound a JSON-RPC request ID for registry use."""
+        if isinstance(request_id, bool) or request_id is None:
+            raise ValueError("request_id must be a string or number")
+        if not isinstance(request_id, (str, int, float)):
+            raise ValueError("request_id must be a string or number")
+        if isinstance(request_id, float) and not math.isfinite(request_id):
+            raise ValueError("request_id must be a finite number")
+        key = json.dumps(request_id, sort_keys=True, separators=(",", ":"))
+        if len(key.encode("utf-8")) > MAX_CANCEL_REQUEST_ID_BYTES:
+            raise ValueError("request_id exceeds cancellation ID size limit")
+        return key
+
+    def _remove_locked(self, key: str) -> None:
+        if key in self._cancelled:
+            self._cancelled.pop(key, None)
+            self._cancelled_bytes = max(
+                0, self._cancelled_bytes - len(key.encode("utf-8")))
+
+    def _cleanup_expired_locked(self, now: Optional[float] = None) -> None:
+        now = time.monotonic() if now is None else now
+        for key, expiry in list(self._cancelled.items()):
+            if expiry <= now:
+                self._remove_locked(key)
+
+    def _add_locked(self, key: str, now: Optional[float] = None) -> bool:
+        now = time.monotonic() if now is None else now
+        self._cleanup_expired_locked(now)
+        key_bytes = len(key.encode("utf-8"))
+        if key in self._cancelled:
+            # Refreshing an existing tombstone must not double-charge bytes.
+            self._cancelled[key] = now + CANCEL_TOMBSTONE_TTL_SECONDS
+            return True
+        # Evict oldest-expiring entries until both independent bounds hold.
+        # Every key is checked above, so an individual key cannot exceed the
+        # byte budget and force an unbounded/partial insertion.
+        while (len(self._cancelled) >= MAX_CANCEL_TOMBSTONES or
+               self._cancelled_bytes + key_bytes > MAX_CANCEL_TOMBSTONE_BYTES):
+            if not self._cancelled:
+                return False
+            victim = min(self._cancelled, key=self._cancelled.get)
+            self._remove_locked(victim)
+        self._cancelled[key] = now + CANCEL_TOMBSTONE_TTL_SECONDS
+        self._cancelled_bytes += key_bytes
+        return True
+
+    def cancel(self, request_id: Any) -> None:
+        key = self.key(request_id)
+        with self._lock:
+            self._add_locked(key)
+
+    def is_cancelled(self, request_id: Any) -> bool:
+        key = self.key(request_id)
+        with self._lock:
+            self._cleanup_expired_locked()
+            return key in self._cancelled
+
+    def consume(self, request_id: Any) -> bool:
+        """Atomically test and remove a pre-dispatch cancellation."""
+        key = self.key(request_id)
+        with self._lock:
+            self._cleanup_expired_locked()
+            if key not in self._cancelled:
+                return False
+            self._remove_locked(key)
+            return True
+
+    def clear(self, request_id: Any) -> None:
+        """Forget a completed or otherwise abandoned request ID."""
+        key = self.key(request_id)
+        with self._lock:
+            self._remove_locked(key)
+            self._cleanup_expired_locked()
+
+
+def _valid_rpc_id(value: Any) -> bool:
+    """JSON-RPC IDs are strings or finite numbers; booleans are not IDs."""
+    if isinstance(value, bool) or value is None:
+        return False
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
+    return isinstance(value, (str, int, float))
+
+
+def _rpc_error(msg_id: Any, code: int, message: str) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
+def _strict_json_constant(token: str) -> Any:
+    raise ValueError(f"non-standard JSON constant is not permitted: {token}")
+
+
+def _strict_json_loads(value: str) -> Any:
+    return json.loads(value, parse_constant=_strict_json_constant)
+
+
+def _deadline_seconds(params: Dict[str, Any]) -> Optional[float]:
+    """Parse request deadlines and reject silently ignored nested legacy forms."""
+    # Only the two documented V1 locations are inspected.  Older clients have
+    # sent deadline fields below ``_meta.request`` (or inside arguments); those
+    # must not be silently ignored and then run without a deadline.
+    def nested_deadline_path(value: Any, path: tuple[str, ...] = ()) -> Optional[tuple[str, ...]]:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in {"deadline_seconds", "deadline", "request_deadline"}:
+                    if path == () or path == ("_meta",):
+                        continue
+                    return path + (str(key),)
+                found = nested_deadline_path(child, path + (str(key),))
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                found = nested_deadline_path(child, path + (str(index),))
+                if found is not None:
+                    return found
+        return None
+
+    unsupported_path = nested_deadline_path(params)
+    if unsupported_path is not None:
+        raise ValueError("unsupported nested legacy deadline field: " + ".".join(unsupported_path))
+    value = params.get("deadline_seconds")
+    if value is None and isinstance(params.get("_meta"), dict):
+        value = params["_meta"].get("deadline_seconds")
+    # A legacy top-level ``deadline`` is also explicitly unsupported rather
+    # than being mistaken for an enforceable deadline.
+    if value is None and any(key in params for key in ("deadline", "request_deadline")):
+        raise ValueError("unsupported legacy deadline field")
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("deadline_seconds must be a finite positive number")
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("deadline_seconds must be a finite positive number") from exc
+    if not math.isfinite(seconds) or not (0 < seconds <= MAX_REQUEST_DEADLINE_SECONDS):
+        raise ValueError(f"deadline_seconds must be between 0 and {MAX_REQUEST_DEADLINE_SECONDS}")
+    return seconds
+
+
+def _tool_result(msg_id: Any, text: str, *, action: Optional[str] = None,
+                 is_error: bool = False, error_code: str = "tool_error",
+                 structured: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    encoded_text = str(text)
+    if len(encoded_text.encode("utf-8", "replace")) > MAX_TOOL_TEXT_BYTES:
+        raw = encoded_text.encode("utf-8", "replace")
+        encoded_text = raw[:MAX_TOOL_TEXT_BYTES].decode("utf-8", "ignore") + " [truncated]"
+    if structured is None:
+        structured = {"ok": not is_error, "action": action, "text": encoded_text,
+                      "isError": is_error,
+                      "error": ({"code": error_code, "message": encoded_text} if is_error else None),
+                      "host_honesty": {
+                          "tool_authorization": "external_host_required",
+                          "interruptive_control": INTERRUPTIVE_CONTROL,
+                          "session_gate_is_not_a_sandbox": True,
+                      }}
+    else:
+        structured = copy.deepcopy(structured)
+        structured.setdefault("ok", not is_error)
+        structured.setdefault("action", action)
+        structured.setdefault("isError", is_error)
+        structured.setdefault("text", encoded_text)
+        if is_error:
+            structured.setdefault("error", {"code": error_code, "message": encoded_text})
+    return {"jsonrpc": "2.0", "id": msg_id,
+            "result": {"content": [{"type": "text", "text": encoded_text}],
+                        "structuredContent": structured, "isError": is_error}}
+
+
 def main():
     logger.info("Starting Fable-Engine MCP Server on stdio...")
+    # Protocol state is per stdio connection, not global process state.
+    initialized = False
+    client_ready = False
+    negotiated_version: Optional[str] = None
+    cancelled = RequestCancellationRegistry()
     for line, oversized in _bounded_lines(sys.stdin, MAX_RPC_LINE_BYTES):
         if oversized:
-            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            send_response(_rpc_error(None, -32600, "Invalid Request"))
             continue
-        # Count the raw frame before trimming whitespace; otherwise an attacker
-        # can bypass the line limit with an oversized whitespace prefix/suffix.
+        # Count the raw frame before trimming whitespace, including whitespace.
         if len(line.encode("utf-8", "replace")) > MAX_RPC_LINE_BYTES:
-            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            send_response(_rpc_error(None, -32600, "Invalid Request"))
             continue
         line = line.strip()
         if not line:
             continue
-
         if len(line.encode("utf-8", "replace")) > MAX_RPC_LINE_BYTES:
-            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            send_response(_rpc_error(None, -32600, "Invalid Request"))
             continue
         try:
-            req = json.loads(line)
+            req = _strict_json_loads(line)
         except Exception:
-            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            # A parse error has no request ID and is not a valid notification.
+            send_response(_rpc_error(None, -32700, "Parse error"))
             continue
-        # JSON-RPC requests are objects; arrays and scalar values must not
-        # reach req.get() and crash the stdio server.
+        # V1 deliberately has a single-request policy. This avoids ambiguous
+        # ordering and makes cancellation/deadline state deterministic.
+        if isinstance(req, list):
+            send_response(_rpc_error(None, -32600, "Invalid Request: batches are not supported by V1"))
+            continue
         if not isinstance(req, dict):
-            send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
+            send_response(_rpc_error(None, -32600, "Invalid Request"))
             continue
+        has_id = "id" in req
+        msg_id = req.get("id")
+        if has_id and not _valid_rpc_id(msg_id):
+            send_response(_rpc_error(None, -32600, "Invalid Request: id must be a string or finite number"))
+            continue
+        def _clear_request_id() -> None:
+            if has_id:
+                try:
+                    cancelled.clear(msg_id)
+                except ValueError:
+                    # IDs larger than the cancellation registry's bound were
+                    # never retained and need no cleanup.
+                    pass
+
         if req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
-            send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})
+            send_response(_rpc_error(msg_id if has_id and _valid_rpc_id(msg_id) else None, -32600, "Invalid Request"))
+            _clear_request_id()
             continue
         if "params" in req and not isinstance(req["params"], dict):
-            send_response({"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32600, "message": "Invalid Request"}})
+            # Retain the V1 compatibility behavior for malformed params, but
+            # never answer a notification.
+            if has_id:
+                send_response(_rpc_error(msg_id, -32600, "Invalid Request"))
+            _clear_request_id()
+            continue
+        method = req["method"]
+        params = req.get("params", {})
+        is_notification = not has_id
+
+        if method == "notifications/cancelled":
+            request_id = params.get("requestId")
+            if _valid_rpc_id(request_id):
+                try:
+                    cancelled.cancel(request_id)
+                except ValueError:
+                    # Oversized IDs are valid at the JSON-RPC framing layer but
+                    # are not retained by the bounded cancellation registry.
+                    pass
+                else:
+                    logger.warning("Cancellation recorded for request %r; interruptive cancellation is unsupported by synchronous V1", request_id)
+            _clear_request_id()
             continue
 
-        msg_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params", {})
-
         if method == "initialize":
-            send_response({
-                "jsonrpc": "2.0",
-                "id": msg_id,
+            if initialized:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32600, "Server already initialized"))
+                _clear_request_id()
+                continue
+            requested = params.get("protocolVersion", SERVER_PROTOCOL_VERSION)
+            if not isinstance(requested, str):
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32602, "protocolVersion must be a string"))
+                _clear_request_id()
+                continue
+            if requested not in SUPPORTED_PROTOCOL_VERSIONS:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32602, "Unsupported protocol version"))
+                _clear_request_id()
+                continue
+            initialized = True
+            negotiated_version = requested
+            response = {
+                "jsonrpc": "2.0", "id": msg_id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": negotiated_version,
                     "capabilities": {
-                        "tools": {}
+                        "tools": {"listChanged": False},
+                        "fableV1": {
+                            "interruptiveCancellation": False,
+                            "requestDeadlines": "unsupported_synchronous_v1",
+                            "hostToolAuthorization": "external_host_required"
+                        },
+                        "fableControlPlane": control_plane_capabilities()
                     },
-                    "serverInfo": {
-                        "name": "fable-engine",
-                        "version": "1.2.3"
-                    }
+
+                    "serverInfo": {"name": "fable-engine", "version": "1.2.0"}
                 }
-            })
+            }
+            if not is_notification:
+                send_response(response)
+            _clear_request_id()
+            continue
 
-        elif method == "notifications/initialized":
-            logger.info("Fable client handshake complete.")
+        if method == "notifications/initialized":
+            if initialized:
+                client_ready = True
+                logger.info("Fable client handshake complete.")
+            _clear_request_id()
+            continue
 
-        elif method == "ping":
-            send_response({
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {}
-            })
+        # MCP tools are unavailable until initialize has completed.
+        if not initialized:
+            if not is_notification:
+                send_response(_rpc_error(msg_id, -32002, "Server not initialized"))
+            _clear_request_id()
+            continue
 
-        elif method == "tools/list":
-            send_response({
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "tools": [TOOL_SCHEMA]
-                }
-            })
+        if method == "ping":
+            if not is_notification:
+                send_response({"jsonrpc": "2.0", "id": msg_id, "result": {}})
+            _clear_request_id()
+            continue
 
-        elif method == "tools/call":
+        if method == "tools/list":
+            if not is_notification:
+                send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"tools": [TOOL_SCHEMA, CONTROL_PLANE_TOOL_SCHEMA]}})
+            _clear_request_id()
+            continue
+
+        if method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
             if not isinstance(tool_name, str) or not isinstance(arguments, dict):
-                send_response({"jsonrpc": "2.0", "id": msg_id,
-                               "error": {"code": -32600, "message": "Invalid Request"}})
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32602, "tools/call requires string name and object arguments"))
+                _clear_request_id()
                 continue
+            try:
+                deadline = _deadline_seconds(params)
+            except ValueError as exc:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32602, str(exc)))
+                _clear_request_id()
+                continue
+            try:
+                request_was_cancelled = cancelled.consume(msg_id) if has_id else False
+            except ValueError:
+                # The ordinary RPC ID validation is intentionally broader than
+                # the cancellation registry's memory bound. Such an ID can be
+                # served, but cannot participate in pre-dispatch cancellation.
+                request_was_cancelled = False
+            if request_was_cancelled:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32800, "Request cancelled"))
+                continue
+            # There is no reader/control thread or killable worker boundary in
+            # V1's synchronous stdio loop.  Reject deadlines instead of running
+            # work past them and relabelling the result afterwards.
+            if deadline is not None:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32003,
+                        "Unsupported: V1 synchronous server cannot enforce interruptive request deadlines"))
+                _clear_request_id()
+                continue
+            if tool_name not in {"fable_session", CONTROL_PLANE_TOOL_NAME}:
+                if not is_notification:
+                    send_response(_rpc_error(msg_id, -32601, f"Method / Tool '{tool_name}' not found."))
+                _clear_request_id()
+                continue
+            if tool_name == CONTROL_PLANE_TOOL_NAME:
+                strict_result = handle_fable_control_plane(arguments)
+                is_error = strict_result.get("ok") is not True
+                action = arguments.get("action") if isinstance(arguments.get("action"), str) else None
+                if not is_notification:
+                    send_response(_tool_result(msg_id, json.dumps(strict_result, ensure_ascii=False, separators=(",", ":")),
+                                                action=action, is_error=is_error,
+                                                error_code=(strict_result.get("error") or {}).get("code", "control_plane_error"),
+                                                structured=strict_result))
+                _clear_request_id()
+                continue
+            action, validation_error = _validate_tool_arguments(arguments)
+            if validation_error:
+                if not is_notification:
+                    send_response(_tool_result(msg_id, f"Error: Invalid arguments: {validation_error}", action=action, is_error=True, error_code="invalid_arguments"))
+                _clear_request_id()
+                continue
+            try:
+                result_text = handle_fable_session(arguments)
+                is_error = result_text.startswith("Error:")
+                # fable_session is the legacy surface. Callers should set
+                # compatibility_mode=legacy_v1 explicitly; the direct Python
+                # API remains for source compatibility with existing clients.
+                if not is_notification:
+                    send_response(_tool_result(msg_id, result_text, action=action,
+                                                is_error=is_error,
+                                                error_code="action_failed" if is_error else ""))
+            except Exception as ex:
+                logger.error(f"Error handling fable_session: {ex}", exc_info=True)
+                if not is_notification:
+                    send_response(_tool_result(msg_id, f"Fable Engine Error: {ex}", action=action,
+                                                is_error=True, error_code="internal_error"))
+            finally:
+                # Completed requests, including failures, must not leave
+                # reusable IDs in the cancellation registry.
+                _clear_request_id()
+            continue
 
-            if tool_name == "fable_session":
-                try:
-                    result_text = handle_fable_session(arguments)
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": result_text
-                                }
-                            ],
-                            "isError": False
-                        }
-                    })
-                except Exception as ex:
-                    logger.error(f"Error handling fable_session: {ex}", exc_info=True)
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Fable Engine Error: {str(ex)}"
-                                }
-                            ],
-                            "isError": True
-                        }
-                    })
-            else:
-                send_response({
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "error": {
-                        "code": -32601,
-                        "message": f"Method / Tool '{tool_name}' not found."
-                    }
-                })
-
-        else:
-            if msg_id is not None:
-                send_response({
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "error": {
-                        "code": -32601,
-                        "message": f"Unrecognized JSON-RPC method: {method}"
-                    }
-                })
+        if not is_notification:
+            send_response(_rpc_error(msg_id, -32601, f"Unrecognized JSON-RPC method: {method}"))
+        _clear_request_id()
 
 
 if __name__ == "__main__":

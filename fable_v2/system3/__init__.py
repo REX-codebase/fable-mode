@@ -44,7 +44,7 @@ from .free_energy import (
     GenerativeModel,
     Policy,
     PolicyEvaluation,
-    create_default_architecture_pomdp,
+    create_default_architecture_pomdp, prediction_error, revise_belief, policy_revision,
 )
 from .hyperbolic import (
     HyperbolicGeometryError,
@@ -167,6 +167,7 @@ __all__ = [
     "Policy",
     "PolicyEvaluation",
     "create_default_architecture_pomdp",
+    "prediction_error", "revise_belief", "policy_revision",
     # Oracle
     "Abort",
     "And",

@@ -20,9 +20,11 @@ hiddenimports = [
     "fable_engine.server",
     "fable_v2.adapters", "fable_v2.execution_broker", "fable_v2.protocol",
     "fable_v2.runtime", "fable_v2.verifiers",
-    "fable_v2.system3", "fable_v2.system3.causal", "fable_v2.system3.dialectical",
-    "fable_v2.system3.evolution", "fable_v2.system3.executive", "fable_v2.system3.free_energy",
-    "fable_v2.system3.hyperbolic", "fable_v2.system3.induction", "fable_v2.system3.kripke",
+    "fable_v2.system3",
+    "fable_v2.system3.causal", "fable_v2.system3.dialectical",
+    "fable_v2.system3.evolution", "fable_v2.system3.executive",
+    "fable_v2.system3.free_energy", "fable_v2.system3.hyperbolic",
+    "fable_v2.system3.induction", "fable_v2.system3.kripke",
     "fable_v2.system3.oracle",
 ]
 

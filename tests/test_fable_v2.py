@@ -25,16 +25,24 @@ class FableV2RuntimeTests(unittest.TestCase):
             required_capabilities=("inspect_files", "run_tests"),
             required_evidence=("test-result",),
         )
-        self.run = new_run("session-001", self.task)
+        # This fixture exercises the pre-claim legacy API explicitly.
+        self.run = new_run("session-001", self.task, compatibility_mode=True)
+        # Positive independent-verifier tests use a second, measured producer.
+        # This keeps the fixture faithful to the fail-closed policy: labels and
+        # a same-receipt self-declaration are not independence evidence.
         self.inspect = ToolReceipt.from_result(
             receipt_id="r-inspect", session_id="session-001",
             capability="inspect_files", tool_name="grep",
             tool_input={"query": "bug"}, tool_output={"matches": 2}, success=True,
+            executable_identity={"digest": "independent-producer"},
+            workspace_identity={"digest": "independent-workspace"},
         )
         self.tests = ToolReceipt.from_result(
             receipt_id="r-tests", session_id="session-001",
             capability="run_tests", tool_name="pytest",
             tool_input={"target": "tests"}, tool_output={"passed": True}, success=True,
+            executable_identity={"digest": "deterministic-producer"},
+            workspace_identity={"digest": "deterministic-workspace"},
         )
         self.run.record_receipt(self.inspect)
         self.run.record_receipt(self.tests)
@@ -45,11 +53,20 @@ class FableV2RuntimeTests(unittest.TestCase):
             kind="test-result",
             source="pytest: tests",
         )
+        self.inspect_evidence = Evidence.from_receipt(
+            self.inspect,
+            evidence_id="e-inspect",
+            claim="The candidate was independently inspected",
+            kind="inspection",
+            source="independent inspector",
+        )
         self.run.attach_evidence(self.evidence)
+        self.run.attach_evidence(self.inspect_evidence)
         self.candidate = Candidate(
             candidate_id="candidate-001", session_id="session-001",
             approach="minimal patch", artifact={"diff": "..."},
-            receipt_ids=("r-inspect", "r-tests"), evidence_ids=("e-tests",),
+            receipt_ids=("r-inspect", "r-tests"),
+            evidence_ids=("e-tests", "e-inspect"),
         )
         self.run.register_candidate(self.candidate)
 
@@ -156,7 +173,7 @@ class FableV2RuntimeTests(unittest.TestCase):
         ), "candidate-001")
         self.run.execute_verifier(FunctionVerifier(
             "independent-review", lambda candidate: (True, ("review passed",), 1.0),
-            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+            verifier_class="independent", independent=True, evidence_ids=("e-inspect",),
         ), "candidate-001")
         result = self.run.finalize("candidate-001")
         self.assertEqual(result.candidate_id, "candidate-001")
@@ -279,7 +296,7 @@ class FableV2RuntimeTests(unittest.TestCase):
         ), "candidate-001")
         self.run.execute_verifier(FunctionVerifier(
             "independent-review", lambda candidate: (True, ("review passed",), 1.0),
-            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+            verifier_class="independent", independent=True, evidence_ids=("e-inspect",),
         ), "candidate-001")
         self.run.invalidate_verifier("independent-review", "calibration drift")
         with self.assertRaises(PermissionError) as error:
@@ -343,7 +360,7 @@ class FableV2RuntimeTests(unittest.TestCase):
         ), "candidate-001")
         self.run.execute_verifier(FunctionVerifier(
             "independent-review", lambda candidate: (True, ("review passed",), 1.0),
-            verifier_class="independent", independent=True, evidence_ids=("e-tests",),
+            verifier_class="independent", independent=True, evidence_ids=("e-inspect",),
         ), "candidate-001")
         payload = self.run.to_dict()
         self.assertEqual(FableRun.from_dict(payload).status()["verifications"], 2)

@@ -2,16 +2,20 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from fable_v2 import BrokerPolicy, ExecutionBroker
-from fable_v2.execution_broker import MAX_ERROR_TEXT, MAX_FRAME_BYTES, serve
+from fable_v2.execution_broker import (
+    BROKER_PROBE_FIELDS, MAX_ERROR_TEXT, MAX_FRAME_BYTES, serve,
+)
 
 
 class ExecutionBrokerTests(unittest.TestCase):
@@ -27,6 +31,113 @@ class ExecutionBrokerTests(unittest.TestCase):
 
     def tearDown(self):
         self.tempdir.cleanup()
+
+    def test_probe_has_the_stable_contract_fields(self):
+        expected = {
+            "host", "capabilities", "available_executables", "executable_identities",
+            "execution_binding", "writes_enabled", "read_locked_interpreters",
+            "workspace", "workspace_identity",
+        }
+        probe = self.broker.probe()
+        self.assertEqual(set(BROKER_PROBE_FIELDS), expected)
+        self.assertEqual(set(probe), expected)
+
+    def test_default_probe_skips_optional_missing_pytest(self):
+        """The documented default must work without the optional pytest command."""
+        import fable_v2.execution_broker as module
+        real_which = shutil.which
+
+        def which_without_pytest(name):
+            return None if name == "pytest" else real_which(name)
+
+        with patch.object(module.shutil, "which", side_effect=which_without_pytest):
+            broker = ExecutionBroker(BrokerPolicy(self.workspace))
+        self.assertIn("python", broker.probe()["available_executables"])
+        self.assertNotIn("pytest", broker.probe()["available_executables"])
+
+    @unittest.skipIf(os.name == "nt", "descriptor-pinned interpreter test is POSIX-only")
+    def test_default_probe_subprocess_works_without_pytest_on_path(self):
+        """Exercise the documented default CLI in a deliberately minimal PATH."""
+        env = {"PATH": str(Path(sys.executable).parent),
+               "PYTHONPATH": os.getcwd()}
+        request = json.dumps({"action": "probe"}) + "\n"
+        completed = subprocess.run(
+            [sys.executable, "-m", "fable_v2.execution_broker",
+             "--workspace", str(self.workspace)],
+            input=request, text=True, capture_output=True, env=env, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        response = json.loads(completed.stdout)
+        self.assertTrue(response["ok"])
+        self.assertIn("python", response["result"]["available_executables"])
+        self.assertNotIn("pytest", response["result"]["available_executables"])
+
+    @unittest.skipIf(os.name == "nt", "descriptor-pinned interpreter test is POSIX-only")
+    def test_script_uses_pinned_interpreter_after_path_replacement(self):
+        """Replacing a shebang path between validation and Popen cannot alter execution."""
+        import fable_v2.execution_broker as module
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            interpreter = root / "interpreter"
+            shutil.copyfile("/bin/sh", interpreter)
+            interpreter.chmod(0o700)
+            script = root / "runner"
+            script.write_text(f"#!{interpreter}\necho pinned\n", encoding="utf-8")
+            script.chmod(0o700)
+            replacement = root / "replacement"
+            replacement.write_text("#!/bin/sh\necho replaced\n", encoding="utf-8")
+            replacement.chmod(0o700)
+            # The replacement is visibly distinguishable: an unpinned kernel
+            # shebang lookup would run this file instead of the original shell.
+            broker = ExecutionBroker(BrokerPolicy(
+                root, (str(script), str(interpreter)),
+                write_token_digest=hashlib.sha256(b"admin-token").hexdigest(),
+            ))
+            broker.unlock_writes("admin-token")
+            original_popen = module.subprocess.Popen
+
+            def replace_before_spawn(*args, **kwargs):
+                os.replace(replacement, interpreter)
+                return original_popen(*args, **kwargs)
+
+            with patch.object(module.subprocess, "Popen", side_effect=replace_before_spawn):
+                result = broker.execute_command([str(script)])
+            self.assertTrue(result["success"])
+            self.assertIn("pinned", result["stdout"])
+
+    def test_attempted_write_quota_is_shared_and_persistent(self):
+        """Fresh broker instances observe prior replacement attempts via the ledger."""
+        token_digest = hashlib.sha256(b"admin-token").hexdigest()
+        first = ExecutionBroker(BrokerPolicy(
+            self.workspace, (self.executable,), max_file_write_bytes=4,
+            max_workspace_write_bytes=8, write_token_digest=token_digest,
+        ))
+        second = ExecutionBroker(BrokerPolicy(
+            self.workspace, (self.executable,), max_file_write_bytes=4,
+            max_workspace_write_bytes=8, write_token_digest=token_digest,
+        ))
+        first.unlock_writes("admin-token")
+        second.unlock_writes("admin-token")
+        first.write_file("replaced.txt", "ab")
+        second.write_file("replaced.txt", "cd")
+        with self.assertRaises(PermissionError):
+            first.write_file("replaced.txt", "e")
+        ledger = json.loads((self.workspace / ".fable-workspace-quota.json").read_text())
+        self.assertEqual(ledger["attempted_bytes"], 4)
+        self.assertEqual(ledger["files"]["replaced.txt"], 4)
+
+    def test_attempted_write_ledger_has_bounded_entries(self):
+        import fable_v2.execution_broker as module
+        token_digest = hashlib.sha256(b"admin-token").hexdigest()
+        broker = ExecutionBroker(BrokerPolicy(
+            self.workspace, (self.executable,), max_file_write_bytes=4,
+            max_workspace_write_bytes=8, write_token_digest=token_digest,
+        ))
+        broker.unlock_writes("admin-token")
+        with patch.object(module, "MAX_WORKSPACE_QUOTA_LEDGER_ENTRIES", 1):
+            broker.write_file("first.txt", "")
+            with self.assertRaises(PermissionError):
+                broker.write_file("second.txt", "")
 
     def test_interpreters_are_blocked_before_write_authorization(self):
         # shell=False does not stop Python from opening files directly.
@@ -96,6 +207,82 @@ class ExecutionBrokerTests(unittest.TestCase):
         self.assertLessEqual(len(responses[0]["message"].encode()), MAX_ERROR_TEXT)
         self.assertTrue(responses[1]["ok"])
         self.assertIn("execute_command", responses[1]["result"]["capabilities"])
+
+    def test_mcp_worker_admission_is_bounded_and_completed_workers_release_slots(self):
+        """A connection rejects overload and admits a call after cleanup."""
+        import fable_v2.execution_broker as module
+
+        first = json.dumps({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "probe", "arguments": {}},
+        }).encode() + b"\n"
+        second = json.dumps({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "probe", "arguments": {}},
+        }).encode() + b"\n"
+        third = json.dumps({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "probe", "arguments": {}},
+        }).encode() + b"\n"
+        started = threading.Event()
+        release = threading.Event()
+        first_done = threading.Event()
+
+        def fake_dispatch(_broker, request, _state):
+            if request.get("id") == 1:
+                started.set()
+                release.wait(2)
+                first_done.set()
+            return {"jsonrpc": "2.0", "id": request.get("id"), "result": {}}
+
+        class ControlledInput:
+            def __init__(self):
+                self.frames = (first, second, third)
+                self.frame = 0
+                self.offset = 0
+
+            def read(self, _size=1):
+                if self.frame == 0 and self.offset == len(self.frames[0]):
+                    self.frame = 1
+                    self.offset = 0
+                    self.assert_started = started.wait(2)
+                if self.frame == 1 and self.offset == len(self.frames[1]):
+                    release.set()
+                    self.assert_first_done = first_done.wait(2)
+                    self.frame = 2
+                    self.offset = 0
+                if self.frame == 2 and self.offset == len(self.frames[2]):
+                    return b""
+                if self.frame >= len(self.frames):
+                    return b""
+                frame = self.frames[self.frame]
+                value = frame[self.offset:self.offset + 1]
+                self.offset += 1
+                return value
+
+        output = io.StringIO()
+        source = ControlledInput()
+        with patch.object(module, "_dispatch_jsonrpc", side_effect=fake_dispatch), \
+             patch.object(module.sys, "stdin", source), \
+             patch.object(module.sys, "stdout", output):
+            module.serve(self.broker, max_workers=1)
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        by_id = {response["id"]: response for response in responses}
+        self.assertEqual(set(by_id), {1, 2, 3})
+        self.assertEqual(by_id[1]["result"], {})
+        overload = by_id[2]["error"]
+        self.assertEqual(overload["code"], module.MCP_OVERLOAD_ERROR_CODE)
+        self.assertEqual(overload["data"]["type"], "overloaded")
+        self.assertEqual(overload["data"]["max_workers"], 1)
+        self.assertTrue(overload["data"]["retryable"])
+        self.assertEqual(by_id[3]["result"], {})
+
+    def test_mcp_worker_limit_is_validated(self):
+        import fable_v2.execution_broker as module
+        with self.assertRaises(ValueError):
+            module.MCPConnectionState(max_workers=0)
+        with self.assertRaises(ValueError):
+            module.MCPConnectionState(max_workers=module.MAX_MCP_WORKERS + 1)
 
     def test_malformed_json_is_a_bounded_controlled_error(self):
         output = io.StringIO()

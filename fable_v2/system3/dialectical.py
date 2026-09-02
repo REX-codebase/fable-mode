@@ -11,10 +11,55 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from collections.abc import Mapping
 import copy
 import hashlib
+import hmac
 import json
 import math
+from ..protocol import Evidence, ToolReceipt, canonical_hash
+
+
+def _finite(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{field_name} must be finite")
+    return float(value)
+
+
+@dataclass(frozen=True)
+class DialecticalMeasurement:
+    """Receipt-bound measured round score; unlike a bare float it is attestable."""
+    round_index: int
+    score: float
+    score_hash: str
+    receipt_id: str
+    evidence_id: str
+    provenance: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if type(self.round_index) is not int or self.round_index < 0:
+            raise ValueError("measurement round_index must be a non-negative integer")
+        score = _finite(self.score, "measurement score")
+        if not 0 <= score <= 1:
+            raise ValueError("measurement score must be between 0 and 1")
+        if not isinstance(self.score_hash, str) or not self.score_hash:
+            raise ValueError("measurement score_hash is required")
+        if not hmac.compare_digest(self.score_hash, canonical_hash(score)):
+            raise ValueError("measurement score_hash does not match score")
+        for name in ("receipt_id", "evidence_id"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"measurement {name} is required")
+        object.__setattr__(self, "provenance", copy.deepcopy(dict(self.provenance)))
+        canonical_hash(self.provenance)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return copy.deepcopy(asdict(self))
+
+
+# Descriptive aliases for hosts that used either spelling while this API was
+# experimental.
+MeasuredRoundScore = DialecticalMeasurement
+MeasurementRecord = DialecticalMeasurement
 
 
 @dataclass
@@ -28,11 +73,18 @@ class Contradiction:
     domain: str = "software_architecture"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _finite(self.severity, "contradiction severity")
+        if not 0 <= self.severity <= 1:
+            raise ValueError("contradiction severity must be between 0 and 1")
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return copy.deepcopy(asdict(self))
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Contradiction":
+    def from_dict(cls, data: Dict[str, Any]) -> "Contradiction":  
         return cls(**data)
 
 
@@ -48,11 +100,23 @@ class ThesisCandidate:
     metrics: Dict[str, float] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.metrics, dict):
+            raise TypeError("thesis metrics must be a mapping")
+        for key, value in self.metrics.items():
+            _finite(value, f"thesis metric {key}")
+        self.core_assumptions = list(self.core_assumptions)
+        self.strengths = list(self.strengths)
+        self.weaknesses = list(self.weaknesses)
+        self.metrics = dict(self.metrics)
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return copy.deepcopy(asdict(self))
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ThesisCandidate":
+    def from_dict(cls, data: Dict[str, Any]) -> "ThesisCandidate":  
         return cls(**data)
 
 
@@ -68,8 +132,18 @@ class AntithesisCritique:
     severity_score: float = 0.5  # [0.0, 1.0]
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _finite(self.severity_score, "critique severity_score")
+        if not 0 <= self.severity_score <= 1:
+            raise ValueError("critique severity_score must be between 0 and 1")
+        self.contradictions = list(self.contradictions)
+        self.failure_modes = list(self.failure_modes)
+        self.adversarial_scenarios = list(self.adversarial_scenarios)
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return copy.deepcopy({
             "critique_id": self.critique_id,
             "thesis_id": self.thesis_id,
             "title": self.title,
@@ -78,10 +152,10 @@ class AntithesisCritique:
             "adversarial_scenarios": self.adversarial_scenarios,
             "severity_score": self.severity_score,
             "metadata": self.metadata,
-        }
+        })
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AntithesisCritique":
+    def from_dict(cls, data: Dict[str, Any]) -> "AntithesisCritique": 
         data_copy = dict(data)
         if "contradictions" in data_copy:
             data_copy["contradictions"] = [
@@ -112,14 +186,19 @@ class TRIZResolutionRecommendation:
     expected_pareto_gain: str
     confidence: float = 0.85
 
+    def __post_init__(self) -> None:
+        _finite(self.confidence, "recommendation confidence")
+        if not 0 <= self.confidence <= 1:
+            raise ValueError("recommendation confidence must be between 0 and 1")
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return copy.deepcopy({
             "principle": self.principle.to_dict(),
             "contradiction": self.contradiction.to_dict(),
             "resolution_strategy": self.resolution_strategy,
             "expected_pareto_gain": self.expected_pareto_gain,
             "confidence": self.confidence,
-        }
+        })
 
 
 @dataclass
@@ -139,8 +218,22 @@ class EmergentSynthesis:
     convergence_achieved: bool
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _finite(self.initial_contradiction_score, "initial contradiction score")
+        _finite(self.residual_contradiction_score, "residual contradiction score")
+        if not 0 <= self.initial_contradiction_score <= 1 or not 0 <= self.residual_contradiction_score <= 1:
+            raise ValueError("synthesis scores must be between 0 and 1")
+        if type(self.debate_rounds_executed) is not int or self.debate_rounds_executed < 0:
+            raise ValueError("debate_rounds_executed must be a non-negative integer")
+        if type(self.convergence_achieved) is not bool:
+            raise TypeError("convergence_achieved must be a boolean")
+        self.resolved_contradictions = list(self.resolved_contradictions)
+        self.transcended_principles = list(self.transcended_principles)
+        self.metadata = copy.deepcopy(dict(self.metadata))
+        canonical_hash(self.metadata)
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return copy.deepcopy({
             "synthesis_id": self.synthesis_id,
             "thesis_id": self.thesis_id,
             "critique_id": self.critique_id,
@@ -154,10 +247,10 @@ class EmergentSynthesis:
             "pareto_improvement_claim": self.pareto_improvement_claim,
             "convergence_achieved": self.convergence_achieved,
             "metadata": self.metadata,
-        }
+        })
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EmergentSynthesis":
+    def from_dict(cls, data: Dict[str, Any]) -> "EmergentSynthesis": 
         data_copy = dict(data)
         if "resolved_contradictions" in data_copy:
             data_copy["resolved_contradictions"] = [
@@ -455,8 +548,9 @@ class TRIZContradictionResolver:
                 f"via {analog_example.lower()}."
             )
             gain = (
-                f"Transcend trade-off: Preserves {contradiction.improving_parameter} gains while "
-                f"eliminating {contradiction.worsening_parameter} regression."
+                "UNMEASURED: expected Pareto effect only; no baseline or execution "
+                f"measurement supplied for {contradiction.improving_parameter}/"
+                f"{contradiction.worsening_parameter}."
             )
 
             rec = TRIZResolutionRecommendation(
@@ -487,6 +581,10 @@ class DialecticalSynthesizer:
         critique: AntithesisCritique,
         max_debate_rounds: int = 4,
         target_residual_threshold: float = 0.15,
+        measured_round_scores: Optional[List[float]] = None,
+        measured_pareto_metrics: Optional[Dict[str, float]] = None,
+        measured_receipts: Optional[List[ToolReceipt]] = None,
+        measured_evidence: Optional[List[Evidence]] = None,
     ) -> EmergentSynthesis:
         """
         Execute bounded dialectical debate rounds to synthesize a higher-order paradigm.
@@ -495,6 +593,92 @@ class DialecticalSynthesizer:
         - Zero unverified compromises (transcendence over weak averaging)
         - Traceable derivation of emergent principles.
         """
+        # Normalize typed score records without ever trusting caller-supplied
+        # numeric claims.  Bare scores are accepted only when the evidence
+        # output explicitly contains the same score series.
+        measurement_records: List[DialecticalMeasurement] = []
+        bare_scores: List[float] = []
+        if measured_round_scores:
+            for index, raw_score in enumerate(measured_round_scores):
+                if isinstance(raw_score, DialecticalMeasurement):
+                    measurement_records.append(raw_score)
+                elif isinstance(raw_score, Mapping):
+                    measurement_records.append(DialecticalMeasurement(**dict(raw_score)))
+                else:
+                    score = _finite(raw_score, "measured round score")
+                    if not 0 <= score <= 1:
+                        raise ValueError("measured round scores must be in [0, 1]")
+                    bare_scores.append(score)
+        if measurement_records and bare_scores:
+            raise ValueError("measured scores must use either typed records or numeric scores")
+        measured = measured_round_scores is not None and bool(measured_round_scores)
+        pareto_supplied = measured_pareto_metrics is not None
+        if measured or pareto_supplied:
+            # A numeric series is not a measurement by itself.  Require actual
+            # successful receipts and hash-bound evidence for measured claims.
+            if not measured_receipts or not measured_evidence:
+                raise ValueError("measured convergence requires receipt and evidence provenance")
+            receipts = {r.receipt_id: r for r in measured_receipts
+                        if isinstance(r, ToolReceipt) and r.success}
+            if len(receipts) != len(measured_receipts):
+                raise ValueError("measured convergence receipts must be successful and unique")
+            evidence_ids = [item.evidence_id for item in measured_evidence
+                            if isinstance(item, Evidence)]
+            if len(evidence_ids) != len(set(evidence_ids)):
+                raise ValueError("measured convergence evidence must be unique")
+            for item in measured_evidence:
+                if not isinstance(item, Evidence) or item.receipt_id not in receipts:
+                    raise ValueError("measured evidence has unresolved receipt provenance")
+                receipt = receipts[item.receipt_id]
+                if (item.session_id != receipt.session_id or
+                        item.content_hash != receipt.output_hash or
+                        item.source_output_hash != receipt.output_hash or
+                        canonical_hash(item.content) != item.content_hash):
+                    raise ValueError("measured evidence is not hash-bound to its receipt")
+        if measured_round_scores is not None:
+            if not measured_round_scores:
+                raise ValueError("measured round scores must be finite numbers in [0, 1]")
+            if measurement_records:
+                rounds = [record.round_index for record in measurement_records]
+                if len(set(rounds)) != len(rounds) or rounds != sorted(rounds):
+                    raise ValueError("typed measurements must have unique ordered rounds")
+                allowed = set(receipts)
+                evidence_by_id = {item.evidence_id: item for item in (measured_evidence or [])}
+                if any(record.receipt_id not in allowed or record.evidence_id not in evidence_by_id
+                       for record in measurement_records):
+                    raise ValueError("typed measurement provenance is not supplied")
+                for record in measurement_records:
+                    item = evidence_by_id[record.evidence_id]
+                    if item.receipt_id != record.receipt_id:
+                        raise ValueError("typed measurement receipt/evidence mismatch")
+                    # The typed record commits to the score; its receipt/evidence
+                    # links and score hash are the provenance boundary.  Hosts may
+                    # keep the numeric score in a non-JSON measurement artifact.
+            else:
+                def score_series(value: Any) -> List[float]:
+                    found: List[float] = []
+                    if isinstance(value, Mapping):
+                        for child in value.values():
+                            found.extend(score_series(child))
+                    elif isinstance(value, (list, tuple)):
+                        if value and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                         and math.isfinite(float(x)) for x in value):
+                            found.extend(float(x) for x in value)
+                        else:
+                            for child in value:
+                                found.extend(score_series(child))
+                    return found
+                expected = [float(x) for x in bare_scores]
+                observed = []
+                for item in (measured_evidence or []):
+                    observed.extend(score_series(item.content))
+                if not any(len(series) >= len(expected) and series[:len(expected)] == expected
+                           for series in (observed,)):
+                    raise ValueError("measured scores do not match receipt/evidence output")
+        if measured_pareto_metrics is not None and any(
+                not isinstance(v, (int, float)) or isinstance(v, bool) or
+                not math.isfinite(float(v)) for v in measured_pareto_metrics.values()):
+            raise ValueError("Pareto measurements must be finite numbers")
         contradictions = critique.contradictions
         if not contradictions:
             # Construct a default contradiction from critique title / failure modes
@@ -543,17 +727,38 @@ class DialecticalSynthesizer:
         synthesis_id = f"syn_{thesis.thesis_id}_{critique.critique_id}_{int(initial_score*100)}"
         title = f"Emergent Synthesis: {thesis.title} Transcended"
         
+        # A synthesis is a proposal, not a measured experiment.  Never turn
+        # deterministic score decay in the planner into a claim about the
+        # world.  Only externally supplied measurements can establish either
+        # convergence or Pareto dominance.
+        measured = measured_round_scores is not None and bool(measured_round_scores)
+        normalized_scores = ([record.score for record in measurement_records]
+                             if measurement_records else bare_scores)
+        monotonic_measurement = bool(measured) and all(
+            float(b) <= float(a) for a, b in zip(normalized_scores, normalized_scores[1:])
+        )
+        if measured and monotonic_measurement:
+            measured_residual = float(normalized_scores[-1])
+            current_score = measured_residual
+            convergence = measured_residual <= target_residual_threshold
+        else:
+            convergence = False
+        pareto_measured = bool(measured_pareto_metrics) and all(
+            isinstance(v, (int, float)) and math.isfinite(float(v))
+            for v in (measured_pareto_metrics or {}).values()
+        )
+        pareto_claim = (
+            "MEASURED: Pareto metrics supplied externally; dominance requires an explicit baseline."
+            if pareto_measured else
+            "UNMEASURED: no Pareto baseline/metrics supplied; this is a proposal, not a Pareto claim."
+        )
+        score_label = "measured" if measured_round_scores else "estimated planner"
         narrative = (
             f"Synthesized architecture transcending '{thesis.title}' and red-team critique '{critique.title}'.\n"
-            f"Resolutions applied across {round_num} debate rounds:\n"
+            f"Resolutions applied across {round_num} debate rounds ({score_label} only):\n"
             + "\n".join([f"- {part}" for part in synthesis_narrative_parts])
-            + f"\nResult: Initial contradiction score {initial_score:.2f} converged to residual {current_score:.2f}."
-        )
-
-        pareto_claim = (
-            f"Achieves strictly non-dominated 10D Pareto frontier improvement. "
-            f"Eliminates {len(resolved_contradictions)} primary architectural contradictions "
-            f"using {len(transcended_principles)} TRIZ transcendence operators."
+            + f"\nResult: Initial contradiction score {initial_score:.2f}; "
+              f"{score_label} residual {current_score:.2f}."
         )
 
         return EmergentSynthesis(
@@ -568,8 +773,15 @@ class DialecticalSynthesizer:
             initial_contradiction_score=initial_score,
             residual_contradiction_score=current_score,
             pareto_improvement_claim=pareto_claim,
-            convergence_achieved=current_score <= target_residual_threshold,
+            convergence_achieved=convergence,
             metadata={
+                "measured": measured,
+                "measured_round_scores": ([record.to_dict() for record in measurement_records]
+                                           if measurement_records else list(normalized_scores)),
+                "measured_receipt_ids": [r.receipt_id for r in (measured_receipts or [])],
+                "measured_evidence_ids": [e.evidence_id for e in (measured_evidence or [])],
+                "measurement_provenance_resolved": bool(measured_receipts and measured_evidence),
+                "pareto_measured": pareto_measured,
                 "thesis_title": thesis.title,
                 "critique_title": critique.title,
                 "reduction_ratio": round((initial_score - current_score) / max(initial_score, 1e-6), 4),

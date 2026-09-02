@@ -57,8 +57,10 @@ class HyperbolicPoint:
     curvature: float = 1.0
 
     def __post_init__(self):
-        if self.curvature <= 0.0:
-            raise ValueError(f"Hyperbolic curvature must be positive (c > 0), got {self.curvature}")
+        if not math.isfinite(float(self.curvature)) or self.curvature <= 0.0:
+            raise ValueError(f"Hyperbolic curvature must be positive and finite (c > 0), got {self.curvature}")
+        if not self.coords or len(self.coords) > 128 or any(not math.isfinite(float(x)) for x in self.coords):
+            raise ValueError("hyperbolic coordinates must be finite and bounded")
         n_sq = _norm_sq(self.coords)
         max_sq = 1.0 / self.curvature
         if n_sq >= max_sq:
@@ -100,9 +102,9 @@ class PoincareBall:
     """
 
     def __init__(self, dimension: int = 2, curvature: float = 1.0):
-        if dimension < 1:
-            raise ValueError(f"Dimension must be >= 1, got {dimension}")
-        if curvature <= 0.0:
+        if not isinstance(dimension, int) or dimension < 1 or dimension > 128:
+            raise ValueError(f"Dimension must be a bounded integer >= 1, got {dimension}")
+        if not math.isfinite(float(curvature)) or curvature <= 0.0:
             raise ValueError(f"Curvature c must be positive, got {curvature}")
         self.dimension = dimension
         self.curvature = curvature
@@ -488,7 +490,36 @@ class HyperbolicTreeEmbedder:
             if roots:
                 detected_root = roots[0]
 
-        return adj, labels, detected_root
+        # A hierarchy is a rooted DAG/tree, never a cyclic graph. Validate
+        # before the recursive embedding walk (which must not be allowed to
+        # recurse forever on hostile input).
+        if len(adj) > 100_000:
+            raise ValueError("hyperbolic hierarchy is too large")
+        roots = [node for node in adj if node not in {c for children in adj.values() for c in children}]
+        root = str(root_id) if root_id is not None else (detected_root or (roots[0] if roots else None))
+        if root is None or root not in adj:
+            raise HyperbolicGeometryError("hierarchy has no valid root")
+        state: Dict[str, int] = {}
+        def visit(node: str) -> None:
+            if state.get(node) == 1:
+                raise HyperbolicGeometryError("cyclic hyperbolic hierarchy input")
+            if state.get(node) == 2:
+                return
+            state[node] = 1
+            children = adj.get(node, [])
+            if len(children) != len(set(children)):
+                raise HyperbolicGeometryError("duplicate edge in hyperbolic hierarchy")
+            for child in children:
+                if child == node:
+                    raise HyperbolicGeometryError("self-cycle in hyperbolic hierarchy")
+                if child not in adj:
+                    raise HyperbolicGeometryError("hierarchy references an undefined node")
+                visit(child)
+            state[node] = 2
+        visit(root)
+        if len(state) != len(adj):
+            raise HyperbolicGeometryError("hyperbolic hierarchy contains disconnected nodes")
+        return adj, labels, root
 
     def _compute_distortion(
         self,

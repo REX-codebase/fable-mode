@@ -31,7 +31,7 @@ jobs:
           python -m compileall -q fable_mode fable_engine fable_v2
           python -c "import fable_mode, fable_v2; from fable_engine import server; print(fable_mode.__version__)"
       - name: Canonical V1 suite
-        run: python fable_engine/test_server.py
+        run: python -m unittest discover -s tests -p 'test_server*.py' -v
       - name: Canonical V2 and packaging/security suites
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Validate packaging definition

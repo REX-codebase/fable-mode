@@ -1,56 +1,79 @@
-# Fable V1 to V2 entry points
+# Migrate from Fable V1 to V2
 
-## Current entry points
+V1 and V2 are intentionally separate entry points. Migration is an adapter
+deployment exercise, not a package upgrade that silently changes an existing
+MCP registration.
 
-| Entry point | Version | Purpose |
+## Entry points
+
+| Command or module | Version | What it does |
 |---|---|---|
-| `fable-engine` | V1 (legacy) | Existing `fable_session` MCP server from `fable_engine.server` |
-| `fable-v1` | V1 (legacy alias) | Explicit alias for `fable-engine` |
-| `fable-v2-broker` | V2 | Process execution broker from `fable_v2.execution_broker` |
+| `fable-engine` | V1 | Runs `fable_engine.server`, the legacy `fable_session` MCP server |
+| `fable-v1` | V1 | Explicit alias for `fable-engine` |
+| `fable-mode serve` | V1 | Package-aware launcher for the same MCP server |
+| `fable-v2-broker --workspace PATH` | V2 | Runs the separate broker's JSON-lines execution boundary |
+| `fable_v2.runtime` | V2 | In-process runtime library; no MCP server entry point |
 
-The existing `install.sh` and `install.ps1` scripts intentionally install and
-register the V1 MCP server for backward compatibility. They now print that
-fact explicitly. Installing the V2 Python package adds the `fable-v2-broker`
-entry point; it does not silently replace the old MCP server.
+The source helpers `install.sh` and `install.ps1` register V1 for backward
+compatibility, while their private `runtime/` copy includes the complete V2
+package (including `fable_v2/system3`). Installing the package does not replace
+an existing host registration with V2. A source-helper V2 broker can be run
+with `python -m fable_v2.execution_broker` using that runtime directory on
+`PYTHONPATH`; V2 is never registered automatically.
 
-## V2 execution boundary
+## Suggested migration sequence
 
-Start the broker with a workspace it owns:
+1. Keep the V1 registration and record its current host configuration.
+2. Install the package in an isolated environment and run the V2 unit tests.
+3. Start a broker against a dedicated, least-privilege workspace.
+4. Build an adapter that probes the live host and calls `HostCapabilities.attest`.
+5. Translate host tool calls into canonical capabilities and host-produced
+   `ToolReceipt` objects.
+6. Create `TaskSpec` and `VerificationPolicy` objects before generating a
+   candidate; attach only evidence derived from successful receipts.
+7. Run deterministic and independent verifiers, then inspect the finalization
+   result. The independent verifier must cite measured provenance from a
+   distinct producer (a same-receipt self-declaration is rejected). Require
+   `process_attested` results when the deployment's trust model needs process
+   isolation.
+8. Exercise rollback and failure paths on the target OS and host.
+9. Enable V2 for a small, non-sensitive workload while leaving V1 available.
+10. Remove V1 only after the V2 adapter has passed conformance tests and users
+    have a documented rollback path.
 
-```bash
-fable-v2-broker --workspace /path/to/workspace
+## Broker setup on POSIX
+
+```sh
+mkdir -p /absolute/path/to/fable-workspace
+export FABLE_BROKER_WRITE_TOKEN_DIGEST="$(python3 -c 'import hashlib; print(hashlib.sha256(b"admin-secret").hexdigest())')"
+fable-v2-broker --workspace /absolute/path/to/fable-workspace --admin-fd 3 3<>/path/to/private-admin-pipe
 ```
 
-The CLI loads write authorization from an administrator-controlled
-`FABLE_BROKER_WRITE_TOKEN_DIGEST` environment variable or
-`FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE` protected file. The value is a SHA-256
-hex digest of the administrative token; it is never returned by the broker's
-probe response and must not be added to a model-facing tool schema.
+The example shows the boundary, not a recommended secret-management system.
+Use a protected secret store or file with appropriate permissions. Do not put
+the token, its cleartext, or the admin file descriptor in a model-facing tool
+schema. The exact process-supervision and pipe setup belongs to the host
+adapter.
 
-Unlocking is performed over a separate inherited POSIX admin file descriptor,
-passed with `--admin-fd`; the model-facing JSON-lines stdin channel has no
-unlock action and no token field. A host adapter must keep the admin pipe and
-token outside the model's tool surface. Windows adapters should use an
-equivalent protected named-pipe/control-handle implementation.
+When the source helper is given `--register-hosts --workspace PATH`,
+Antigravity registration updates both its global
+`~/.gemini/config/mcp_config.json` and `PATH/.agents/mcp_config.json`. Existing
+unrelated keys are preserved, but both are real configuration side effects;
+inspect them before allowing a host to use the registration.
 
-Hosts should communicate with the broker over its JSON-lines stdin/stdout
-protocol and route command execution and file writes through it. The broker
-allowlists executables, constrains paths to the workspace, keeps writes locked
-until administrative authorization, blocks general interpreters while writes
-are locked, and runs commands without a shell. This prevents the common
-`python -c "open(...)"` bypass at the broker policy layer.
+## Compatibility caveats
 
-This is a process/policy boundary, not a complete operating-system sandbox.
-For hostile workloads, run the broker inside a container or equivalent OS
-sandbox with least-privilege filesystem and network permissions.
+- The broker's `--admin-fd` is POSIX-only in this implementation. Windows
+  needs a separate protected control-handle adapter before V2 writes can be
+  unlocked through this interface.
+- A host profile is not proof of support; only live attestation is
+  authoritative.
+- V2's in-process verifier API is not a security boundary.
+- V1 checkpoints restored by the server should be treated as untrusted input.
+- Keep V1 and V2 data directories and workspaces separate while evaluating
+  migration behavior.
 
-## Migration order
-
-1. Keep the V1 MCP server enabled while the host adapter is being tested.
-2. Install the package and start `fable-v2-broker` in a dedicated workspace.
-3. Probe the host and broker capabilities; treat expected profiles as
-   non-authoritative until attested.
-4. Route V2 tool calls through the broker and create candidate-scoped receipts.
-5. Enable V2 finalization only after verifier and broker conformance tests pass.
-6. Remove or disable the V1 MCP registration only after the host adapter has
-   been validated on the target environment.
+See [`fable-v2-architecture.md`](fable-v2-architecture.md),
+[`host-compatibility.md`](host-compatibility.md), and
+[`security-and-trust.md`](security-and-trust.md) for the component and trust
+boundaries.

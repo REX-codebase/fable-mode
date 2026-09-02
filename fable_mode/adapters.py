@@ -1,6 +1,7 @@
 """Safe, bounded host discovery and transactional MCP registration."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -12,8 +13,259 @@ import subprocess
 import sys
 import tempfile
 import threading
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Iterable, Mapping, Protocol
+
+try:  # advisory inter-process lock; the thread lock below covers all platforms
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses the process lock fallback
+    fcntl = None
+
+
+@dataclass(frozen=True)
+class HostIdentity:
+    """Canonical identity and CLI/config contract for one host family.
+
+    Host names are intentionally data, rather than scattered conditionals:
+    aliases are accepted at the boundary but registration records use the
+    canonical identity.  ``list_argv`` is the documented machine-readable
+    listing command; a host that cannot produce JSON from it is not mutated.
+    """
+
+    canonical: str
+    aliases: tuple[str, ...]
+    executable: str
+    kind: str = "cli"
+    list_argv: tuple[str, ...] = ("mcp", "list", "--json")
+
+
+HOST_IDENTITY_REGISTRY: dict[str, HostIdentity] = {
+    "claude-code": HostIdentity("claude-code", ("claude", "claude-code", "cc"), "claude"),
+    "codex": HostIdentity("codex", ("codex",), "codex"),
+    "antigravity": HostIdentity("antigravity", ("agy", "antigravity"), "agy"),
+}
+HOST_ALIASES = {
+    alias: identity.canonical
+    for identity in HOST_IDENTITY_REGISTRY.values()
+    for alias in identity.aliases
+}
+# Public spelling kept intentionally obvious for external harnesses.
+HOST_IDENTITIES = HOST_IDENTITY_REGISTRY
+CONTROL_PLANE_PROFILE = "strict-mcp-v1"
+
+
+def _reject_non_finite(value: Any, *, path: str = "value") -> None:
+    """Reject non-JSON finite numbers before forwarding MCP arguments."""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{path} must not contain NaN or Infinity")
+    if isinstance(value, dict):
+        for key, child in value.items():
+            _reject_non_finite(child, path=f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _reject_non_finite(child, path=f"{path}[{index}]")
+
+
+def canonical_host_id(name: str) -> str:
+    """Resolve a host alias without guessing unknown host identities."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("host name must be a non-empty string")
+    key = name.strip().lower()
+    try:
+        return HOST_ALIASES[key]
+    except KeyError as exc:
+        raise ValueError(f"unknown host identity: {name}") from exc
+
+
+class HostAdapter(Protocol):
+    """Host-neutral adapter surface used by launchers and MCP bridges."""
+
+    def initialize(self, **params: Any) -> dict[str, Any]: ...
+    def discover_capabilities(self) -> dict[str, Any]: ...
+    def route_tool(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]: ...
+    def route_command(self, command: Iterable[str]) -> list[str]: ...
+    def route_file(self, path: str) -> str: ...
+    def cancel(self, request_id: str) -> dict[str, Any] | bool: ...
+    def receipt(self, **kwargs: Any) -> Any: ...
+    def route_control_plane(self, action: str, arguments: Mapping[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]: ...
+    def control_plane_capabilities(self) -> dict[str, Any]: ...
+
+
+class GenericMCPHostAdapter:
+    """Conservative adapter for any host speaking the MCP JSON-RPC shape.
+
+    This class only constructs/routs protocol data; it does not claim that a
+    host has a capability until a caller supplies a successful probe result.
+    """
+
+    PROFILE = "generic-mcp-host"
+
+    def __init__(self, host: str = "generic-mcp-host", *, capabilities: Iterable[str] = ()):
+        self.host = host
+        self._capabilities = frozenset(str(item) for item in capabilities if str(item))
+        self._cancelled: set[str] = set()
+        self._pending: set[str] = set()
+        self._lock = threading.RLock()
+
+    def _request_id(self) -> str:
+        # UUIDs are opaque JSON-RPC IDs and are unique per adapter instance.
+        return uuid.uuid4().hex
+
+    def initialize(self, request_id: Any = None, **params: Any) -> dict[str, Any]:
+        request_id = self._request_id() if request_id is None else request_id
+        if isinstance(request_id, bool) or request_id is None:
+            raise ValueError("request_id must be a non-null JSON-RPC scalar")
+        return {"jsonrpc": "2.0", "id": request_id, "method": "initialize",
+                "params": dict(params)}
+
+    def discover_capabilities(self) -> dict[str, Any]:
+        # Capability discovery is a report, not proof that native host tools
+        # are intercepted. Only a broker-routed invocation can enforce that.
+        return {"host": self.host, "profile": self.PROFILE,
+                "capabilities": sorted(self._capabilities), "authoritative": False,
+                "control_plane": self.control_plane_capabilities(),
+                "host_enforcement": {
+                    "control_plane": "enforced_by_fable_engine",
+                    "native_tools": "not_controlled_unless_routed_through_broker",
+                    "authorization": "advisory_external_host_required",
+                }}
+
+    def route_tool(self, name: str, arguments: Mapping[str, Any] | None = None,
+                   *, request_id: Any = None) -> dict[str, Any]:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("tool name must be non-empty")
+        request_id = self._request_id() if request_id is None else request_id
+        if isinstance(request_id, bool) or request_id is None:
+            raise ValueError("request_id must be a non-null JSON-RPC scalar")
+        payload = dict(arguments or {})
+        _reject_non_finite(payload, path="arguments")
+        # The legacy surface is retained for old MCP clients, but its mode is
+        # explicit on the wire so it cannot be confused with strict control
+        # plane calls.  Do not add this marker to any other tool.
+        if name.strip() == "fable_session":
+            payload.setdefault("compatibility_mode", "legacy_v1")
+        with self._lock:
+            self._pending.add(str(request_id))
+        return {"jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                "params": {"name": name, "arguments": payload}}
+
+    def route_command(self, command: Iterable[str]) -> list[str]:
+        value = list(command)
+        if not value or any(not isinstance(item, str) or not item or "\x00" in item for item in value):
+            raise ValueError("command must be a non-empty sequence of safe strings")
+        return value
+
+    def route_file(self, path: str) -> str:
+        if not isinstance(path, str) or not path or "\x00" in path:
+            raise ValueError("file path must be a non-empty safe string")
+        return path
+
+    def cancel(self, request_id: str) -> dict[str, Any] | bool:
+        """Return the MCP standard cancellation notification for a request."""
+        if (isinstance(request_id, bool) or request_id is None
+                or not isinstance(request_id, (str, int, float))
+                or (isinstance(request_id, float) and not math.isfinite(request_id))):
+            return False
+        key = str(request_id)
+        with self._lock:
+            self._cancelled.add(key)
+            self._pending.discard(key)
+        return {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                "params": {"requestId": request_id}}
+
+    def route_control_plane(self, action: str, arguments: Mapping[str, Any] | None = None,
+                            *, session_id: str | None = None,
+                            idempotency_key: str | None = None) -> dict[str, Any]:
+        """Construct a call to the enforced Fable control-plane tool.
+
+        Routing this message through a broker is what can make host-tool
+        authorization enforced. This adapter itself does not control native
+        host tools and deliberately reports that distinction.
+        """
+        if not isinstance(action, str) or not action.strip():
+            raise ValueError("control-plane action must be non-empty")
+        payload = dict(arguments or {})
+        payload.setdefault("profile", "strict-mcp-v1")
+        payload["action"] = action.strip()
+        if session_id is not None:
+            payload.setdefault("session_id", session_id)
+        payload.setdefault("idempotency_key", idempotency_key or uuid.uuid4().hex)
+        return self.route_tool("fable_control_plane", payload)
+
+    def control_plane_capabilities(self) -> dict[str, Any]:
+        return {
+            "profile": "strict-mcp-v1",
+            "actions": ["observe", "record_prediction", "propose_action", "record_outcome", "request_verification", "finalize"],
+            "sequence_invariants": "enforced_by_fable_engine",
+            "host_tool_authorization": "advisory_unless_broker_routed",
+            "native_host_tools": "not_controlled_unless_routed_through_broker",
+            "receipt_authority": "external_host_or_broker_only",
+            "model_can_authorize_finalization": False,
+        }
+
+    def receipt(self, **kwargs: Any) -> Any:
+        from fable_v2.protocol import ToolReceipt
+        kwargs.setdefault("receipt_id", uuid.uuid4().hex)
+        kwargs.setdefault("session_id", "host-adapter")
+        kwargs.setdefault("capability", "mcp")
+        kwargs.setdefault("tool_name", self.host)
+        kwargs.setdefault("tool_input", {})
+        kwargs.setdefault("tool_output", None)
+        kwargs.setdefault("success", False)
+        now = datetime.now(timezone.utc).isoformat()
+        kwargs.setdefault("started_at", now)
+        kwargs.setdefault("finished_at", now)
+        return ToolReceipt.from_result(**kwargs)
+
+class StrictMCPHostAdapter(GenericMCPHostAdapter):
+    """Host adapter facade that opts into the strict control-plane profile."""
+
+    PROFILE = "strict-mcp-v1"
+
+    def discover_capabilities(self) -> dict[str, Any]:
+        result = super().discover_capabilities()
+        result["profile"] = self.PROFILE
+        result["control_plane"]["profile"] = self.PROFILE
+        return result
+
+
+class ClaudeCodeAdapter(StrictMCPHostAdapter):
+    """Claude Code MCP adapter; native tools remain outside this boundary."""
+    PROFILE = "strict-mcp-v1"
+
+    def __init__(self, host: str = "claude-code", **kwargs: Any):
+        super().__init__(host=host, **kwargs)
+
+
+class AntigravityAdapter(StrictMCPHostAdapter):
+    """Antigravity MCP adapter; native tools remain outside this boundary."""
+    PROFILE = "strict-mcp-v1"
+
+    def __init__(self, host: str = "antigravity", **kwargs: Any):
+        super().__init__(host=host, **kwargs)
+
+
+# Descriptive aliases for integrations that name the MCP transport explicitly.
+ClaudeCodeMCPAdapter = ClaudeCodeAdapter
+AntigravityMCPAdapter = AntigravityAdapter
+ClaudeCodeHostAdapter = ClaudeCodeAdapter
+AntigravityHostAdapter = AntigravityAdapter
+GenericMCPAdapter = GenericMCPHostAdapter
+
+
+def strict_adapter_for_host(host: str = "generic-mcp-host", **kwargs: Any) -> StrictMCPHostAdapter:
+    """Return a strict-profile adapter without pretending native interception."""
+    key = str(host).strip().lower()
+    if key in {"claude", "claude-code", "cc"}:
+        return ClaudeCodeAdapter(**kwargs)
+    if key in {"antigravity", "agy"}:
+        return AntigravityAdapter(**kwargs)
+    return StrictMCPHostAdapter(host=host, **kwargs)
+
 
 MAX_OUTPUT = 8192
 DEFAULT_TIMEOUT = 5.0
@@ -32,8 +284,19 @@ class Host:
     healthy: bool = False
     detail: str = ""
     # Internal override used by tests/explicit transactions.  Discovery hosts
-    # leave this unset so mutations use the least-privilege target profile env.
+    # leave this unset so real mutations inherit the user's environment.
     registration_home: Path | None = None
+    # Canonical registry identity.  Kept optional for source compatibility with
+    # callers constructing the historical positional Host tuple.
+    identity: str | None = None
+    executable_identity: tuple[int, int, int, int, str] | None = None
+
+    @property
+    def canonical_name(self) -> str:
+        try:
+            return self.identity or canonical_host_id(self.name)
+        except ValueError:
+            return self.name
 
 
 def _safe_path(path: Path, *, allow_missing: bool = True) -> None:
@@ -80,13 +343,54 @@ def _file_identity(path: Path) -> tuple[int, int]:
     return st.st_dev, st.st_ino
 
 
+def _executable_identity(path: Path) -> tuple[int, int, int, int, str]:
+    """Capture identity used to pin a host binary across probe/mutation."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(str(path), flags)
+    except OSError as exc:
+        raise RegistrationError("host executable cannot be opened safely") from exc
+    try:
+        st = os.fstat(fd)
+        if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or
+                int(getattr(st, "st_file_attributes", 0)) & 0x400):
+            raise RegistrationError("host executable is not a private regular file")
+        digest_ctx = hashlib.sha256()
+        while True:
+            block = os.read(fd, 1024 * 1024)
+            if not block:
+                break
+            digest_ctx.update(block)
+        return (int(st.st_dev), int(st.st_ino), int(st.st_size),
+                int(stat.S_IMODE(st.st_mode)), digest_ctx.hexdigest())
+    finally:
+        os.close(fd)
+
+
+def _assert_executable_identity(host: Host) -> tuple[int, int, int, int, str]:
+    current = _executable_identity(host.executable)
+    expected = host.executable_identity
+    if expected is not None and tuple(expected) != current:
+        raise RegistrationError(f"host executable changed since discovery: {host.name}")
+    return current
+
+
 def _kill_process(proc: subprocess.Popen[bytes]) -> None:
     try:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
+            # ``Popen.kill`` only stops the direct child.  Use the explicit
+            # system utility (never a shell/PATH lookup) to terminate its
+            # descendant tree where Windows provides it, then fall back.
+            root = Path(os.environ.get("SystemRoot", r"C:\\Windows"))
+            taskkill = root / "System32" / "taskkill.exe"
+            if taskkill.is_file():
+                subprocess.run([str(taskkill), "/PID", str(proc.pid), "/T", "/F"],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=3, check=False)
             proc.kill()
-    except (OSError, ProcessLookupError):
+    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
             proc.kill()
         except OSError:
@@ -124,6 +428,8 @@ def run_argv(argv: list[str], timeout: float = DEFAULT_TIMEOUT, *, env: dict[str
     except OSError as exc:
         return 127, "", str(exc), False
     captured: dict[str, bytearray] = {"out": bytearray(), "err": bytearray()}
+    capture_lock = threading.Lock()
+    captured_total = [0]
 
     def drain(pipe, key: str) -> None:
         try:
@@ -131,9 +437,15 @@ def run_argv(argv: list[str], timeout: float = DEFAULT_TIMEOUT, *, env: dict[str
                 chunk = pipe.read(4096)
                 if not chunk:
                     return
-                remaining = MAX_OUTPUT - len(captured[key])
-                if remaining > 0:
-                    captured[key].extend(chunk[:remaining])
+                with capture_lock:
+                    remaining = MAX_OUTPUT - captured_total[0]
+                    take = max(0, min(len(chunk), remaining))
+                    if take:
+                        captured[key].extend(chunk[:take])
+                        captured_total[0] += take
+                    done = take < len(chunk) or remaining <= 0
+                if done:
+                    return
         finally:
             pipe.close()
 
@@ -237,102 +549,94 @@ def _probe_environment(executable: Path | None = None) -> dict[str, str]:
 
 
 def _run_probe(argv: list[str], executable: Path) -> tuple[int, str, str, bool]:
+    # The probe itself is part of the trust decision.  Do not report a healthy
+    # host if its executable was replaced while discovery was running.
+    before = _executable_identity(executable)
     env = _probe_environment(executable)
     probe_home = Path(env["_FABLE_PROBE_HOME"])
     try:
-        return run_argv(argv, env=env)
+        if _executable_identity(executable) != before:
+            raise RegistrationError("host executable changed before capability probe")
+        result = run_argv(argv, env=env)
+        after = _executable_identity(executable)
+        if after != before:
+            raise RegistrationError("host executable changed during capability probe")
+        return result
     finally:
         shutil.rmtree(probe_home, ignore_errors=True)
 
 
 def _registration_environment(home: Path | None = None) -> dict[str, str]:
-    """Return a least-privilege environment for one host mutation.
+    """Return the intended user environment for real CLI mutations.
 
-    Host executables are discovered from the user's PATH and therefore are
-    arbitrary programs from an untrusted boundary.  They must not receive the
-    launcher's complete environment: API keys, cloud credentials, proxy
-    tokens, and unrelated application secrets are not needed to add/remove an
-    MCP entry.  Keep only paths and process settings required for a normal CLI
-    invocation.  Credential forwarding, if ever needed by a host, must be an
-    explicit future feature rather than an accidental inheritance side effect.
+    Unlike health probes, registration must see the user's config location and
+    credentials.  ``home`` is an explicit transaction override (used by the
+    launcher tests and by callers targeting another profile); it is never used
+    for discovery probes.
     """
-    target_home = Path(home).expanduser() if home is not None else Path.home()
-    value = str(target_home)
-    # The executable itself has already been selected and checked.  A system
-    # PATH is enough for /usr/bin/env shebangs and for normal host subprocesses,
-    # while avoiding user PATH entries that can select another interpreter.
-    trusted_path = os.pathsep.join(dict.fromkeys([str(Path(sys.executable).parent), os.defpath]))
-    def config_path(name: str, fallback: Path) -> str:
-        # Preserve an explicitly configured profile location for normal
-        # registration.  An explicit ``home`` is a transaction override and
-        # intentionally makes all profile paths follow that home.
-        if home is None and os.environ.get(name):
-            return os.environ[name]
-        return str(fallback)
-
-    env = {
-        "PATH": trusted_path,
-        "HOME": value,
-        "USERPROFILE": value,
-        "XDG_CONFIG_HOME": config_path("XDG_CONFIG_HOME", target_home / ".config"),
-        "XDG_DATA_HOME": config_path("XDG_DATA_HOME", target_home / ".local" / "share"),
-        "XDG_CACHE_HOME": config_path("XDG_CACHE_HOME", target_home / ".cache"),
-        "XDG_STATE_HOME": config_path("XDG_STATE_HOME", target_home / ".local" / "state"),
-        "LC_ALL": "C",
-        "LANG": "C",
-        "LANGUAGE": "C",
-        "PYTHONIOENCODING": "utf-8",
-    }
-    # Temporary directories are operational rather than credential-bearing.
-    # Preserve explicit caller choices because host CLIs may rely on them, but
-    # never copy any other environment variable by default.
-    for name in ("TMPDIR", "TMP", "TEMP"):
-        if name in os.environ:
-            env[name] = os.environ[name]
-    if os.name == "nt":
-        # These are required by cmd.exe-backed host launchers and Windows
-        # configuration lookup.  They contain system paths, not credentials.
-        env["APPDATA"] = config_path("APPDATA", target_home / "AppData" / "Roaming")
-        env["LOCALAPPDATA"] = config_path("LOCALAPPDATA", target_home / "AppData" / "Local")
-        for name in ("SystemRoot", "SYSTEMROOT", "windir", "PATHEXT", "COMSPEC"):
-            if name in os.environ:
-                env[name] = os.environ[name]
+    env = dict(os.environ)
+    env.pop("_FABLE_PROBE_HOME", None)
+    if home is not None:
+        value = str(Path(home).expanduser())
+        env["HOME"] = value
+        env["USERPROFILE"] = value
     return env
 
 
 def _which(name: str) -> Path | None:
+    """Resolve a host binary from PATH, rejecting unsafe path components.
+
+    PATH is used only for discovery.  The resulting absolute identity is then
+    pinned in ``Host`` and all mutations execute that exact path.
+    """
+    if not isinstance(name, str) or not name or "\x00" in name:
+        return None
     value = shutil.which(name)
     if not value:
         return None
     path = Path(value)
     try:
+        _safe_path(path, allow_missing=False)
         st = path.lstat()
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+        if (stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or
+                st.st_nlink != 1 or (os.name == "posix" and not st.st_mode & 0o111)):
             return None
-    except OSError:
+        return path.absolute()
+    except (OSError, RegistrationError):
         return None
-    return path
 
 
 def detect_hosts(*, aliases: bool = False) -> dict[str, Host]:
-    names: list[tuple[str, str]] = [("claude", "claude"), ("agy", "agy"), ("codex", "codex")]
+    # Preserve the historical status keys while deriving all behavior from the
+    # canonical registry.  Alias probing is opt-in to avoid invoking an
+    # unrelated executable named ``cc`` or ``antigravity``.
+    names: list[tuple[str, HostIdentity]] = [
+        ("claude", HOST_IDENTITY_REGISTRY["claude-code"]),
+        ("agy", HOST_IDENTITY_REGISTRY["antigravity"]),
+        ("codex", HOST_IDENTITY_REGISTRY["codex"]),
+    ]
     if aliases:
-        names += [("cc", "cc"), ("antigravity", "antigravity")]
+        names += [("cc", HOST_IDENTITY_REGISTRY["claude-code"]),
+                  ("antigravity", HOST_IDENTITY_REGISTRY["antigravity"])]
     result: dict[str, Host] = {}
-    for name, binary in names:
-        exe = _which(binary)
+    for name, identity in names:
+        exe = _which(name)
         if exe is None:
-            # Keep absence visible to callers instead of silently omitting a
-            # requested host from the registration status report.
-            result[name] = Host(name, Path(binary), "cli", False, "host command not found")
+            result[name] = Host(name, Path(identity.executable), identity.kind, False,
+                                 "host command not found", identity=identity.canonical)
             continue
         try:
+            executable_identity = _executable_identity(exe)
+            # --version is the documented, side-effect-free availability probe;
+            # registration state itself is accepted only from the explicit
+            # machine-readable ``mcp list --json`` command below.
             code, out, err, timed_out = _run_probe([str(exe), "--version"], exe)
-            result[name] = Host(name, exe, "cli", code == 0 and not timed_out, (out or err)[:MAX_OUTPUT])
+            result[name] = Host(name, exe, identity.kind, code == 0 and not timed_out,
+                                 (out or err)[:MAX_OUTPUT], identity=identity.canonical,
+                                 executable_identity=executable_identity)
         except RegistrationError as exc:
-            # A malformed/unresolved /usr/bin/env shebang makes this host
-            # unhealthy, not the entire discovery/installation transaction.
-            result[name] = Host(name, exe, "cli", False, str(exc)[:MAX_OUTPUT])
+            result[name] = Host(name, exe, identity.kind, False, str(exc)[:MAX_OUTPUT],
+                                 identity=identity.canonical)
     return result
 
 
@@ -493,14 +797,17 @@ def _parse_cli_json(value: object) -> dict[str, dict] | None:
     return found if valid else None
 
 
-def _snapshot_cli_registrations(executable: Path, *, home: Path | None = None) -> dict[str, dict] | None:
+def _snapshot_cli_registrations(executable: Path, *, home: Path | None = None,
+                                host: str | None = None) -> dict[str, dict] | None:
     # Cleanup markers may outlive a removed host executable.  Let the bounded
     # argv call report that as an unsupported snapshot instead of raising a
     # state-path traceback; existing paths are still checked for links.
     if executable.exists() or executable.is_symlink():
         _safe_path(executable, allow_missing=False)
+    identity = HOST_IDENTITY_REGISTRY.get(HOST_ALIASES.get(host or "", host or ""))
+    list_args = identity.list_argv if identity is not None else ("mcp", "list", "--json")
     code, out, _err, timed = run_argv(
-        [str(executable), "mcp", "list"], env=_registration_environment(home))
+        [str(executable), *list_args], env=_registration_environment(home))
     if code != 0 or timed:
         return None
     try:
@@ -515,7 +822,10 @@ def _query_cli_registrations(executable: Path) -> dict[str, dict]:
 
 
 def _cli_add(host: Host, name: str, entry: dict) -> tuple[int, str, str, bool]:
-    if host.name == "claude":
+    if host.executable_identity is not None:
+        _assert_executable_identity(host)
+    is_claude = host.canonical_name == "claude-code" or host.name == "claude"
+    if is_claude:
         argv = [str(host.executable), "mcp", "add", "--transport", "stdio", name, "--", entry["command"], *entry.get("args", [])]
     else:
         argv = [str(host.executable), "mcp", "add", name, "--", entry["command"], *entry.get("args", [])]
@@ -533,6 +843,8 @@ def _is_absent_result(result: tuple[int, str, str, bool]) -> bool:
 
 
 def _cli_remove(host: Host, name: str) -> tuple[int, str, str, bool]:
+    if host.executable_identity is not None:
+        _assert_executable_identity(host)
     return run_argv([str(host.executable), "mcp", "remove", name],
                     env=_registration_environment(host.registration_home))
 
@@ -559,10 +871,44 @@ def _post_entries(previous: dict[str, dict], installed: dict) -> dict[str, dict]
     return {"fable-engine": installed}
 
 
-def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, home: Path | None = None,
-                   workspace: Path | None = None, dry_run: bool = False,
-                   records: list[dict] | None = None,
-                   owned_records: list[dict] | None = None) -> dict[str, str]:
+_REGISTRATION_LOCK = threading.RLock()
+
+
+@contextmanager
+def _registration_file_lock(home: Path):
+    """Serialize independent installer processes for one user profile."""
+    lock_path = Path(home) / ".fable-mode-registration.lock"
+    handle = None
+    try:
+        _safe_path(Path(home))
+        Path(home).mkdir(parents=True, exist_ok=True)
+        _safe_path(Path(home))
+        _safe_path(lock_path)
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            handle = os.fdopen(fd, "r+b", buffering=0)
+        else:
+            # Windows does not expose flock in the stdlib; the process-wide
+            # lock still prevents threads, while the file remains a visible
+            # synchronization point for native launchers.
+            handle = open(lock_path, "a+b")
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if handle is not None:
+            if fcntl is not None:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            handle.close()
+
+
+def _register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, home: Path | None = None,
+                    workspace: Path | None = None, dry_run: bool = False,
+                    records: list[dict] | None = None,
+                    owned_records: list[dict] | None = None) -> dict[str, str]:
     """Register all hosts as one transaction, with a complete preflight.
 
     Every healthy host is snapshotted before the first mutation.  CLI hosts
@@ -609,13 +955,24 @@ def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, h
         if not host.healthy:
             statuses[key] = "detected but unhealthy; not registered"
             continue
+        captured_identity = host.executable_identity
+        if host.kind == "cli":
+            try:
+                captured_identity = _assert_executable_identity(host)
+            except RegistrationError as exc:
+                raise RegistrationError(f"{key} executable identity is not stable: {exc}") from exc
         if key in {"agy", "antigravity"}:
+            if captured_identity is not None and host.executable_identity is None:
+                host = Host(host.name, host.executable, host.kind, host.healthy,
+                            host.detail, host.registration_home, host.identity,
+                            captured_identity)
             active_hosts.append((key, host))
         else:
             # Preserve caller-supplied Host objects while binding CLI
             # mutations to this transaction's intended profile, never probe HOME.
             active_hosts.append((key, Host(host.name, host.executable, host.kind,
-                                           host.healthy, host.detail, cli_home)))
+                                           host.healthy, host.detail, cli_home,
+                                           host.identity, captured_identity)))
         if key in {"agy", "antigravity"}:
             paths = [home / ".gemini" / "config" / "mcp_config.json"]
             if workspace is not None:
@@ -624,7 +981,7 @@ def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, h
                 if path not in file_snaps:
                     file_snaps[path] = _load_config_snapshot(path)
         else:
-            snapshot = None if dry_run else _snapshot_cli_registrations(host.executable, home=cli_home)
+            snapshot = None if dry_run else _snapshot_cli_registrations(host.executable, home=cli_home, host=key)
             if not dry_run and snapshot is None:
                 raise RegistrationError(f"{key} mcp list is not machine-readable; registration skipped before mutation")
             snapshot = snapshot or {}
@@ -712,7 +1069,7 @@ def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, h
                                 "previous_entries": previous, "previous_entries_hash": _state_hash(previous),
                                 "post_entries": _post_entries(previous, installed),
                                 "created": "fable-engine" not in previous,
-                                "executable_identity": list(_file_identity(host.executable))})
+                                "executable_identity": list(_assert_executable_identity(host))})
             statuses[key] = "registered"
         return statuses
     except Exception as exc:
@@ -750,6 +1107,29 @@ def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, h
         if rollback_errors:
             detail += "; partial state may remain: " + "; ".join(rollback_errors)
         raise RegistrationError(detail) from exc
+
+
+def register_hosts(hosts: dict[str, Host], installed_executable: list[str], *, home: Path | None = None,
+                   workspace: Path | None = None, dry_run: bool = False,
+                   records: list[dict] | None = None,
+                   owned_records: list[dict] | None = None) -> dict[str, str]:
+    """Serialize registration transactions within a process.
+
+    Registration updates several independent host stores and must never be
+    interleaved with another install/uninstall in this process.  The complete
+    preflight and rollback remain inside the lock, so a failed transaction
+    cannot expose a half-updated snapshot to a concurrent caller.
+    """
+    with _REGISTRATION_LOCK:
+        if dry_run:
+            return _register_hosts(hosts, installed_executable, home=home,
+                                   workspace=workspace, dry_run=True,
+                                   records=records, owned_records=owned_records)
+        lock_home = Path(home or Path.home()).expanduser()
+        with _registration_file_lock(lock_home):
+            return _register_hosts(hosts, installed_executable, home=home,
+                                   workspace=workspace, dry_run=False,
+                                   records=records, owned_records=owned_records)
 
 
 def _record_state(record: dict) -> tuple[dict[str, dict], dict[str, dict]] | None:
@@ -813,8 +1193,7 @@ def _canonical_registration_path(record: dict, home: Path) -> Path | None:
     return None
 
 
-def _validate_strict_record(record: object, install_dir: Path, home: Path,
-                            *, transaction: bool = False) -> bool:
+def _validate_strict_record(record: object, install_dir: Path, home: Path) -> bool:
     """Validate marker records before they can influence any user config."""
     if not isinstance(record, dict) or record.get("install_dir") != str(install_dir):
         return False
@@ -862,37 +1241,22 @@ def _validate_strict_record(record: object, install_dir: Path, home: Path,
         host = record.get("host")
         executable = record.get("executable")
         ident = record.get("executable_identity")
-        if host not in {"claude", "agy", "codex", "cc", "antigravity"} or not isinstance(executable, str):
+        if host not in {"claude", "claude-code", "agy", "codex", "cc", "antigravity"} or not isinstance(executable, str):
             return False
         p = Path(executable)
-        # A persisted marker must bind the executable basename to its
-        # allowlisted host.  During the same-process install transaction,
-        # tests/embedders may intentionally use a shim with another filename;
-        # inode identity and all other record checks still apply.
-        if not p.is_absolute() or (not transaction and
-                                   p.name.casefold().split(".")[0] != host.casefold()):
+        expected_executable = HOST_IDENTITY_REGISTRY.get(HOST_ALIASES.get(host, host))
+        expected_names = {expected_executable.executable.casefold()} if expected_executable else {host.casefold()}
+        if not p.is_absolute() or p.name.casefold().split(".")[0] not in expected_names:
             return False
-        return (isinstance(ident, list) and len(ident) == 2 and all(isinstance(x, int) and x >= 0 for x in ident))
+        return (isinstance(ident, list) and len(ident) == 5
+                and all(isinstance(x, int) and x >= 0 for x in ident[:4])
+                and isinstance(ident[4], str) and len(ident[4]) == 64
+                and all(c in "0123456789abcdef" for c in ident[4]))
     return False
 
 
-def validate_registration_record(record: object, install_dir: Path, home: Path,
-                                 *, transaction: bool = False) -> bool:
-    """Validate a persisted registration record without touching host state.
-
-    The launcher uses this after a host mutation but before persisting recovery
-    metadata.  ``transaction`` is deliberately an explicit, narrow escape
-    hatch for same-process test/transaction shims whose executable basename is
-    not the discovered host name; normal uninstall validation never enables it.
-    """
-    return _validate_strict_record(record, Path(install_dir), Path(home),
-                                   transaction=transaction)
-
-
-def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
-                                   install_dir: Path | None = None, home: Path | None = None,
-                                   _preflight: bool = False,
-                                   _transaction: bool = False) -> list[str]:
+def _cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
+                                    install_dir: Path | None = None, home: Path | None = None) -> list[str]:
     """Remove this install's entries, restoring exact pre-install state.
 
     Strict mode is used for uninstall marker data.  It accepts only records
@@ -907,18 +1271,8 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
     home = Path(home or Path.home())
     if strict and (install_dir is None or not isinstance(records, list)):
         return ["invalid registration marker"]
-    if strict and not _preflight:
-        # Validate every host/config before mutating any of them.  In
-        # particular, an unavailable later host must not leave earlier records
-        # restored while their marker still claims the installation is active.
-        unresolved = cleanup_recorded_registrations(
-            records, strict=True, install_dir=install_dir, home=home,
-            _preflight=True, _transaction=_transaction)
-        if unresolved:
-            return unresolved
     for record in records or []:
-        if strict and not _validate_strict_record(
-                record, Path(install_dir), home, transaction=_transaction):
+        if strict and not _validate_strict_record(record, Path(install_dir), home):
             skipped.append(str(record.get("path", record.get("host", "invalid record"))) if isinstance(record, dict) else "invalid record")
             continue
         state = _record_state(record)
@@ -926,26 +1280,20 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
             path = Path(record.get("path", ""))
             try:
                 _safe_path(path, allow_missing=False)
-                # Check identity, content integrity, and mode before parsing
-                # any bytes from the config.  Besides being cheaper on a
-                # tampered path, this keeps untrusted config contents from
-                # influencing cleanup decisions until the path is bound to the
-                # exact file published by this install.
                 if strict:
                     if _file_identity(path) != tuple(record["post_identity"]):
                         skipped.append(str(path)); continue
-                    if (os.name != "nt" and "post_mode" in record
+                    if _hash_bytes(path.read_bytes()) != record["post_content_hash"]:
+                        skipped.append(str(path)); continue
+                    # New records always publish private configs.  Refuse to
+                    # mutate a file whose mode changed unexpectedly.
+                    if ("post_mode" in record
                             and stat.S_IMODE(path.stat().st_mode) != record["post_mode"]):
                         skipped.append(str(path)); continue
-                raw = path.read_bytes()
-                if strict and _hash_bytes(raw) != record["post_content_hash"]:
-                    skipped.append(str(path)); continue
-                data = json.loads(raw.decode("utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
                 servers = data.get("mcpServers", {})
-                if not isinstance(servers, dict):
-                    skipped.append(str(path)); continue
                 expected = {"command": record.get("command"), "args": record.get("args", [])}
-                if servers.get("fable-engine") != expected:
+                if not isinstance(servers, dict) or servers.get("fable-engine") != expected:
                     skipped.append(str(path)); continue
                 if state is not None:
                     _previous, post = state
@@ -966,33 +1314,24 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                     # Compatibility with markers written by older releases.
                     data["mcpServers"].pop(record.get("name", "fable-engine"), None)
                 restored_bytes = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode()
-                if _preflight:
-                    continue
-                # A config created by this install has no prior mode to
-                # restore.  On POSIX, mode 0 is harmless for unlinking; on
-                # Windows, chmod(0) sets the read-only attribute and the
-                # subsequent unlink fails with access denied.  We have
-                # already verified the exact post-install inode and bytes
-                # above, so remove the installer-owned file directly instead
-                # of publishing a transient mode-0 replacement.  This also
-                # preserves the fail-closed identity/hash checks for the
-                # deletion itself.
-                if strict and record.get("existed") is False:
-                    _safe_path(path, allow_missing=False)
-                    path.unlink()
-                    continue
                 restore_mode = record.get("previous_mode", stat.S_IMODE(path.stat().st_mode))
                 if not isinstance(restore_mode, int) or not 0 <= restore_mode <= 0o777:
                     skipped.append(str(path)); continue
                 _atomic_write(path, restored_bytes, restore_mode)
+                # A newly-created Antigravity config is installer-owned.  Once
+                # its exact post-install contents have been verified/restored,
+                # remove the file rather than leaving an empty artifact.
+                if strict and record.get("existed") is False:
+                    _safe_path(path, allow_missing=False)
+                    path.unlink()
             except (OSError, ValueError, TypeError, RegistrationError, json.JSONDecodeError):
                 skipped.append(str(path))
         elif record.get("kind") == "cli":
             executable = Path(record.get("executable", ""))
             try:
-                if strict and _file_identity(executable) != tuple(record["executable_identity"]):
+                if strict and _executable_identity(executable) != tuple(record["executable_identity"]):
                     skipped.append(str(record.get("host", "cli"))); continue
-                current = _snapshot_cli_registrations(executable, home=home)
+                current = _snapshot_cli_registrations(executable, home=home, host=str(record.get("host", "")))
                 if current is None:
                     skipped.append(str(record.get("host", "cli"))); continue
                 expected = {"command": record.get("command"), "args": record.get("args", [])}
@@ -1004,11 +1343,25 @@ def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
                     previous, post = state
                     if any((current.get(name) if name in current else None) != post.get(name) for name in _NAMES):
                         skipped.append(str(record.get("host", "cli"))); continue
+                recorded_identity = record.get("executable_identity")
                 host = Host(str(record.get("host", "cli")), executable, "cli", True,
-                             registration_home=home)
-                if not _preflight:
-                    _restore_cli(host, previous)
+                             registration_home=home,
+                             executable_identity=(tuple(recorded_identity)
+                                                  if isinstance(recorded_identity, list) and len(recorded_identity) == 5
+                                                  else None))
+                _restore_cli(host, previous)
             except (OSError, ValueError, TypeError, RegistrationError):
                 skipped.append(str(record.get("host", "cli")))
     return skipped
 
+
+def cleanup_recorded_registrations(records: list[dict], *, strict: bool = False,
+                                   install_dir: Path | None = None, home: Path | None = None) -> list[str]:
+    """Guard registration cleanup with the same profile transaction lock."""
+    with _REGISTRATION_LOCK:
+        if home is None:
+            return _cleanup_recorded_registrations(records, strict=strict,
+                                                   install_dir=install_dir, home=home)
+        with _registration_file_lock(Path(home).expanduser()):
+            return _cleanup_recorded_registrations(records, strict=strict,
+                                                   install_dir=install_dir, home=home)

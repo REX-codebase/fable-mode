@@ -1,271 +1,191 @@
-# Fable V2: Portable Verifier-Guided Runtime
+# Fable V2 architecture (experimental)
 
-## Goal
+Fable V2 is a portable, model-agnostic runtime foundation. It is separate
+from the V1 MCP server and is not yet a drop-in replacement. The package
+contains contracts and enforcement code; a host adapter still has to connect
+those contracts to a model host, tools, and a deployment's verifier services.
 
-Build a portable, model-agnostic intelligence runtime that works across
-Antigravity, Claude Code, Codex, Grok Build, Cursor, Zapia, and other agentic
-hosts. Fable V2 should make weak-but-functional models dramatically more
-useful on verifiable task classes and make frontier models more reliable,
-consistent, and efficient.
+## Design goal
 
-The ambitious targets are hypotheses to be measured, not guarantees:
+Instead of accepting a model's statement that work is complete, a V2 adapter
+can collect tool receipts, bind evidence to those receipts, run declared
+verifiers, and accept only a candidate that meets the task policy. This can
+improve auditability and may improve reliability on verifiable tasks. The
+magnitude and direction of any improvement are empirical questions. No fixed
+effectiveness, accuracy, cost, or latency claim is made by the runtime.
 
-- Up to 10x improvement in system-level effectiveness for frontier models
-  (verified success, failure reduction, or successful tasks per cost).
-- Up to 50x relative improvement for weak models on selected tasks where the
-  baseline has non-zero competence.
-
-A model cannot be made universally 10x more intelligent by a prompt. Fable
-scales useful work by coordinating models, tools, evidence, search, repair,
-and verification.
-
-## Design principle
-
-> Do not ask an agent to claim that it did good work. Make the runtime collect
-> receipts, run checks, and accept only a verified artifact.
-
-MCP is a transport/interface layer. Fable V2 is the runtime around it: a
-controller, evidence ledger, model router, candidate manager, verifier broker,
-repair loop, and host adapters.
-
-## Architecture
+## Components
 
 ```text
-User task
-   |
-   v
-Task compiler: objective, constraints, done conditions, required capabilities
-   |
-   v
-Budget + model router ---- host capability probe
-   |
-   v
-Diverse candidate fleet ---- tools / sandbox / retrieval
-   |
-   v
-Evidence receipts and failure classification
-   |
-   v
-Deterministic verifiers -> independent model verifier -> repair/search loop
-   |
-   v
-Finalization gate: only a passing, evidence-backed artifact is accepted
+Host adapter
+    | translates native tools and model events
+    v
+TaskSpec + VerificationPolicy
+    |
+    v
+FableRun: state machine and event history
+    |-- Candidate artifacts
+    |-- ToolReceipt objects (host-produced invocation records)
+    |-- Evidence objects bound to successful receipts
+    `-- Registered verifiers
+             |
+             v
+       attested VerificationResult objects
+             |
+             v
+       finalization gate
+
+Separate execution path:
+Host adapter --> fable-v2-broker (child process)
+                    |-- probe capabilities
+                    |-- inspect files
+                    |-- execute an allowlisted argv
+                    `-- write a workspace file (locked by default)
+             administrator control handle -- unlock writes
 ```
 
-## Portable core and adapters
+`FableRun` is in-process Python code. `fable-v2-broker` is a separate process
+and communicates with a bounded JSON-lines protocol. It retains its native
+`action` envelopes and also accepts the small MCP JSON-RPC compatibility
+surface (`initialize`, `tools/list`, `tools/call`, and `ping`) for generic
+harnesses. The broker should be the only component granted workspace write
+access in a deployment;
+the broker itself is still a policy boundary rather than a complete OS
+sandbox. Use containers, VMs, OS mandatory access controls, job objects, or
+similar controls for hostile workloads.
 
-The core speaks a host-neutral JSON/data contract. Adapters translate native
-host tools into capabilities such as `inspect_files`, `execute_command`,
-`run_tests`, `search_web`, `edit_files`, and `delegate_agents`.
+## Protocol objects
 
-Supported integrations should be implemented as thin adapters, not forks of
-the cognitive engine. MCP is the preferred tool binding, but a CLI or HTTP
-adapter is required for hosts that do not expose MCP.
+The public foundation types are in `fable_v2/protocol.py`:
 
-## Execution boundary
+- `TaskSpec`: objective, constraints, definition of done, capabilities, and
+  required evidence.
+- `VerificationPolicy`: required verifier classes, passing threshold,
+  independence requirement, and minimum trust boundary.
+- `ToolReceipt`: host-produced input/output hashes and captured output.
+  `success` means invocation completed; it does not mean the candidate is
+  correct.
+- `Evidence`: content and claim integrity-bound to one successful receipt.
+  Integrity binding proves provenance and consistency, not truth.
+- `Candidate`: one artifact/trajectory and its receipt/evidence references.
+- `VerificationResult`: runtime-attested result bound to the candidate artifact
+  and its dependency graph.
 
-`fable_v2.execution_broker` provides the first concrete execution boundary for
-V2. `fable-v2-broker` runs as a separate process, allowlists executables,
-executes without a shell, constrains working directories and file writes to a
-configured workspace, and keeps writes locked until administrative
-authorization. General interpreters and shell entry points are also blocked
-while writes are locked, because `shell=False` does not stop a command such as
-`python -c "open(...)"` from writing files. Hosts must route V2 command
-execution and writes through this broker instead of giving the model direct
-filesystem access. The administrative unlock is accepted only on a separate
-inherited control handle (`--admin-fd` on POSIX), never through the model's
-JSON-lines request channel.
+`fable_v2/runtime.py` supplies `FableRun` and the states `created`, `active`,
+`verifying`, `finalized`, and `rejected`. The runtime rejects missing
+receipts/evidence, mismatched hashes, unrelated evidence, and un-attested
+passing results. Its default verifier trust boundary is `in_process`, which is
+an application convention, not a security boundary. A production deployment
+should use an isolated process and an authenticated registration for
+`process_attested` results.
 
-This is a process and policy boundary, not a complete operating-system sandbox.
-For a hardened deployment, the broker process must run with an OS-enforced
-read-only workspace before authorization, then receive a separately controlled
-writable layer or remount after authorization.
-Hostile workloads still require container/VM isolation and least-privilege OS
-controls. The broker resolves each allowlisted executable to a trusted absolute path at
-startup and rejects requests whose resolved path differs; a matching basename
-is not sufficient. Command stdout/stderr are drained concurrently into bounded
-buffers; exceeding `max_output_bytes` terminates the process (and its POSIX
-process group) instead of truncating after unbounded `subprocess.run()` capture.
-The broker implements every advertised protocol capability, including bounded
-`inspect_files` and the `probe_capabilities` alias. Its JSON-lines reader is
-interactive: it emits a response as soon as a newline-terminated frame arrives
-without waiting for stdin EOF, caps raw frames at 1 MiB, consumes oversized
-frames through their delimiter to preserve synchronization, and bounds error
-text to 8 KiB. It is covered by child-process, open-stdin, malformed/oversized
-frame, executable-path, output-limit, capability, allowlist, path-containment,
-and locked-write tests.
+## Intelligent verification pipeline
 
-The checked-in `HOST_PROFILES` are explicitly **expected capability
-profiles**, not attestations. They are useful defaults for planning and
-documentation, but they are not runtime-authoritative. A live adapter must
-probe the host at startup and call `HostCapabilities.attest(...)` with the
-observed capabilities. Compatibility is authoritative only after that probe;
-a host must never receive a full-guarantee status merely because it loaded a
-prompt or matched a hard-coded profile.
+The intelligent-verifier layer is deterministic orchestration, not an
+additional source of authority. Its public API is exported from
+`fable_v2`: `Claim`, `ClaimGraph`, `RiskLevel`, `Counterexample`,
+`CounterexampleStore`, `VerificationDecision`, `VerifierDecision`, `VerifierStatus`,
+`Verdict`, `FunctionVerifier`, `CompositeVerifier`, `PropertyVerifier`,
+`MetamorphicVerifier`, `MutationVerifier`, `VerifierPortfolio`,
+`PortfolioResult`, `VerifierPlanner`, `VerifierPlan`, `PlannedCheck`,
+`ThreeValuedAdjudicator`, and `Adjudication` (plus the `Verifier`,
+`MutationOperator`, `MetamorphicRelation`, and `PropertyCheck` protocols and
+`CalibrationMetrics`).
 
-## Enforcement model
+`ClaimGraph.from_task(task, candidate)` decomposes the objective, constraints,
+definition of done, required capabilities, and required evidence into atomic,
+scoped, falsifiable `Claim` objects. Stable claim IDs and dependency edges
+make coverage auditable; decomposition does not prove any claim. A
+`VerifierPlanner` uses risk, declared uncertainty, expected information gain,
+calibration, and cost to produce an auditable `VerifierPlan`. This is a
+selection heuristic: it may leave claims uncovered and cannot make an
+unverified claim true.
 
-### Invocation is not correctness
+Verifier checks and `VerifierPortfolio` use three-valued outcomes:
+`PASS` establishes only the check's declared, evidenced claims; `FAIL` is a
+blocking falsification; and `UNKNOWN` means that the check did not establish a
+verdict. The portfolio propagates `FAIL` over `UNKNOWN` over `PASS`, while
+`ThreeValuedAdjudicator` marks missing coverage and (by default) critical
+unknowns as blocking. `Counterexample` records observations that falsify a
+claim, and `CounterexampleStore` preserves and propagates those observations
+to the affected claims. A counterexample or a failing check cannot be hidden
+by a later pass.
 
-A `ToolReceipt` proves only that a host tool was invoked and what output it
-returned. For example, a successful `pytest` receipt proves that pytest ran
-successfully; it does **not** prove that the candidate is correct. Likewise,
-integrity-bound evidence proves provenance and content consistency, not that
-its claim is true.
+Every verification result must be integrated with the same `FableRun` that
+owns the candidate: register the candidate, execute the registered verifier
+through `FableRun.execute_verifier(...)`, and let the run record the resulting
+`VerificationResult` before calling its finalization gate. Directly fabricating
+or recording a passing result is rejected; an independent result also needs
+measured, disjoint provenance. A planner or model may propose checks, but the
+run and adjudicator remain mandatory acceptance gates. The layer does not
+supply truth, generate evidence, isolate untrusted verifier code, or replace a
+host's process-attestation service. In-process verifiers are therefore useful
+for deterministic application checks but are not a security boundary, and an
+UNKNOWN or uncovered claim must remain unresolved rather than being promoted
+to PASS.
 
-Correctness is established only by the verifier policy: deterministic tests,
-machine checks, independent review, hidden tests, or other explicitly
-registered checks. A receipt or evidence object must never be treated as a
-correctness verdict.
+## Adapter contract and host profiles
 
-### Receipt and evidence integrity
+`fable_v2/adapters.py` contains conservative expected profiles for
+Antigravity, Claude Code, Codex, Cursor, Grok Build, and Zapia. Profiles are
+planning defaults only. An adapter must probe the live host and call
+`HostCapabilities.attest(...)`; only an attested profile is authoritative in
+`compatibility_report`. Unknown hosts start with no expected capabilities.
 
-A model-facing prompt cannot prove that a tool was used. Each host tool must
-produce a `ToolReceipt` containing:
+Canonical capability names include `inspect_files`, `execute_command`,
+`edit_files`, `run_tests`, `search_web`, and `delegate_agents`. Adapters may
+normalize host names such as `run_command`, `shell`, or `terminal`, but should
+not claim a capability merely because a host has a similarly named tool.
 
-- session and tool identity;
-- normalized capability;
-- hashes of tool input and output;
-- success/failure status;
-- timestamps and host metadata.
+## Execution broker
 
-Evidence must be constructed from a successful receipt using
-`Evidence.from_receipt(...)`. The receipt retains the actual tool output and
-its canonical hash; construction recomputes the content hash, and attachment
-rejects any mismatch between evidence content, evidence hash, and the receipt
-output hash. A candidate cannot be finalized until the task's declared
-capabilities and evidence kinds have been satisfied and its
-`VerificationPolicy` has passed.
+Start the broker with an existing workspace:
 
-Verification is policy-enforced, not a free-form boolean. A result supplied
-from a model-facing call is rejected. The in-process foundation API runs a
-verifier against the exact candidate artifact and runtime-attests that
-invocation with the candidate hash. The attestation also includes a candidate
-dependency-graph commitment: the candidate state and authenticated object
-hashes for every referenced `ToolReceipt` and `Evidence`, including receipt
-capability/success fields and evidence provenance. Restore recomputes this
-commitment before accepting a stored verdict, so changing receipt/evidence
-references or their serialized state invalidates the verdict. This blocks
-forged model results, but it is **not** a security boundary against arbitrary
-Python application code: an in-process caller can still construct or alter
-verifier code. The task policy can require verifier classes such as
-`deterministic`, `machine-check`, and `independent`, a minimum number of
-passing verifiers, and a minimum trust boundary. The current foundation
-supports `in_process`; production-grade `process_attested` results must come
-from a separate broker with process isolation and signed/ authenticated
-registrations.
+```sh
+fable-v2-broker --workspace /absolute/path/to/workspace
+```
 
-Semantic trust in a model judge remains an explicit deployment decision and
-should be backed by calibration and hidden tests.
+Optional repeated `--allow-executable NAME` arguments replace the default
+allowlist (`python`, `python3`, and `pytest`). The broker resolves allowlisted
+executables at startup and runs commands without a shell. It bounds request
+frames, diagnostics, output, timeouts, and workspace paths. While writes are
+locked, it also blocks general interpreters and shell entry points because
+`shell=False` alone would not stop an interpreter from writing files.
 
-Deterministic verifiers should be executed before independent model judges by
-the host orchestrator. The core records the order and rejects missing policy
-classes, but it does not pretend that an arbitrary `VerificationResult` proves
-anything.
+On POSIX, an administrator may provide an inherited control pipe with
+`--admin-fd FD`. Configure either `FABLE_BROKER_WRITE_TOKEN_DIGEST` or
+`FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE` with a SHA-256 digest, never both. The
+admin channel receives the unlock token; the model-facing request channel has
+no unlock action or token field. The current implementation rejects
+`--admin-fd` on Windows, so an equivalent Windows control-handle adapter is
+not supplied by this repository yet.
 
-The runtime enforces required capabilities and verifier classes for the task,
-not every available tool. Required capabilities are resolved exclusively from
-the selected candidate's referenced successful receipts; work performed only
-by another candidate cannot satisfy the policy. Requiring irrelevant tools
-would create waste and tool theatre.
+The broker prevents common policy bypasses and constrains paths, but it does
+not provide a complete OS sandbox, network isolation, or protection from a
+privileged process. Review [`docs/security-and-trust.md`](security-and-trust.md)
+and [`docs/mcp-reference.md`](mcp-reference.md) before deployment.
 
-## Runtime objects
+## Verification order and benchmark discipline
 
-The initial portable contract is implemented in `fable_v2/protocol.py`:
+A host should run deterministic checks before independent model judges, bind
+all results to the exact candidate artifact, and classify failed attempts for
+repair. The default policy does not trust an independent label by itself: an
+independent result must cite measured provenance from a distinct producer, or
+come through an externally process-attested verifier. A same-receipt,
+in-process self-declaration therefore cannot satisfy the independent gate. A
+receipt proves invocation and output capture only. Results should be reported
+using the benchmark template in
+[`docs/benchmark-methodology.md`](benchmark-methodology.md), with a held-out
+task set, baselines, confidence intervals where appropriate, cost, latency,
+tool counts, and verifier false-positive/negative analysis. Do not publish
+uplift multipliers from plumbing tests or from a task set used to tune the
+system.
 
-- `TaskSpec`: task contract and definition of done;
-- `VerificationPolicy`: required verifier classes and pass thresholds;
-- `ToolReceipt`: host-produced invocation receipt with the actual output hash;
-- `Evidence`: claim constructed from receipt output and integrity-bound to it;
-- `Candidate`: one solution or trajectory;
-- `VerificationResult`: runtime-attested verdict bound to one candidate artifact.
+## Current scope
 
-`fable_v2/runtime.py` implements the evidence-gated run state machine. It is
-intentionally model-agnostic and dependency-free. Hosts can wrap compilers,
-test runners, browsers, citation checkers, symbolic tools, or model judges
-behind the same verifier contract in `fable_v2/verifiers.py`.
-
-## Quality and safety rules
-
-1. No self-attested `[PROVEN]` claims.
-2. Deterministic checks run before model judges.
-3. Generator and verifier should be independent for difficult tasks.
-4. Failed attempts are classified and reused for targeted repair.
-5. Compute is allocated adaptively; a fixed waiting timer is not computation.
-6. Finalization is rejected when receipts, evidence, or verification are missing.
-7. Execution permissions must ultimately be enforced by a sandbox/broker, not
-   only by a model-facing MCP flag.
-8. All host adapters run the same conformance tasks and report unsupported
-   capabilities honestly.
-
-## Implementation sequence
-
-1. Benchmark harness: compare model-alone, current Fable, and Fable V2 on a
-   held-out task set with success, cost, latency, and failure metrics.
-2. Task compiler and typed event log.
-3. Candidate manager with diverse/parallel trajectories.
-4. Verifier broker for tests, citations, schemas, and independent judges.
-5. Failure classification and targeted repair loop.
-6. Host adapters and capability conformance suite.
-7. Persistent experience store, model router, and optional learned verifier.
-8. Publish results only after hidden evaluation; do not claim 10x/50x from
-   plumbing tests.
-
-## Boundary-test coverage
-
-The foundation test suite covers failure modes that can silently turn a
-receipt ledger into a false correctness oracle:
-
-- cross-candidate and mismatched-evidence verification;
-- evidence/source hash mismatches;
-- duplicate or contradictory verifier results;
-- verifier invalidation after a prior pass;
-- malformed and reversed timestamps;
-- mutable metadata and artifact snapshotting;
-- candidate dependency-graph and receipt/evidence state tampering;
-- run serialization round-trips;
-- bounded broker output and capability dispatch;
-- concurrent candidate registration;
-- expected versus probed capability aliases;
-- verifier policy enforcement; and
-- tampered event-history detection.
-
-The suite is still a runtime-foundation suite. It does not replace real host
-adapters, sandbox tests, hidden task benchmarks, or calibration of model-based
-judges.
-
-## Checkpoint trust boundary
-
-`FableRun.to_dict()` and `from_dict()` provide serialization and restoration,
-not a generally tamper-proof audit artifact. Each verification attestation now
-covers a canonical hash of the complete immutable `VerificationResult` (apart
-from the attestation itself), and restoration revalidates every restored
-verdict against its candidate, evidence, and attestation before it can affect
-finalization. The event hash chain detects edited or reordered events, but the
-experimental checkpoint currently stores the HMAC attestation secret in the
-same payload. Someone who can rewrite that payload could rewrite state and
-recompute the in-process HMAC.
-
-Production checkpoints must keep signing keys outside the serialized state,
-ideally in an external key store or isolated broker. The broker should sign
-the canonical complete checkpoint, verify a monotonic checkpoint sequence,
-and refuse to restore trusted verification state from an unsigned or invalid
-checkpoint. The current round-trip test proves serialization correctness only;
-it is not a security test.
-
-## Success criteria
-
-For each target domain, publish:
-
-- baseline success rate and confidence interval;
-- Fable V2 success rate and confidence interval;
-- relative success and error reduction;
-- successful tasks per token/dollar;
-- latency and tool-call counts;
-- verifier false-positive rate;
-- performance across at least two hosts and two model sizes.
-
-The weak-model 50x target is meaningful only when the baseline is non-zero
-and the absolute result is useful. The frontier-model 10x target should be
-reported primarily as reliability, failure reduction, or cost efficiency,
-because raw accuracy is bounded by 100%.
+Implemented foundation: protocol dataclasses, evidence/hash validation, run
+state transitions, event history checks, in-process verifier execution, host
+capability profiles, and the broker. Not implemented as a complete product:
+model routing, a production verifier service, universal host adapters, signed
+checkpoints, network authorization, or a benchmark result demonstrating model
+improvement.

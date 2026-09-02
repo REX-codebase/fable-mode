@@ -2,8 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="fable-engine",
-    version="1.2.3",
-    description="Deterministic System 2 Cognitive Engine & Mechanical Time-Lock MCP Server for Antigravity",
+    version="1.2.0",
+    description="Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server",
     license="MIT",
     packages=find_packages(),
     py_modules=["fable_mode_entry"],

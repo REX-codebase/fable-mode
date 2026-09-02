@@ -8,9 +8,7 @@ only advertise capabilities it can actually provide.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping, Any
-
-from .system3 import KripkeStructure, KripkeModelChecker, CausalDAG, CausalNode, CausalNodeType
+from typing import Iterable, Mapping
 
 
 @dataclass(frozen=True)
@@ -50,47 +48,6 @@ class HostCapabilities:
             source=source,
         )
 
-    def verify_temporal_capability_invariants(self, formula: str = "AG(capable)") -> dict[str, object]:
-        """Verify modal temporal logic invariant for host capabilities."""
-        kripke = KripkeStructure()
-        kripke.add_world("w_init", propositions={"initialized", "capable"} if self.is_attested else {"initialized"})
-        kripke.add_world("w_ready", propositions={"ready", "capable"} if self.is_attested else {"ready"})
-        kripke.add_transition("w_init", "w_ready")
-        kripke.add_transition("w_ready", "w_ready")
-        checker = KripkeModelChecker(kripke)
-        res = checker.check(formula, "w_init")
-        return {
-            "formula": formula,
-            "is_satisfied": res.is_satisfied,
-            "satisfying_worlds": sorted(list(res.satisfied_worlds)),
-        }
-
-    def validate_causal_capability_contract(self, target_capabilities: Iterable[str]) -> dict[str, object]:
-        """Validate causal DAG dependency flow for required capabilities."""
-        targets = list(target_capabilities)
-        available = self.observed_capabilities if self.is_attested else self.capabilities
-        missing = [c for c in targets if c not in available]
-        dag = CausalDAG(name=f"HostCapabilities_{self.host}")
-        for c in targets:
-            dag.add_node(
-                node_id=f"cap_{c}",
-                name=c,
-                node_type=CausalNodeType.EXOGENOUS if c in available else CausalNodeType.ENDOGENOUS,
-                value=1.0 if c in available else 0.0,
-            )
-        first_target = f"cap_{targets[0]}" if targets else None
-        if first_target and first_target in dag.nodes:
-            report = dag.evaluate_brittleness(target_metric=first_target)
-            b_score = report.overall_brittleness_score
-        else:
-            b_score = 0.0
-        return {
-            "is_valid": len(missing) == 0,
-            "missing": missing,
-            "brittleness_score": b_score,
-            "dag": dag.to_dict(),
-        }
-
     def compatibility_report(self, required: Iterable[str]) -> dict[str, object]:
         required_set = set(required)
         expected = required_set & self.capabilities
@@ -113,6 +70,11 @@ class HostCapabilities:
 # ``attest`` after probing the host; expected capabilities are never
 # runtime-authoritative.
 HOST_PROFILES: dict[str, HostCapabilities] = {
+    "generic-mcp-host": HostCapabilities(
+        "generic-mcp-host",
+        frozenset({"inspect_files", "execute_command", "edit_files", "run_tests"}),
+        {"tools/call": "route_tool"},
+    ),
     "antigravity": HostCapabilities(
         "antigravity",
         frozenset({"inspect_files", "search_web", "execute_command", "edit_files",
@@ -144,8 +106,11 @@ HOST_PROFILES: dict[str, HostCapabilities] = {
 
 
 def get_profile(host: str) -> HostCapabilities:
-    """Return a conservative profile; unknown hosts start with no claims."""
+    """Return a conservative profile; aliases resolve to canonical profiles."""
     key = host.strip().lower()
     if not key:
         raise ValueError("host must be a non-empty string")
+    aliases = {"claude": "claude-code", "cc": "claude-code", "agy": "antigravity",
+               "antigravity": "antigravity", "codex": "codex"}
+    key = aliases.get(key, key)
     return HOST_PROFILES.get(key, HostCapabilities(key))

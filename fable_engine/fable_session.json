@@ -1,16 +1,8 @@
 {
   "name": "fable_session",
-  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant), and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction, Poincaré hyperbolic embeddings, Kripke modal model checking, Friston active inference, and Gödelian constructive proof oracle).",
+  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, and token compression subsystem (Content-Addressed Storage; token counts and ratios are rough character-based estimates, not measured model-token usage or guarantees).\n Legacy fable_session actions are compatibility-only; compatibility_mode is optional and, when supplied, must be legacy_v1. Strict MCP hosts must use the separate fable_control_plane profile and tool.",
   "parameters": {
     "properties": {
-      "a_matrix": {
-        "description": "Observation likelihood matrix A [O x S] for Active Inference.",
-        "type": ["array", "string"]
-      },
-      "actions": {
-        "description": "List of control action identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
-      },
       "action": {
         "description": "The Fable session action to perform.",
         "enum": [
@@ -32,26 +24,12 @@
           "view_slice",
           "accumulate_payload",
           "flush_accumulator",
-          "get_compression_stats",
-          "system3_dialectical_synthesis",
-          "system3_causal_simulate",
-          "system3_evolve_paradigms",
-          "system3_induce_axioms",
-          "system3_meta_reflect",
-          "system3_tri_level_orchestrate",
-          "system3_hyperbolic_embed",
-          "system3_kripke_verify",
-          "system3_active_inference",
-          "system3_proof_oracle"
+          "get_compression_stats"
         ],
         "type": "string"
       },
       "accumulate_payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
-        "type": "string"
-      },
-      "antithesis_title": {
-        "description": "Title of the antithesis / adversarial critique for System 3 dialectical synthesis.",
         "type": "string"
       },
       "architectural_refinement": {
@@ -62,65 +40,21 @@
         "description": "Absolute filesystem path to blueprint artifact, proof, or benchmark script documenting the refinement.",
         "type": "string"
       },
-      "axioms": {
-        "description": "List of reference axiom names or strings for proof oracle.",
-        "type": ["array", "string"]
-      },
-      "b_matrices": {
-        "description": "State transition matrices B [Action -> S x S] for Active Inference.",
-        "type": ["object", "string"]
-      },
-      "base_step": {
-        "description": "Base geodesic step distance for hyperbolic tree embedding (default 1.0).",
-        "type": "number"
-      },
-      "c_preferences": {
-        "description": "Prior preference distribution C over observations for Active Inference.",
-        "type": ["array", "string"]
-      },
       "cas_ref": {
         "description": "CAS reference URI (cas://<sha256_hex>) or 64-char hash to retrieve, slice, or decompress.",
         "type": "string"
       },
       "claim": {
-        "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger / proof oracle.",
+        "description": "Fact, hypothesis statement, or unknown parameter to track in epistemic ledger.",
         "type": "string"
       },
       "content": {
         "description": "Raw text content or payload to store/compress into Content-Addressed Storage (CAS).",
         "type": "string"
       },
-      "context": {
-        "description": "Hypothesis typing context dictionary {name: type} for proof oracle.",
-        "type": ["object", "string"]
-      },
-      "contradiction_density": {
-        "description": "Contradiction density index [0.0, 1.0] for System 3 cognitive gear shifting.",
-        "type": "number"
-      },
-      "contradictions": {
-        "description": "List of parameter trade-offs / contradictions to resolve with TRIZ principles.",
-        "type": ["array", "string"]
-      },
       "critique_or_bottleneck": {
         "description": "Critical flaw, vulnerability, edge case, memory/latency bottleneck, or assumption scrutinized.",
         "type": "string"
-      },
-      "crossover_rate": {
-        "description": "Genetic crossover rate probability for evolutionary engine (default 0.80).",
-        "type": "number"
-      },
-      "curvature": {
-        "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0).",
-        "type": "number"
-      },
-      "d_prior": {
-        "description": "Prior initial state belief distribution D for Active Inference.",
-        "type": ["array", "string"]
-      },
-      "dimension": {
-        "description": "Dimension of Poincaré ball manifold (default 2).",
-        "type": "integer"
       },
       "domain": {
         "description": "Domain boundary for the invariant.",
@@ -131,29 +65,52 @@
         ],
         "type": "string"
       },
-      "edges": {
-        "description": "List of directed edge dictionaries for Causal DAG construction.",
-        "type": ["array", "string"]
-      },
       "end_line": {
         "description": "Ending line number (1-indexed inclusive) for windowed line slice viewing.",
         "type": "integer"
       },
-      "epistemic_uncertainty": {
-        "description": "Epistemic uncertainty index [0.0, 1.0] for System 3 arbitration.",
-        "type": "number"
-      },
       "evidence": {
-        "description": "Source file, command output, line number, or URL supporting the claim.",
-        "type": "string"
-      },
-      "failure_count": {
-        "description": "Historical failure count for tri-level cognitive gear arbitration.",
-        "type": "integer"
-      },
-      "failure_modes": {
-        "description": "List of adversarial failure modes identified in critique.",
-        "type": ["array", "string"]
+        "description": "Receipt-bound evidence object. Legacy citation strings are accepted for display only and cannot satisfy an unlock gate.",
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": [
+              "receipt_id",
+              "session_id",
+              "content_hash",
+              "source_output_hash",
+              "claim"
+            ],
+            "properties": {
+              "receipt_id": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "content": {},
+              "content_hash": {
+                "type": "string"
+              },
+              "source_output_hash": {
+                "type": "string"
+              },
+              "claim": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
       },
       "focus_area": {
         "description": "Specific subsystem, component, algorithm, or interface being critically re-evaluated.",
@@ -167,29 +124,9 @@
         "description": "Mathematical or formal contract specification that must never be violated.",
         "type": "string"
       },
-      "formula": {
-        "description": "CTL / modal formula string to verify against Kripke structure (e.g. 'AG(safe)', 'EF(goal)').",
-        "type": "string"
-      },
-      "gamma": {
-        "description": "Policy precision inverse temperature gamma for Active Inference softmax (default 16.0).",
-        "type": "number"
-      },
-      "generations": {
-        "description": "Number of evolutionary generations to run (default 3).",
-        "type": "integer"
-      },
       "include_line_numbers": {
         "description": "Whether to format line slice with line numbers.",
         "type": "boolean"
-      },
-      "initial_world": {
-        "description": "Initial world ID for Kripke model checking.",
-        "type": "string"
-      },
-      "interventions": {
-        "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
-        "type": ["object", "string"]
       },
       "invariant_name": {
         "description": "Identifier or title of the formal invariant (e.g., 'INV-01: Zero-Deadlock Ring Buffer').",
@@ -199,21 +136,9 @@
         "description": "Optional label or description for compressed CAS node.",
         "type": "string"
       },
-      "max_debate_rounds": {
-        "description": "Maximum number of dialectical debate rounds for synthesis (default 4).",
-        "type": "integer"
-      },
       "metadata": {
         "description": "Optional metadata dictionary attached to accumulated micro-payload.",
         "type": "object"
-      },
-      "model_name": {
-        "description": "Name for the causal DAG / Kripke model in System 3 simulation.",
-        "type": "string"
-      },
-      "mutation_rate": {
-        "description": "Genetic mutation rate probability for evolutionary engine (default 0.15).",
-        "type": "number"
       },
       "next_phase": {
         "description": "Target phase to advance the session into.",
@@ -227,45 +152,38 @@
         ],
         "type": "string"
       },
-      "node_labels": {
-        "description": "Optional mapping of node IDs to readable labels.",
-        "type": ["object", "string"]
-      },
-      "nodes": {
-        "description": "List of node dictionaries for Causal DAG construction.",
-        "type": ["array", "string"]
-      },
       "objective": {
         "description": "High-level goal or problem statement for the reasoning session.",
         "type": "string"
-      },
-      "objective_weights": {
-        "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
-        "type": ["object", "string"]
-      },
-      "observation": {
-        "description": "Current sensory observation for Active Inference belief updating.",
-        "type": "string"
-      },
-      "observations": {
-        "description": "List of observation identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
       },
       "payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"
       },
       "phase_summary": {
-        "description": "Concise summary of findings or deliverables completed in the previous phase.",
-        "type": "string"
-      },
-      "policies": {
-        "description": "List of candidate action sequence policies for Expected Free Energy evaluation.",
-        "type": ["array", "string"]
-      },
-      "population_size": {
-        "description": "Population size for evolutionary gene pool (default 12).",
-        "type": "integer"
+        "description": "Substantive summary of completed work. May be a string or typed object with summary and evidence bindings.",
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 8
+          },
+          {
+            "type": "object",
+            "required": [
+              "summary"
+            ],
+            "properties": {
+              "summary": {
+                "type": "string",
+                "minLength": 8
+              },
+              "evidence": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "proof_or_rationale": {
         "description": "Proof sketch, rationale, or inductive argument establishing the invariant.",
@@ -279,25 +197,13 @@
         "description": "Type of rethink-refine cycle (e.g. 'archetype_exploration', 'triz_resolution', 'adversarial_falsification', 'benchmark_probe', 'failure_mode_analysis').",
         "type": "string"
       },
-      "root_id": {
-        "description": "Root node ID for hyperbolic tree embedding or initial world.",
-        "type": "string"
-      },
-      "seed_paradigms": {
-        "description": "Optional list of initial paradigm definitions to seed the gene pool.",
-        "type": ["array", "string"]
-      },
       "session_name": {
-        "description": "Unique identifier / name for the Fable session.",
+        "description": "Unique identifier / name; required for all session and CAS operations. CAS is confined to a session-derived capability namespace.",
         "type": "string"
       },
       "start_line": {
         "description": "Starting line number (1-indexed inclusive) for windowed line slice viewing.",
         "type": "integer"
-      },
-      "states": {
-        "description": "List of hidden state identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
       },
       "subagent_prompt": {
         "description": "The delegation prompt or contract text for the subagent to validate.",
@@ -312,50 +218,238 @@
         ],
         "type": "string"
       },
-      "target_metric": {
-        "description": "Target KPI node ID for sensitivity and structural brittleness analysis.",
-        "type": "string"
-      },
-      "target_residual_threshold": {
-        "description": "Target residual contradiction score threshold for convergence (default 0.15).",
-        "type": "number"
-      },
-      "task_complexity": {
-        "description": "Task complexity index [0.0, 1.0] for tri-level cognitive arbitration.",
-        "type": "number"
-      },
       "terminal_probe_results": {
         "description": "Live empirical probe output, benchmark figures, latency numbers, or profiling stats supporting the refinement.",
-        "type": "string"
-      },
-      "thesis_description": {
-        "description": "Core architecture description and assumptions for the thesis candidate.",
-        "type": "string"
-      },
-      "thesis_title": {
-        "description": "Title of the thesis paradigm for System 3 dialectical synthesis.",
         "type": "string"
       },
       "time_budget_minutes": {
         "description": "Immutable outer authority budget in minutes; set_timer only changes internal pacing.",
         "type": "number"
       },
-      "transitions": {
-        "description": "List of transitions or adjacency dictionary for Kripke structure.",
-        "type": ["array", "object", "string"]
+      "phase_evidence": {
+        "description": "Typed phase prerequisite bindings; IDs are validated against this session.",
+        "type": "object",
+        "properties": {
+          "receipt_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "invariant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refinement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
       },
-      "tree": {
-        "description": "Tree hierarchy adjacency list or nested dict for hyperbolic embedding.",
-        "type": ["object", "array", "string"]
-      },
-      "worlds": {
-        "description": "List of world/state definitions for Kripke structure.",
-        "type": ["array", "string"]
+      "compatibility_mode": {
+        "description": "Optional compatibility selector for this legacy fable_session surface. When supplied, it must be exactly legacy_v1; this surface is not the strict control plane.",
+        "type": "string",
+        "enum": [
+          "legacy_v1"
+        ]
       }
     },
     "required": [
       "action"
     ],
-    "type": "object"
+    "type": "object",
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "action": {
+              "enum": [
+                "compress_payload",
+                "decompress_payload",
+                "view_slice",
+                "accumulate_payload",
+                "flush_accumulator",
+                "get_compression_stats"
+              ]
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "session_name"
+          ]
+        }
+      }
+    ]
+  },
+  "strict_control_plane": {
+    "name": "fable_control_plane",
+    "profile": "strict-mcp-v1",
+    "description": "Strict typed/stateful MCP control plane. Enforces observe before prediction, prediction before mutating action, host receipt-backed outcome before verification, and broker/host-attested finalization. Native host tools are not controlled unless routed through a broker.",
+    "actions": [
+      "observe",
+      "record_prediction",
+      "propose_action",
+      "record_outcome",
+      "request_verification",
+      "finalize",
+      "capabilities"
+    ],
+    "states": [
+      "new",
+      "observed",
+      "predicted",
+      "action_proposed",
+      "outcome_recorded",
+      "verification_requested",
+      "finalized"
+    ],
+    "enforcement": {
+      "control_plane": "enforced",
+      "sequence_invariants": "enforced",
+      "session_binding": "enforced",
+      "idempotency": "enforced",
+      "host_tool_authorization": "advisory_external_host_required",
+      "native_host_tools": "not_controlled_unless_routed_through_broker",
+      "receipt_authority": "external_host_or_broker_only",
+      "model_can_authorize_finalization": false
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "strict-mcp-v1"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "record_prediction",
+            "propose_action",
+            "record_outcome",
+            "request_verification",
+            "finalize",
+            "capabilities"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "session_name": {
+          "type": "string"
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 8
+        },
+        "observation": {},
+        "prediction": {
+          "type": "string",
+          "minLength": 8
+        },
+        "prediction_id": {
+          "type": "string"
+        },
+        "action_name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "mutating": {
+          "type": "boolean",
+          "const": true
+        },
+        "action_id": {
+          "type": "string"
+        },
+        "outcome": {},
+        "receipt_id": {
+          "type": "string"
+        },
+        "outcome_id": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "verification_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "observe",
+                  "record_prediction",
+                  "propose_action",
+                  "record_outcome",
+                  "request_verification",
+                  "finalize"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "idempotency_key"
+            ]
+          }
+        }
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "ok",
+        "profile",
+        "action",
+        "enforcement"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {},
+        "session_id": {},
+        "result": {},
+        "error": {},
+        "enforcement": {
+          "type": "object"
+        }
+      }
+    }
   }
 }

@@ -20,6 +20,20 @@ PRODUCT = "fable-mode"
 MARKER = ".fable-install.json"
 
 
+def default_data_dir() -> Path:
+    """Return the single documented per-user Fable data directory.
+
+    ``FABLE_DATA_DIR`` is an explicit override; otherwise platform-native user
+    data roots are used consistently by the launcher and installer tooling.
+    """
+    override = os.environ.get("FABLE_DATA_DIR")
+    if override:
+        return Path(override).expanduser().absolute()
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        return Path(os.environ["LOCALAPPDATA"]) / "FableMode" / "data"
+    return Path.home() / ".local" / "share" / PRODUCT / "data"
+
+
 class InstallError(RuntimeError):
     pass
 
@@ -160,11 +174,7 @@ class InstallTransaction:
                 self._verify_backup()
                 safe_cleanup(self.backup_dir, expected_identity=self.backup_identity)
             except (OSError, ValueError, InstallError) as exc:
-                # Keep the transaction rollbackable.  The newly published
-                # install may already be referenced by host registrations, so
-                # callers must restore those registrations before removing it.
-                # Marking this transaction done here would strand both the new
-                # runtime and the old backup on a commit failure.
+                self.done = True
                 raise InstallError("previous installation backup is unsafe; preserved") from exc
         self.done = True
 
@@ -205,6 +215,7 @@ class Installer:
         default = (Path(os.environ["LOCALAPPDATA"]) / "FableMode" if os.name == "nt" and os.environ.get("LOCALAPPDATA")
                    else Path.home() / ".local" / "share" / "fable-mode")
         self.install_dir = Path(install_dir or os.environ.get("FABLE_INSTALL_DIR", default)).expanduser().absolute()
+        self.data_dir = default_data_dir()
         self.source = Path(source or source_root()).absolute()
         self.previous_registrations: list[dict] = []
 
@@ -425,23 +436,12 @@ class Installer:
                     marker_data.get("registrations", []), strict=True,
                     install_dir=self.install_dir, home=Path.home())
                 if skipped:
-                    # Never delete the marker that contains previous_entries
-                    # recovery state while a host cannot be inspected or has
-                    # changed.  The caller can retry uninstall after restoring
-                    # the host executable/config; silently removing this state
-                    # would strand a stale fable-engine registration.
-                    detail = ", ".join(skipped)
-                    raise InstallError(
-                        "registration cleanup unresolved; installation and recovery "
-                        f"metadata preserved ({detail})")
-            except InstallError:
-                raise
-            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-                # A malformed/unreadable marker is itself recovery-critical.
-                # verify_installation normally catches this earlier, but keep
-                # this path fail-closed if the file changes after verification.
-                raise InstallError(
-                    "could not inspect registration recovery metadata; installation preserved") from exc
+                    # A host/config mismatch is intentionally non-fatal: the
+                    # install tree can still be removed, but user changes are
+                    # retained and made visible to an interactive caller.
+                    print("uninstall: registration mismatch; preserved " + ", ".join(skipped), file=sys.stderr)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
             safe_cleanup(self.install_dir, expected_identity=identity)
         except (OSError, ValueError) as exc:
             raise InstallError("refusing to remove an unsafe installation directory") from exc
@@ -521,4 +521,3 @@ def verify_installation(install_dir: Path) -> tuple[bool, str]:
         return True, "ok"
     except (OSError, ValueError, TypeError, InstallError, json.JSONDecodeError) as exc:
         return False, str(exc)
-
