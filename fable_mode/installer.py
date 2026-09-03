@@ -259,8 +259,8 @@ class Installer:
             try:
                 source_stat = src.lstat()
             except FileNotFoundError:
-                if rel.startswith("docs/") or rel.startswith("rules/"):
-                    # Documentation is optional in a wheel; runtime files are not.
+                if rel in _OPTIONAL_SOURCE_FILES:
+                    # Documentation, rules, and skills are optional in a wheel; runtime files are not.
                     continue
                 raise InstallError(f"missing canonical source file: {rel}")
             if stat.S_ISLNK(source_stat.st_mode):

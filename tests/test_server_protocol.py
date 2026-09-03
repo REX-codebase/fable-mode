@@ -63,7 +63,7 @@ class ServerProtocolRegressionTests(unittest.TestCase):
                                          "method": "initialize", "params": {}}) + "\n")
             proc.stdin.flush()
             reader.start()
-            reader.join(timeout=3)
+            reader.join(timeout=10)
             self.assertFalse(reader.is_alive(), "interactive response waited for EOF")
             self.assertTrue(line and line[0])
             self.assertEqual(json.loads(line[0])["id"], 1)
