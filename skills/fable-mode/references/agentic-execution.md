@@ -133,6 +133,7 @@ graph TD
                   |  - System 2 Deliberation & Invariant Proofs    |
                   |  - Continuous Refinement (log_refinement_cycle)|
                   |  - Terminal Probes (run_command) & Artifacts   |
+                  |  - Injects Coder Fleet into Subagent Contracts |
                   |  - fable_session State & Time-Lock Gatekeeper  |
                   |  - High-Level Architecture & API Contracts     |
                   |  ⛔ DOES NOT WRITE PROJECT CODE DIRECTLY       |
@@ -143,9 +144,10 @@ graph TD
         +────────────────----+  +────────────────----+  +────────────────----+
         |  CODER WORKER      |  |  RESEARCH SCOUT    |  | RED-TEAM EXPLORER  |
         | (type: self)       |  | (type: research)   |  | (type: self)       |
-        | - Writes all code  |  | - Scans 50+ files  |  | - Injects fuzzing  |
-        | - Edits repo files |  | - Extracts APIs    |  | - Probes races     |
-        | - Runs unit tests  |  | - Live web docs    |  | - Edge validation  |
+        | - Armed w/ 10 Fleet|  | - Scans 50+ files  |  | - Injects fuzzing  |
+        | - Writes all code  |  | - Extracts APIs    |  | - Probes races     |
+        | - Edits repo files |  | - Live web docs    |  | - Edge validation  |
+        | - Runs unit tests  |  |                    |  | - Mutation verify  |
         +────────────────----+  +────────────────----+  +────────────────----+
 ```
 
@@ -204,6 +206,46 @@ graph TD
   - The Coder Worker builds the optimal implementation adhering to specifications.
   - The Critic Worker independently constructs a hostile test harness designed explicitly to break invariants (race fuzzing, memory exhaustion, malformed payloads).
   - The implementation is merged only when the Coder's artifact passes the Critic's adversarial suite with zero invariant breaches.
+
+### 6.3 The Coder Fleet Tool Injection Protocol
+
+> [!IMPORTANT]
+> **Zero Blind Dispatches**: The Main Agent must never dispatch subagents blind. Every subagent contract must explicitly declare the available `fable_v2.coder_fleet` engines and mandate concrete verification workflows. Subagents reporting code changes without Coder Fleet verification will have their work rejected at the Definition of Done gate.
+
+#### The 10 Specialized Coder Fleet Engines (`fable_v2.coder_fleet`)
+Subagents operate with pure-Python, zero-external-C-dependency engines tailored for robust, ungameable implementation:
+
+```python
+from fable_v2.coder_fleet import (
+    VisualGroundingEngine,      # Vector/SVG rendering validation, palette & bounding box diffs
+    DiagnosticsEngine,          # AST syntax/semantic diagnostics & automated quick fixes
+    TreeSitterCodemodEngine,    # AST structural queries, safe identifier renaming across files
+    AtomicWorkspaceEngine,      # File checkpoints, unified diffs, rollbacks, SHA-256 commits
+    TestHarnessEngine,          # Subprocess sandboxing, 3s timeouts, race fuzzing, memory profiling
+    MutationVerifierEngine,     # AST mutant injection, kill rate auditing (audit_test_strength)
+    MockAuditorEngine,          # Tautology detection, bans assert True, catches mock leakage
+    PropertyOracleEngine,       # Extreme boundary matrices, algebraic roundtrip invariants
+    ReceiptAttestorEngine,      # HMAC-SHA256 authenticated ToolReceipts for execution proofs
+    ComputeOrchestratorEngine,  # Dynamic thinking budgets up to 64k tokens, MCTS tree search
+    CoderFleetDispatcher        # Centralized router dispatching to all 10 engines
+)
+```
+
+#### Expected Subagent Verification Workflows
+1. **Pre-Flight Diagnostics**: Subagents run `DiagnosticsEngine` on modified source files to guarantee clean AST parsing and zero syntax/type errors before running tests.
+2. **Safe Structural Refactoring**: Subagents utilize `TreeSitterCodemodEngine` for multi-file symbol renames to preserve structural AST invariants rather than error-prone regex replacement.
+3. **Sandboxed Test Execution**: Subagents run test suites inside `TestHarnessEngine` under isolated 3-second timeouts to guard against infinite loops, hangs, or resource saturation.
+4. **Eradication of Fake Tests (`MutationVerifierEngine`)**:
+   - Subagents must run `MutationVerifierEngine.audit_test_strength()` against test suites.
+   - Mutants with inverted comparison operators, modified constants, and omitted condition branches must be actively killed by the tests.
+   - Fake tests (passing tests that fail to kill obvious mutants) are flagged and must be rewritten.
+5. **Tautology & Mock Leakage Auditing (`MockAuditorEngine`)**:
+   - Every test suite is scanned for vacuous assertions (`assert True`, `self.assertEqual(val, val)`), redundant mocks, or mocking the system under test.
+   - Subagents must verify negative paths (explicitly asserting expected exceptions on malformed inputs).
+6. **Property-Based Boundary Validation (`PropertyOracleEngine`)**:
+   - Validates algebraic properties (e.g., identity, associativity, roundtrips: `decode(encode(data)) == data`) across extreme edge cases.
+7. **Tamper-Evident Receipts (`ReceiptAttestorEngine`)**:
+   - Subagents generate cryptographically signed `ToolReceipt`s for test runs and milestone commits, proving deterministic pass status to the Main Agent.
 
 --------------------------------------------------------------------------------
 

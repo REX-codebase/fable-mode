@@ -195,7 +195,42 @@ Inject this template when formulating subagent instructions:
 - **Strict Invariants**: Types, concurrency constraints, error handling rules
 - **Verification Command**: Exact CLI command subagent must run (`pytest`, `cargo test`, `npm test`)
 - **Required Report Output**: Git diff summary, test pass/fail counts, and invariant proof
+- **Mandatory Coder Fleet Tool Injection**:
+  Subagent must import and initialize the 10-Tool Coder Fleet:
+  ```python
+  from fable_v2.coder_fleet import (
+      VisualGroundingEngine, DiagnosticsEngine, TreeSitterCodemodEngine,
+      AtomicWorkspaceEngine, TestHarnessEngine, MutationVerifierEngine,
+      MockAuditorEngine, PropertyOracleEngine, ReceiptAttestorEngine,
+      ComputeOrchestratorEngine, CoderFleetDispatcher
+  )
+  ```
 ```
+
+### 🛠️ Mandatory Coder Fleet Verification Protocol in Subagent Workflows
+Every Coder Subagent contract dispatched by the Main Agent must declare and execute the following verification steps using `fable_v2.coder_fleet`:
+
+1. **Mutation Verification & Fake-Test Elimination (`MutationVerifierEngine`)**:
+   - Subagents must invoke `MutationVerifierEngine.audit_test_strength()` against test suites.
+   - The engine injects AST mutations (boundary offsets, operator flips, conditional inversions) and calculates the mutation kill rate ($M_{\text{kill}}$).
+   - Fake tests (tests that pass regardless of logic or fail to catch mutated semantics) are flagged and rejected. A test suite must demonstrate a kill rate $\ge 80\%$ to be deemed valid.
+
+2. **Tautology & Mock Auditing (`MockAuditorEngine`)**:
+   - Subagents must run `MockAuditorEngine` to audit test files for trivial or tautological assertions (`assert True`, `assertEqual(x, x)`, vacuous mocks, or mocking the unit under test).
+   - Any test that passes vacuously without exercising actual program code is strictly banned.
+   - Negative paths (proper exception raising on invalid inputs) must be explicitly audited.
+
+3. **AST-Aware Semantic Codemods (`TreeSitterCodemodEngine`)**:
+   - For renames and refactors across files, subagents must use `TreeSitterCodemodEngine` instead of blind text/regex replacements.
+   - Ensures AST nodes and symbol bindings remain structurally valid and zero syntax errors are introduced.
+
+4. **Isolated Sandboxed Execution (`TestHarnessEngine`)**:
+   - Subagents must run tests via `TestHarnessEngine.run_test()` with strict 3-second sandboxing timeouts.
+   - Prevents hangs, infinite loops, deadlock regressions, and isolates resource leakage while profiling peak RSS memory and execution duration.
+
+5. **Tamper-Evident Execution Receipts (`ReceiptAttestorEngine`)**:
+   - Subagents must generate cryptographically authenticated `ToolReceipt`s via `ReceiptAttestorEngine.attest_execution()`.
+   - Attests command string, exit code 0, stdout hash, stderr emptiness, and HMAC-SHA256 signature to guarantee ungameable execution proof to the Main Agent.
 
 --------------------------------------------------------------------------------
 

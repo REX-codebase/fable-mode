@@ -46,3 +46,18 @@ Whenever the user requests deep thinking, architectural planning, system design,
 15. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
     - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
     - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.
+
+16. **Mandatory Coder Fleet Tool Injection in Subagent Contracts**:
+    - The Main Agent must never dispatch subagents blind. Every subagent dispatch specification must inject the 10-Tool Coder Fleet (`fable_v2.coder_fleet`):
+      * `VisualGroundingEngine`: Vector/SVG coordinate verification, viewBox checks, and visual diffing.
+      * `DiagnosticsEngine`: AST syntax and semantic diagnostics with automated quick fixes.
+      * `TreeSitterCodemodEngine`: AST structural queries and safe semantic identifier renames.
+      * `AtomicWorkspaceEngine`: Isolated file checkpoints, unified diffs, rollbacks, and SHA-256 commits.
+      * `TestHarnessEngine`: Isolated subprocess execution sandboxing with 3s timeouts, race fuzzing, and memory profiling.
+      * `MutationVerifierEngine`: AST mutant injection and kill rate auditing (`audit_test_strength()`) to eradicate fake tests.
+      * `MockAuditorEngine`: Tautology auditing banning `assert True`, trivial assertions, mock leakage, and verifying negative paths.
+      * `PropertyOracleEngine`: Extreme boundary matrices and algebraic roundtrip invariant proofs.
+      * `ReceiptAttestorEngine`: Tamper-evident HMAC-SHA256 authenticated `ToolReceipt` execution proofs.
+      * `ComputeOrchestratorEngine`: Dynamic thinking token budgets up to 64k tokens and Monte Carlo Tree Search (MCTS).
+    - Subagents must audit test suites with `MutationVerifierEngine` and `MockAuditorEngine` and provide verifiable execution receipts before code changes are accepted.
+

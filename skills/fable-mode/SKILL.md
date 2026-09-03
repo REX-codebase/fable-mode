@@ -9,7 +9,8 @@ description: >-
   (generate_image 5-6 concepts before UI coding), AAA WebGL/WebGPU Three.js Game-Grade Standards,
   Omniscient Session Lineage & Working Memory (track_file_change, get_session_lineage, inspect_plan,
   verify_proof, record_visual_mockups), Pre-Flight Goal Score & Rubric Pointers (S_target >= 95%),
-  Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated"), and dedicated Domain Cognitive Gears (including domain: "design" /
+  Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated"), 10-Tool Coder Subagent MCP
+  Fleet (fable_v2.coder_fleet), and dedicated Domain Cognitive Gears (including domain: "design" /
   Cinematic Design Engine). Enforces strict cognitive separation: Main Agent performs all DeepThink,
   System 2 deliberation, epistemic verification, and architectural blueprinting (cannot code directly);
   all code writing and file modifications are executed strictly by subagents. Activates whenever the user
@@ -39,6 +40,7 @@ description: >-
 15. **Dedicated Domain Cognitive Gears (`domain: "design"` / Cinematic Design Engine)**: Autonomous activation for frontend design, generative UI, 3D WebGL scenes, and high-concept digital typography—enforcing 7-layer optical depth staging, 6 Haute aesthetic archetypes, golden-ratio fluid typography, Newtonian spring motion physics, and anti-AI-slop elimination.
 16. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**: Mandatory declaration of weighted criteria pointers (`set_goal_rubric`) and verifiable receipt-backed scoring before declaring any objective complete (`evaluate_goal_rubric`).
 17. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**: Proactive compilation and registration of closed-loop generator-evaluator pipelines (`register_automation_pipeline`) to autonomously converge solutions without human micromanagement.
+18. **10-Tool Coder Subagent MCP Fleet (`fable_v2.coder_fleet`)**: Mandatory injection of 10 specialized engines (VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, ComputeOrchestrator) into subagent contracts to eliminate fake tests, tautological assertions, and ungrounded code edits.
 
 --------------------------------------------------------------------------------
 
@@ -54,6 +56,7 @@ description: >-
 |  - Architectural Blueprinting, 10D Trade-off Matrices & TRIZ Innovations      |
 |  - Visual Imagination: Mandates 5-6 Concept Mockups via generate_image        |
 |  - Formal Invariant Proofs (AST Grounding, Curry-Howard, Kripke AG(safe))     |
+|  - Injects 10-Tool Coder Fleet Specs into Subagent Dispatch Contracts         |
 |  - Multi-Tier Quality Gatekeeper & Verifier (Audits Subagent Output)         |
 |                                                                               |
 |  ⛔ STRICT CONSTRAINT: Main Agent CANNOT write or edit project code files.   |
@@ -65,6 +68,17 @@ description: >-
 |                       SUBAGENT FLEET: THE CODER WORKERS                       |
 |  - Type: 'self' (Coder / Implementer / Red-Team Workers)                      |
 |  - Type: 'research' (Documentation & Ecosystem Scouts)                        |
+|  - Armed with 10-Tool Coder Fleet (`fable_v2.coder_fleet`):                   |
+|    1. VisualGroundingEngine: Vector/SVG rendering validation & diffing        |
+|    2. DiagnosticsEngine: AST syntax & semantic diagnostics, quick fixes       |
+|    3. TreeSitterCodemodEngine: AST structural queries & semantic renames      |
+|    4. AtomicWorkspaceEngine: File checkpoints, rollbacks & SHA-256 commits    |
+|    5. TestHarnessEngine: 3s timeout sandboxing, race fuzzing, memory profiles |
+|    6. MutationVerifierEngine: AST mutant injection, kills mutants/bans fake   |
+|    7. MockAuditorEngine: Tautology auditor, bans assert True, mock leakage    |
+|    8. PropertyOracleEngine: Extreme boundary matrix & algebraic roundtrips    |
+|    9. ReceiptAttestorEngine: Subprocess execution attestation & HMAC receipts |
+|   10. ComputeOrchestratorEngine: Dynamic thinking budgets up to 64k, MCTS     |
 |                                                                               |
 |  ✅ MANDATE: ALL project code writing (write_to_file), edits                  |
 |     (replace_file_content), unit tests, and refactoring are performed         |
@@ -90,7 +104,7 @@ During Phases 1, 2, and 3 (while the immutable authority lock is active), the ho
 
 --------------------------------------------------------------------------------
 
-## The 14 Core Pillars of Fable Mode
+## The 15 Core Pillars of Fable Mode
 
 ```mermaid
 graph TD
@@ -107,6 +121,8 @@ graph TD
     P10 --> P12["12. System 3 Meta-Cognitive Deliberation<br/>(Friston Free Energy, Kripke AG(safe), TRIZ)"]
     P11 --> P13["13. Pre-Flight Goal Scoring Rubric<br/>(S_target >= 95%, Checklist Pointers)"]
     P12 --> P14["14. Autonomous Tool & Pipeline Synthesis<br/>(Closed-Loop Generator-Evaluator Chains)"]
+    P13 --> P15["15. Coder Subagent MCP Fleet<br/>(10 Engines in fable_v2.coder_fleet)"]
+    P14 --> P15
 ```
 
 1. **Strict Cognitive Separation**:
@@ -177,6 +193,21 @@ graph TD
     - Actively construct self-contained, closed-loop generation and verification pipelines (`register_automation_pipeline`) for iterative code synthesis, fuzzing, property testing, and regression benchmarking.
     - Eliminate manual step-by-step human intervention: pipelines run bounded generator-evaluator iteration loops with automated stop conditions upon crossing target score thresholds.
 
+15. **Coder Subagent MCP Fleet & Mandatory Tool Injection Protocol (`fable_v2.coder_fleet`)**:
+    - The Main Agent is strictly required to inject the 10-Tool Coder Subagent MCP Fleet into all subagent contracts.
+    - Subagents must not rely on ungrounded edits, unverified mocks, or unchecked test suites. The 10 specialized engines in `fable_v2.coder_fleet` provide pure-Python, zero-external-C-dependency capabilities:
+      1. `VisualGroundingEngine`: Vector/SVG rendering validation, coordinate and viewBox verification, color palette extraction, and perceptual diffing before frontend/vector assets are committed.
+      2. `DiagnosticsEngine`: AST syntax and semantic diagnostics, catching compilation/linting errors and applying automated quick fixes before test execution.
+      3. `TreeSitterCodemodEngine`: AST structural queries, AST-aware pattern matching, and safe semantic identifier renaming across multi-file repositories.
+      4. `AtomicWorkspaceEngine`: Transactional workspace isolation, unified patch inspection, automated rollbacks on test failure, and SHA-256 milestone commit generation.
+      5. `TestHarnessEngine`: Subprocess execution sandboxing with strict 3-second timeouts, timeout enforcement, concurrency race fuzzing, and memory usage profiling.
+      6. `MutationVerifierEngine`: AST mutant injection (binary op swapping, condition inversion, constant boundary shifts) and test suite strength auditing via `audit_test_strength()`—kills mutants and permanently eliminates fake tests.
+      7. `MockAuditorEngine`: Tautology auditing that actively scans test ASTs, bans vacuous assertions (`assert True`, `assertEqual(x, x)`), flags mock leakage, and enforces negative-path testing.
+      8. `PropertyOracleEngine`: Generates extreme boundary matrices (underflows, overflows, Unicode, empty sets) and verifies algebraic roundtrip invariants ($\text{decode}(\text{encode}(x)) == x$).
+      9. `ReceiptAttestorEngine`: Validates subprocess execution with tamper-evident, HMAC-SHA256 authenticated `ToolReceipt`s for all test and build outputs.
+     10. `ComputeOrchestratorEngine`: Allocates dynamic thinking token budgets (up to 64k tokens) and conducts Monte Carlo Tree Search (MCTS) with Best-of-N consensus selection.
+    - **Contract Mandate**: Every subagent dispatch must import and execute the appropriate engines to guarantee zero-hallucination code delivery.
+
 --------------------------------------------------------------------------------
 
 ## The 6-Phase Engineering Lifecycle & Execution Lockout Gate
@@ -241,6 +272,7 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 - [System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture](./references/system3-meta-cognition.md) — Higher-order causal modeling (Pearl's do-calculus DAG), TRIZ dialectical transcendence, 10D Pareto NSGA-II genetic evolution, neuro-symbolic axiom induction, and cognitive bias detection.
 - [Interleaved Verification & Adversarial Red-Teaming](./references/interleaved-verification.md) — Post-action reflection gates, Project Glasswing v2 adversarial fuzzing, and property-based verification.
 - [Prompt Scaffolds & Mental Frameworks](./references/prompt-scaffolds.md) — Reusable cognitive scaffolds, System 2 Epistemic Ledgers, Refinement Cycle Traces, Fable Session MCP templates, and OODA self-healing blocks.
+- [10-Tool Coder Subagent MCP Fleet & Tool Injection Protocol](./references/agentic-execution.md#the-coder-fleet-tool-injection-protocol) — Mandatory tool contracts for VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, and ComputeOrchestrator.
 
 --------------------------------------------------------------------------------
 
