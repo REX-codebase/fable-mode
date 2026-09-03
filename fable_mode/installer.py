@@ -204,7 +204,7 @@ class InstallTransaction:
 
 class Installer:
     def __init__(self, install_dir: Path | None = None, *, source: Path | None = None):
-        default = (Path(os.environ["LOCALAPPDATA"]) / "FableMode" if os.name == "nt" and os.environ.get("LOCALAPPDATA")
+        default = (Path(os.environ["LOCALAPPDATA"]) / "Programs" / "FableMode" if os.name == "nt" and os.environ.get("LOCALAPPDATA")
                    else Path.home() / ".local" / "share" / "fable-mode")
         self.install_dir = Path(install_dir or os.environ.get("FABLE_INSTALL_DIR", default)).expanduser().absolute()
         self.source = Path(source or source_root()).absolute()
@@ -468,6 +468,22 @@ def verify_installation(install_dir: Path) -> tuple[bool, str]:
             # Optional docs/rules are included when present in a source tree,
             # but are never allowed to replace or omit runtime resources.
             expected_names.update(name for name in files if name in _OPTIONAL_SOURCE_FILES)
+            if set(files) != expected_names:
+                # Check if this installation matches its own packaged resources.json (e.g. prior version during upgrade)
+                res_path = install_dir / "runtime" / "fable_mode" / "resources.json"
+                if res_path.is_file():
+                    try:
+                        res_data = json.loads(res_path.read_text(encoding="utf-8"))
+                        if isinstance(res_data, dict) and res_data.get("format") == 1:
+                            res_files = res_data.get("files", [])
+                            res_opt = {r for r in res_files if r.startswith("rules/") or r.startswith("docs/") or r.startswith("skills/")}
+                            res_req = {r for r in res_files if r not in res_opt}
+                            valid_manifest_names = set(res_req) | {"fable_mode_entry.py"}
+                            valid_manifest_names.update(name for name in files if name in res_opt)
+                            if set(files) == valid_manifest_names:
+                                expected_names = valid_manifest_names
+                    except Exception:
+                        pass
         elif mode == "frozen":
             expected_names = {"fable-mode.exe" if os.name == "nt" else "fable-mode"}
         else:
@@ -519,8 +535,16 @@ def verify_installation(install_dir: Path) -> tuple[bool, str]:
             resources_path = install_dir / "runtime" / "fable_mode" / "resources.json"
             _regular_file(resources_path)
             resources = json.loads(resources_path.read_text(encoding="utf-8"))
-            validate_manifest(resources)
+            if expected_names != (set(_REQUIRED_SOURCE_FILES) | {"fable_mode_entry.py"}):
+                validate_manifest(resources, allowed_files=resources.get("files"))
+            else:
+                validate_manifest(resources)
         return True, "ok"
     except (OSError, ValueError, TypeError, InstallError, json.JSONDecodeError) as exc:
         return False, str(exc)
+
+
+if __name__ == "__main__":
+    from .launcher import main
+    raise SystemExit(main())
 

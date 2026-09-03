@@ -3,9 +3,12 @@
 from .adapters import HOST_PROFILES, HostCapabilities, get_profile
 from .execution_broker import BrokerPolicy, ExecutionBroker
 from .protocol import (
+    AutomationPipelineSpec,
     Candidate,
     Evidence,
     FileChangeRecord,
+    GoalRubric,
+    GoalRubricItem,
     ModelVelocityProfile,
     ProofReceipt,
     TaskSpec,
@@ -111,9 +114,11 @@ from .system3 import (
 )
 
 __all__ = [
-    "BrokerPolicy", "Candidate", "CompositeVerifier", "Evidence", "ExecutionBroker", "FableRun",
-    "FunctionVerifier", "HOST_PROFILES", "HostCapabilities", "RunState",
-    "TaskSpec", "ToolReceipt", "VerificationPolicy", "VerificationResult",
+    "AutomationPipelineSpec", "BrokerPolicy", "Candidate", "CompositeVerifier", "Evidence",
+    "ExecutionBroker", "FableRun", "FileChangeRecord", "FunctionVerifier", "GoalRubric",
+    "GoalRubricItem", "HOST_PROFILES", "HostCapabilities", "ModelVelocityProfile",
+    "ProofReceipt", "RunState", "TaskSpec", "ToolReceipt", "VerificationPolicy",
+    "VerificationResult", "VisualMockupSpec",
     "get_profile", "new_run", "DeterministicProofValidator",
     "system3",
     # System 3 Causal

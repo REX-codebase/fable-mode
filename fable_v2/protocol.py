@@ -399,3 +399,87 @@ class ModelVelocityProfile:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+
+@dataclass(frozen=True)
+class GoalRubricItem:
+    """A granular rubric item or verification criteria pointer with target weight."""
+
+    pointer_id: str
+    description: str
+    weight: float = 1.0
+    verifier_command: str = ""
+    satisfied: bool = False
+    score: float = 0.0
+    evidence_receipt_id: str = ""
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _required_text(self.pointer_id, "pointer_id")
+        _required_text(self.description, "description")
+        if self.weight < 0:
+            raise ValueError("weight cannot be negative")
+        if not 0.0 <= self.score <= 1.0:
+            raise ValueError("score must be between 0.0 and 1.0")
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class GoalRubric:
+    """Pre-flight goal scoring rubric contract with target threshold (default >= 0.95)."""
+
+    rubric_id: str
+    session_id: str
+    task_objective: str
+    target_score: float = 0.95
+    items: tuple[GoalRubricItem, ...] = ()
+    current_score: float = 0.0
+    status: str = "pending"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _required_text(self.rubric_id, "rubric_id")
+        _required_text(self.session_id, "session_id")
+        _required_text(self.task_objective, "task_objective")
+        if not 0.0 <= self.target_score <= 1.0:
+            raise ValueError("target_score must be between 0.0 and 1.0")
+        if not 0.0 <= self.current_score <= 1.0:
+            raise ValueError("current_score must be between 0.0 and 1.0")
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AutomationPipelineSpec:
+    """Specification for an autonomous generator-evaluator closed-loop pipeline."""
+
+    pipeline_id: str
+    session_id: str
+    name: str
+    pipeline_type: str = "closed_loop"
+    generator_command: str = ""
+    evaluator_command: str = ""
+    target_threshold: float = 0.95
+    max_iterations: int = 10
+    status: str = "active"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _required_text(self.pipeline_id, "pipeline_id")
+        _required_text(self.session_id, "session_id")
+        _required_text(self.name, "name")
+        if not 0.0 <= self.target_threshold <= 1.0:
+            raise ValueError("target_threshold must be between 0.0 and 1.0")
+        if self.max_iterations < 1:
+            raise ValueError("max_iterations must be at least 1")
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+

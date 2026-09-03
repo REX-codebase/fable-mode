@@ -41,3 +41,11 @@
   2. Main Agent dispatches subagents (`invoke_subagent`) to implement the code and run local tests once execution is unlocked.
   3. Subagents report code diffs, compiler outputs, and test logs back to the Main Agent.
   4. Main Agent audits the results against the Definition of Done and enforces the quality gate.
+
+14. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
+    - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
+    - Each criterion pointer must bind to concrete verification checks, test commands, or evidence receipts.
+    - Deliverables cannot be finalized or declared done until `evaluate_goal_rubric` attests that the weighted composite goal score satisfies $S \ge 0.95$ ($95\%$).
+15. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
+    - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
+    - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.

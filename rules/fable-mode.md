@@ -39,3 +39,10 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - **Subagent Fleet**: 100% of all code writing (`write_to_file`), edits (`replace_file_content`), unit test implementations, and build fixes are executed **exclusively by subagents** (`type: self` or `type: research`) **only AFTER the timer has elapsed and execution is unlocked**.
 13. **System 3 Meta-Cognitive Deliberation & Weak-Model Frontier Uplift**:
     - Active Free Energy $F$ minimization, Kripke modal model checking, Dialectical TRIZ Auto-Repair on rejection, and automated System 3 micro-scaffolds embedded in subagent contracts.
+14. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
+    - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
+    - Each criterion pointer must bind to concrete verification checks, test commands, or evidence receipts.
+    - Deliverables cannot be finalized or declared done until `evaluate_goal_rubric` attests that the weighted composite goal score satisfies $S \ge 0.95$ ($95\%$).
+15. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
+    - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
+    - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.

@@ -47,3 +47,10 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - Execute a Post-Action Reflection Gate after every tool call to analyze state deltas and verify invariants.
 18. **Adversarial Red-Teaming (Project Glasswing)**:
     - Proactively attack designs with concurrency hazards, race conditions, memory leaks, and Byzantine failure modes.
+19. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
+    - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
+    - Each criterion pointer must bind to concrete verification checks, test commands, or evidence receipts.
+    - Deliverables cannot be finalized or declared done until `evaluate_goal_rubric` attests that the weighted composite goal score satisfies $S \ge 0.95$ ($95\%$).
+20. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
+    - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
+    - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.

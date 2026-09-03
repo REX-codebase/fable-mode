@@ -8,7 +8,8 @@ description: >-
   Model Velocity Calibration (Flash 2.5x Exploration vs Pro Deliberation), Visual Mockup-First Protocol
   (generate_image 5-6 concepts before UI coding), AAA WebGL/WebGPU Three.js Game-Grade Standards,
   Omniscient Session Lineage & Working Memory (track_file_change, get_session_lineage, inspect_plan,
-  verify_proof, record_visual_mockups), and dedicated Domain Cognitive Gears (including domain: "design" /
+  verify_proof, record_visual_mockups), Pre-Flight Goal Score & Rubric Pointers (S_target >= 95%),
+  Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated"), and dedicated Domain Cognitive Gears (including domain: "design" /
   Cinematic Design Engine). Enforces strict cognitive separation: Main Agent performs all DeepThink,
   System 2 deliberation, epistemic verification, and architectural blueprinting (cannot code directly);
   all code writing and file modifications are executed strictly by subagents. Activates whenever the user
@@ -36,6 +37,8 @@ description: >-
 13. **Token Compression Subsystem (0.003 tokens/char invariant)**: High-entropy Content-Addressed Storage (`FableCASStore`), adaptive micro-payload batching (`AdaptiveChunkAccumulator`), micro-bytecode serialization (`FableGrammar333`), and zero-copy windowed line slicing (`CASSliceViewer`), guaranteeing `<= 0.003 tokens/character` on large payloads with 100% bit-exact lossless roundtrip recovery.
 14. **System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture**: Higher-order causal modeling (Pearl's do-calculus DAG simulation), dialectical transcendence of trade-offs via 40 TRIZ inventive principles, 10-Dimensional Pareto frontier genetic optimization (NSGA-II), neuro-symbolic axiom induction, and live cognitive bias detection (confirmation, anchoring, sunk cost, circularity).
 15. **Dedicated Domain Cognitive Gears (`domain: "design"` / Cinematic Design Engine)**: Autonomous activation for frontend design, generative UI, 3D WebGL scenes, and high-concept digital typography—enforcing 7-layer optical depth staging, 6 Haute aesthetic archetypes, golden-ratio fluid typography, Newtonian spring motion physics, and anti-AI-slop elimination.
+16. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**: Mandatory declaration of weighted criteria pointers (`set_goal_rubric`) and verifiable receipt-backed scoring before declaring any objective complete (`evaluate_goal_rubric`).
+17. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**: Proactive compilation and registration of closed-loop generator-evaluator pipelines (`register_automation_pipeline`) to autonomously converge solutions without human micromanagement.
 
 --------------------------------------------------------------------------------
 
@@ -87,7 +90,7 @@ During Phases 1, 2, and 3 (while the immutable authority lock is active), the ho
 
 --------------------------------------------------------------------------------
 
-## The 12 Core Pillars of Fable Mode
+## The 14 Core Pillars of Fable Mode
 
 ```mermaid
 graph TD
@@ -101,7 +104,9 @@ graph TD
     P8 --> P9["9. Anti-Hallucination Epistemic Grounding<br/>([PROVEN], [HYPOTHESIS], [UNKNOWN])"]
     P9 --> P10["10. 8-Pass Recursive <thinking> Chain<br/>(Axioms, TRIZ, Concurrency, Proofs)"]
     P10 --> P11["11. Token Compression Subsystem<br/>(CAS, Grammar333 & <= 0.003 tokens/char)"]
-    P11 --> P12["12. System 3 Meta-Cognitive Deliberation<br/>(Friston Free Energy, Kripke AG(safe), TRIZ)"]
+    P10 --> P12["12. System 3 Meta-Cognitive Deliberation<br/>(Friston Free Energy, Kripke AG(safe), TRIZ)"]
+    P11 --> P13["13. Pre-Flight Goal Scoring Rubric<br/>(S_target >= 95%, Checklist Pointers)"]
+    P12 --> P14["14. Autonomous Tool & Pipeline Synthesis<br/>(Closed-Loop Generator-Evaluator Chains)"]
 ```
 
 1. **Strict Cognitive Separation**:
@@ -163,6 +168,15 @@ graph TD
 12. **System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture**:
     - Active Inference Free Energy Minimization ($F = D_{KL}(q||p) - \mathbb{E}_q[\ln p(o|s)]$), Kripke Modal Invariant Model Checking ($AG(\text{safe})$), Dialectical TRIZ Auto-Repair Synthesizer, 10D Pareto NSGA-II Genetic Optimization, and Neuro-Symbolic Axiom Induction.
 
+13. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
+    - Before writing or executing code, declare an explicit, mathematical evaluation rubric with weighted criteria pointers (`set_goal_rubric`).
+    - Each pointer specifies measurable acceptance conditions, automated verifier commands, and evidence receipt requirements.
+    - An objective is never marked complete until the weighted composite score $S \ge 0.95$ ($95\%$) is attested by verifiable execution receipts (`evaluate_goal_rubric`).
+
+14. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
+    - Actively construct self-contained, closed-loop generation and verification pipelines (`register_automation_pipeline`) for iterative code synthesis, fuzzing, property testing, and regression benchmarking.
+    - Eliminate manual step-by-step human intervention: pipelines run bounded generator-evaluator iteration loops with automated stop conditions upon crossing target score thresholds.
+
 --------------------------------------------------------------------------------
 
 ## The 6-Phase Engineering Lifecycle & Execution Lockout Gate
@@ -171,10 +185,12 @@ graph TD
 PHASE 1: Reconnaissance & Epistemic Grounding ───────┐
    - create_session & set_timer on fable-engine MCP  │
    - Log [PROVEN], [HYPOTHESIS], [UNKNOWN] items     │ 🔒 MECHANICAL TIME-LOCK ACTIVE
-   - run_command & brain artifacts FULLY PERMITTED   │ (Workspace code edits LOCKED)
-                                                     │ (unlock_execution rejected if
-PHASE 2: Axiomatic Bounds, Visuals & Archetypes ────┤  current_time < authority_deadline)
+   - set_goal_rubric (Target Score S >= 95%)         │ (Workspace code edits LOCKED)
+   - run_command & brain artifacts FULLY PERMITTED   │ (unlock_execution rejected if
+                                                     │  current_time < authority_deadline)
+PHASE 2: Axiomatic Bounds, Visuals & Pipelines ──────┤
    - Visual Mockup-First: 5-6 generate_image concepts│
+   - register_automation_pipeline (closed-loop specs)│
    - 10D Trade-off Matrix + TRIZ Contradictions      │
    - Continuous Refinement: log_refinement_cycle     │
                                                      │
@@ -190,11 +206,12 @@ PHASE 4: Orchestrated Subagent Implementation
    - Subagents write code, edit files, and run local unit tests
    - Subagents report diffs and test logs back to Main Agent
 
-PHASE 5: Multi-Tier Verification & Adversarial Red-Teaming
+PHASE 5: Multi-Tier Verification & Rubric Attestation
    - Tier 1: Strict Lint & Compiler Check (-D warnings)
    - Tier 2: Unit & Regression Suites (100% Green)
    - Tier 3: Concurrency Race Fuzzing & Memory Leak Profiling
    - Tier 4: Metamorphic & Property-Based Verification
+   - evaluate_goal_rubric: Verify composite score S >= 0.95 before completion
 
 PHASE 6: Checkpoint Finalization & Walkthrough Delivery
    - checkpoint_session on fable-engine MCP

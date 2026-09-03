@@ -36,6 +36,18 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_v2/system3/oracle.py",
     "fable_v2/verifiers.py",
     "fable_v2/proof_engine.py",
+    "fable_v2/coder_fleet/__init__.py",
+    "fable_v2/coder_fleet/ast_tools.py",
+    "fable_v2/coder_fleet/compute.py",
+    "fable_v2/coder_fleet/diagnostics.py",
+    "fable_v2/coder_fleet/fleet_dispatcher.py",
+    "fable_v2/coder_fleet/mock_auditor.py",
+    "fable_v2/coder_fleet/mutation.py",
+    "fable_v2/coder_fleet/property_oracle.py",
+    "fable_v2/coder_fleet/receipt_attestor.py",
+    "fable_v2/coder_fleet/test_harness.py",
+    "fable_v2/coder_fleet/visual.py",
+    "fable_v2/coder_fleet/workspace.py",
     "fable_compressor.py",
     "rules/AGENTS.md",
     "rules/GEMINI.md",
@@ -57,6 +69,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "skills/fable-mode/references/cognitive-protocol.md",
     "skills/fable-mode/references/deepthink-mode.md",
     "skills/fable-mode/references/design-tokens-and-typographies.md",
+    "skills/fable-mode/references/goal-rubric-and-pipeline-automation.md",
     "skills/fable-mode/references/innovation-engine.md",
     "skills/fable-mode/references/interleaved-verification.md",
     "skills/fable-mode/references/model-velocity-calibration.md",
@@ -71,12 +84,13 @@ ALLOWED_FILES: tuple[str, ...] = (
 )
 
 
-def validate_manifest(payload: object) -> None:
+def validate_manifest(payload: object, allowed_files: tuple[str, ...] | list[str] | None = None) -> None:
     """Validate the packaged manifest as a strict, case-insensitive allowlist."""
     if not isinstance(payload, dict) or payload.get("format") != 1:
         raise ValueError("resource manifest format is unsupported")
     files = payload.get("files")
-    if not isinstance(files, list) or set(files) != set(ALLOWED_FILES) or len(files) != len(ALLOWED_FILES):
+    target_allowed = ALLOWED_FILES if allowed_files is None else tuple(allowed_files)
+    if not isinstance(files, list) or set(files) != set(target_allowed) or len(files) != len(target_allowed):
         raise ValueError("resource manifest does not match the canonical allowlist")
     folded = [Path(str(item)).as_posix().casefold() for item in files]
     if any(Path(str(item)).is_absolute() or ".." in Path(str(item)).parts for item in files) or len(set(folded)) != len(folded):

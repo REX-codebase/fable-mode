@@ -1444,6 +1444,8 @@ class FableSession:
         self.file_changes: List[Dict[str, Any]] = []
         self.visual_mockups: Dict[str, Any] = {"mockups": [], "selected_concept": None}
         self.proof_receipts: List[Dict[str, Any]] = []
+        self.goal_rubrics: List[Dict[str, Any]] = []
+        self.automation_pipelines: List[Dict[str, Any]] = []
         self.phase_history: List[Dict[str, Any]] = [
             {
                 "phase": self.active_phase,
@@ -1600,6 +1602,9 @@ class FableSession:
             "file_changes_count": len(self.file_changes),
             "visual_mockups": self.visual_mockups,
             "proof_receipts_count": len(self.proof_receipts),
+            "goal_rubrics_count": len(self.goal_rubrics),
+            "automation_pipelines_count": len(self.automation_pipelines),
+            "latest_goal_rubric": self.goal_rubrics[-1] if self.goal_rubrics else None,
             "velocity_profile": GLOBAL_VELOCITY_PROFILER.get_velocity_profile(),
             "cognitive_gates": self._gate_report(),
             "unlock_details": self.unlock_details,
@@ -1871,6 +1876,213 @@ class FableSession:
         }
         return self.visual_mockups
 
+    def set_goal_rubric(
+        self,
+        task_objective: str,
+        criteria: Union[List[Dict[str, Any]], str],
+        target_score: float = 0.95,
+        rubric_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Registers a goal scoring rubric contract with target score threshold (default >= 0.95)."""
+        if not task_objective or not str(task_objective).strip():
+            task_objective = self.objective or "Task Objective"
+
+        target_score_val = float(target_score)
+        if not 0.0 <= target_score_val <= 1.0:
+            raise ValueError(f"target_score must be between 0.0 and 1.0, got {target_score_val}")
+
+        parsed_items: List[Dict[str, Any]] = []
+        raw_items: Any = criteria
+        if isinstance(raw_items, str):
+            try:
+                raw_items = json.loads(raw_items)
+            except Exception:
+                lines = [l.strip() for l in raw_items.splitlines() if l.strip()]
+                raw_items = [{"pointer_id": f"PTR-{idx+1:02d}", "description": l} for idx, l in enumerate(lines)]
+
+        if isinstance(raw_items, dict):
+            dict_items = []
+            for k, v in raw_items.items():
+                if isinstance(v, dict):
+                    item_d = dict(v)
+                    item_d.setdefault("pointer_id", k)
+                    dict_items.append(item_d)
+                else:
+                    dict_items.append({"pointer_id": k, "description": str(v)})
+            raw_items = dict_items
+
+        if not isinstance(raw_items, list) or not raw_items:
+            raise ValueError("criteria must be a non-empty list of criteria items/pointers or JSON string.")
+
+        for idx, item in enumerate(raw_items):
+            if isinstance(item, dict):
+                p_id = str(item.get("pointer_id") or f"PTR-{idx+1:02d}").strip()
+                desc = str(item.get("description") or item.get("desc") or item.get("name") or p_id).strip()
+                weight = float(item.get("weight", 1.0))
+                verifier = str(item.get("verifier_command", "")).strip()
+                satisfied = bool(item.get("satisfied", False))
+                score = float(item.get("score", 1.0 if satisfied else 0.0))
+                receipt_id = str(item.get("evidence_receipt_id", "")).strip()
+                meta = dict(item.get("metadata") or {})
+            else:
+                p_id = f"PTR-{idx+1:02d}"
+                desc = str(item).strip()
+                weight = 1.0
+                verifier = ""
+                satisfied = False
+                score = 0.0
+                receipt_id = ""
+                meta = {}
+
+            parsed_items.append({
+                "pointer_id": p_id,
+                "description": desc,
+                "weight": max(0.0, weight),
+                "verifier_command": verifier,
+                "satisfied": satisfied,
+                "score": max(0.0, min(1.0, score)),
+                "evidence_receipt_id": receipt_id,
+                "metadata": meta
+            })
+
+        total_weight = sum(it["weight"] for it in parsed_items)
+        if total_weight > 0:
+            weighted_sum = sum(it["score"] * it["weight"] for it in parsed_items)
+            current_score = round(weighted_sum / total_weight, 4)
+        else:
+            current_score = 0.0
+
+        status = "achieved" if current_score >= target_score_val else "pending"
+        r_id = (rubric_id or f"rubric_{self.session_name}_{len(self.goal_rubrics) + 1}").strip()
+
+        rubric_entry = {
+            "rubric_id": r_id,
+            "session_id": self.session_id,
+            "task_objective": str(task_objective).strip(),
+            "target_score": target_score_val,
+            "items": parsed_items,
+            "current_score": current_score,
+            "status": status,
+            "metadata": metadata or {},
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock()))
+        }
+
+        existing_idx = next((i for i, r in enumerate(self.goal_rubrics) if r.get("rubric_id") == r_id), None)
+        if existing_idx is not None:
+            self.goal_rubrics[existing_idx] = rubric_entry
+        else:
+            self.goal_rubrics.append(rubric_entry)
+
+        return rubric_entry
+
+    def evaluate_goal_rubric(
+        self,
+        rubric_id: Optional[str] = None,
+        item_evaluations: Optional[Union[List[Dict[str, Any]], Dict[str, Any], str]] = None
+    ) -> Dict[str, Any]:
+        """Evaluates rubric criteria items, updates scores, and determines goal attainment status."""
+        if not self.goal_rubrics:
+            raise ValueError("No goal rubric registered in this session. Call set_goal_rubric first.")
+
+        rubric: Optional[Dict[str, Any]] = None
+        if rubric_id:
+            rubric = next((r for r in self.goal_rubrics if r.get("rubric_id") == str(rubric_id).strip()), None)
+            if not rubric:
+                raise ValueError(f"Rubric with id '{rubric_id}' not found.")
+        else:
+            rubric = self.goal_rubrics[-1]
+
+        evals_list: List[Dict[str, Any]] = []
+        if item_evaluations is not None:
+            raw_evals = item_evaluations
+            if isinstance(raw_evals, str):
+                try:
+                    raw_evals = json.loads(raw_evals)
+                except Exception:
+                    raw_evals = []
+            if isinstance(raw_evals, dict):
+                for k, v in raw_evals.items():
+                    if isinstance(v, dict):
+                        ed = dict(v)
+                        ed.setdefault("pointer_id", k)
+                        evals_list.append(ed)
+                    elif isinstance(v, (int, float)):
+                        evals_list.append({"pointer_id": k, "score": float(v), "satisfied": float(v) >= 1.0})
+                    elif isinstance(v, bool):
+                        evals_list.append({"pointer_id": k, "satisfied": v, "score": 1.0 if v else 0.0})
+            elif isinstance(raw_evals, list):
+                evals_list = [dict(x) if isinstance(x, dict) else {"pointer_id": str(x), "satisfied": True, "score": 1.0} for x in raw_evals]
+
+        for ev in evals_list:
+            p_id = str(ev.get("pointer_id", "")).strip()
+            for it in rubric["items"]:
+                if it.get("pointer_id") == p_id:
+                    if "satisfied" in ev:
+                        it["satisfied"] = bool(ev["satisfied"])
+                    if "score" in ev:
+                        it["score"] = max(0.0, min(1.0, float(ev["score"])))
+                    elif "satisfied" in ev:
+                        it["score"] = 1.0 if it["satisfied"] else 0.0
+                    if "evidence_receipt_id" in ev:
+                        it["evidence_receipt_id"] = str(ev["evidence_receipt_id"]).strip()
+                    if "verifier_command" in ev:
+                        it["verifier_command"] = str(ev["verifier_command"]).strip()
+                    if "metadata" in ev and isinstance(ev["metadata"], dict):
+                        it.setdefault("metadata", {}).update(ev["metadata"])
+
+        total_weight = sum(it.get("weight", 1.0) for it in rubric["items"])
+        if total_weight > 0:
+            weighted_sum = sum(float(it.get("score", 1.0 if it.get("satisfied") else 0.0)) * float(it.get("weight", 1.0)) for it in rubric["items"])
+            current_score = round(weighted_sum / total_weight, 4)
+        else:
+            current_score = 0.0
+
+        rubric["current_score"] = current_score
+        target_score = float(rubric.get("target_score", 0.95))
+        rubric["status"] = "achieved" if current_score >= target_score else "in_progress"
+        rubric["last_evaluated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock()))
+        return rubric
+
+    def get_goal_rubric(self, rubric_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Returns the specified goal rubric or the latest active rubric."""
+        if not self.goal_rubrics:
+            return None
+        if rubric_id:
+            return next((r for r in self.goal_rubrics if r.get("rubric_id") == str(rubric_id).strip()), None)
+        return self.goal_rubrics[-1]
+
+    def register_automation_pipeline(
+        self,
+        name: str,
+        pipeline_type: str = "closed_loop",
+        generator_command: str = "",
+        evaluator_command: str = "",
+        target_threshold: float = 0.95,
+        max_iterations: int = 10,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Registers an autonomous pipeline loop spec (generate -> evaluate -> iterate)."""
+        if not name or not str(name).strip():
+            raise ValueError("Pipeline 'name' cannot be empty.")
+
+        pipe_id = f"pipeline_{self.session_name}_{len(self.automation_pipelines) + 1}"
+        spec = {
+            "pipeline_id": pipe_id,
+            "session_id": self.session_id,
+            "name": str(name).strip(),
+            "pipeline_type": (pipeline_type or "closed_loop").strip(),
+            "generator_command": (generator_command or "").strip(),
+            "evaluator_command": (evaluator_command or "").strip(),
+            "target_threshold": max(0.0, min(1.0, float(target_threshold))),
+            "max_iterations": max(1, int(max_iterations)),
+            "status": "active",
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock())),
+            "metadata": metadata or {}
+        }
+        self.automation_pipelines.append(spec)
+        return spec
+
     def log_refinement_cycle(
         self,
         refinement_type: str,
@@ -2083,6 +2295,8 @@ class FableSession:
             "file_changes": self.file_changes,
             "visual_mockups": self.visual_mockups,
             "proof_receipts": self.proof_receipts,
+            "goal_rubrics": self.goal_rubrics,
+            "automation_pipelines": self.automation_pipelines,
             "phase_history": self.phase_history,
             "unlock_details": self.unlock_details,
             "system3_causal_graphs": self.system3_causal_graphs,
@@ -2120,6 +2334,8 @@ class FableSession:
         session.file_changes = data.get("file_changes", [])
         session.visual_mockups = data.get("visual_mockups", {"mockups": [], "selected_concept": None})
         session.proof_receipts = data.get("proof_receipts", [])
+        session.goal_rubrics = data.get("goal_rubrics", [])
+        session.automation_pipelines = data.get("automation_pipelines", [])
         session.active_phase = PHASES[0]
         session.phase_history = [{"phase": PHASES[0], "entered_at": session.start_time,
                                  "summary": "Restored in safe locked state; fresh gates required"}]
@@ -3912,6 +4128,147 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"- **Audit Summary**: {details}"
             )
 
+        # 36. SET GOAL RUBRIC
+        elif action in ("set_goal_rubric", "register_goal_rubric", "goal_rubric"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'set_goal_rubric'."
+            task_objective = arguments.get("task_objective") or arguments.get("objective") or ""
+            criteria = arguments.get("criteria") or arguments.get("items") or arguments.get("rubric_items")
+            if not criteria:
+                return "Error: 'criteria' (list of rubric criteria items/pointers) is required for 'set_goal_rubric'."
+            target_score = arguments.get("target_score", 0.95)
+            rubric_id = arguments.get("rubric_id")
+            meta = arguments.get("metadata")
+
+            session = get_or_load_session(session_name)
+            rubric = session.set_goal_rubric(
+                task_objective=task_objective,
+                criteria=criteria,
+                target_score=target_score,
+                rubric_id=rubric_id,
+                metadata=meta
+            )
+            session.save()
+
+            items_preview = "\n".join([
+                f"- `[{it['pointer_id']}]` (wt: {it['weight']:.1f}, score: {it['score']:.2f}, satisfied: {'✅' if it['satisfied'] else '⏳'}): {it['description']}"
+                for it in rubric["items"]
+            ])
+
+            return (
+                f"### 🎯 Goal Rubric Initialized (`{rubric['rubric_id']}`)\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Objective**: {rubric['task_objective']}\n"
+                f"- **Target Goal Score**: `{rubric['target_score'] * 100:.1f}%` (Strict Threshold: >= 95%)\n"
+                f"- **Current Composite Score**: `{rubric['current_score'] * 100:.1f}%`\n"
+                f"- **Status**: `{rubric['status'].upper()}`\n"
+                f"- **Criteria Pointers Count**: `{len(rubric['items'])}`\n\n"
+                f"#### 📋 Criteria Pointers Breakdown:\n"
+                f"{items_preview}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 37. EVALUATE GOAL RUBRIC
+        elif action in ("evaluate_goal_rubric", "eval_goal_rubric", "evaluate_rubric", "score_rubric"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'evaluate_goal_rubric'."
+            rubric_id = arguments.get("rubric_id")
+            item_evaluations = arguments.get("item_evaluations") or arguments.get("evaluations") or arguments.get("items")
+
+            session = get_or_load_session(session_name)
+            rubric = session.evaluate_goal_rubric(
+                rubric_id=rubric_id,
+                item_evaluations=item_evaluations
+            )
+            session.save()
+
+            status_badge = "🟢 ACHIEVED (>= 95%)" if rubric["status"] == "achieved" else "🟡 IN_PROGRESS (< 95%)"
+            items_preview = "\n".join([
+                f"- `[{it['pointer_id']}]` ({it['score']*100:.0f}%, {'✅ SATISFIED' if it['satisfied'] else '⏳ PENDING'}): {it['description']}" +
+                (f" [Receipt: `{it['evidence_receipt_id']}`]" if it.get('evidence_receipt_id') else "")
+                for it in rubric["items"]
+            ])
+
+            return (
+                f"### 📈 Goal Rubric Evaluation (`{rubric['rubric_id']}`)\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Composite Goal Score**: `{rubric['current_score'] * 100:.2f}%`\n"
+                f"- **Target Score**: `{rubric['target_score'] * 100:.1f}%`\n"
+                f"- **Status**: `{status_badge}`\n\n"
+                f"#### 📊 Criteria Pointers Status:\n"
+                f"{items_preview}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 38. GET GOAL RUBRIC
+        elif action in ("get_goal_rubric", "get_rubric", "inspect_rubric"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'get_goal_rubric'."
+            rubric_id = arguments.get("rubric_id")
+
+            session = get_or_load_session(session_name)
+            rubric = session.get_goal_rubric(rubric_id=rubric_id)
+            if not rubric:
+                return f"### ⚠️ No Goal Rubric Found\n\nSession `{session.session_name}` has no registered goal rubrics."
+
+            status_badge = "🟢 ACHIEVED" if rubric["status"] == "achieved" else "🟡 IN_PROGRESS"
+            items_preview = "\n".join([
+                f"- `[{it['pointer_id']}]` (wt: {it['weight']:.1f}, score: {it['score']*100:.0f}%, {'✅' if it['satisfied'] else '⏳'}): {it['description']}" +
+                (f" (Verifier: `{it['verifier_command']}`)" if it.get('verifier_command') else "")
+                for it in rubric["items"]
+            ])
+
+            return (
+                f"### 📋 Goal Rubric Details (`{rubric['rubric_id']}`)\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Task Objective**: {rubric['task_objective']}\n"
+                f"- **Target Score**: `{rubric['target_score'] * 100:.1f}%`\n"
+                f"- **Current Score**: `{rubric['current_score'] * 100:.2f}%`\n"
+                f"- **Status**: `{status_badge}`\n\n"
+                f"#### 📑 Criteria Breakdown:\n"
+                f"{items_preview}"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 39. REGISTER AUTOMATION PIPELINE
+        elif action in ("register_automation_pipeline", "register_pipeline", "automation_pipeline"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'register_automation_pipeline'."
+            name = arguments.get("name") or arguments.get("pipeline_name") or ""
+            if not name:
+                return "Error: 'name' is required for 'register_automation_pipeline'."
+            pipeline_type = arguments.get("pipeline_type", "closed_loop")
+            generator_command = arguments.get("generator_command") or arguments.get("generator_cmd") or ""
+            evaluator_command = arguments.get("evaluator_command") or arguments.get("evaluator_cmd") or ""
+            target_threshold = arguments.get("target_threshold") if arguments.get("target_threshold") is not None else arguments.get("target_score", 0.95)
+            max_iterations = arguments.get("max_iterations", 10)
+            meta = arguments.get("metadata")
+
+            session = get_or_load_session(session_name)
+            pipe = session.register_automation_pipeline(
+                name=name,
+                pipeline_type=pipeline_type,
+                generator_command=generator_command,
+                evaluator_command=evaluator_command,
+                target_threshold=target_threshold,
+                max_iterations=max_iterations,
+                metadata=meta
+            )
+            session.save()
+
+            return (
+                f"### ⚙️ Autonomous Pipeline Registered (`{pipe['pipeline_id']}`)\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Pipeline Name**: `{pipe['name']}`\n"
+                f"- **Pipeline Type**: `{pipe['pipeline_type']}`\n"
+                f"- **Generator Command**: `{pipe['generator_command'] or 'N/A'}`\n"
+                f"- **Evaluator Command**: `{pipe['evaluator_command'] or 'N/A'}`\n"
+                f"- **Target Threshold**: `{pipe['target_threshold'] * 100:.1f}%`\n"
+                f"- **Max Iterations**: `{pipe['max_iterations']}`\n"
+                f"- **Status**: `ACTIVE 🚀`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -3921,7 +4278,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'compress_payload', 'decompress_payload', 'view_slice', 'accumulate_payload', 'flush_accumulator', 'get_compression_stats', "
                 f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
                 f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle', "
-                f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history'."
+                f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
+                f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -3979,7 +4337,12 @@ TOOL_SCHEMA = {
                     "get_session_lineage",
                     "inspect_plan",
                     "verify_proof",
-                    "record_visual_mockups"
+                    "record_visual_mockups",
+                    "validate_event_history",
+                    "set_goal_rubric",
+                    "evaluate_goal_rubric",
+                    "get_goal_rubric",
+                    "register_automation_pipeline"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -4311,6 +4674,66 @@ TOOL_SCHEMA = {
             "selected_concept": {
                 "type": "string",
                 "description": "Identifier of the selected visual concept archetype."
+            },
+            "task_objective": {
+                "type": "string",
+                "description": "Task objective or target outcome for goal scoring rubric."
+            },
+            "criteria": {
+                "description": "List of criteria pointers or JSON string of rubric items for goal score evaluation.",
+                "type": ["array", "string", "object"]
+            },
+            "target_score": {
+                "type": "number",
+                "description": "Target composite goal score threshold (default 0.95, min 0.0, max 1.0)."
+            },
+            "rubric_id": {
+                "type": "string",
+                "description": "Identifier of the goal rubric."
+            },
+            "item_evaluations": {
+                "description": "Item evaluations mapping, list, or JSON string with pointer_id, satisfied, score, evidence_receipt_id.",
+                "type": ["array", "object", "string"]
+            },
+            "name": {
+                "type": "string",
+                "description": "Name identifier for automation pipeline spec."
+            },
+            "pipeline_name": {
+                "type": "string",
+                "description": "Alternative alias for automation pipeline name."
+            },
+            "pipeline_type": {
+                "type": "string",
+                "description": "Type of autonomous pipeline (default 'closed_loop')."
+            },
+            "generator_command": {
+                "type": "string",
+                "description": "Shell command or tool invocation for candidate generator."
+            },
+            "generator_cmd": {
+                "type": "string",
+                "description": "Alias for generator_command: shell command or tool invocation for candidate generator."
+            },
+            "evaluator_command": {
+                "type": "string",
+                "description": "Shell command or tool invocation for candidate evaluator."
+            },
+            "evaluator_cmd": {
+                "type": "string",
+                "description": "Alias for evaluator_command: shell command or tool invocation for candidate evaluator."
+            },
+            "evaluations": {
+                "description": "Alias for item_evaluations: list or dict of criterion evaluation updates.",
+                "type": ["array", "object", "string"]
+            },
+            "target_threshold": {
+                "type": "number",
+                "description": "Target threshold score for pipeline iteration termination (default 0.95)."
+            },
+            "max_iterations": {
+                "type": "integer",
+                "description": "Maximum closed-loop iterations before halting (default 10)."
             }
         },
         "required": ["action"]

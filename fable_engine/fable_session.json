@@ -48,7 +48,11 @@
           "inspect_plan",
           "verify_proof",
           "record_visual_mockups",
-          "validate_event_history"
+          "validate_event_history",
+          "set_goal_rubric",
+          "evaluate_goal_rubric",
+          "get_goal_rubric",
+          "register_automation_pipeline"
         ],
         "type": "string"
       },
@@ -391,6 +395,42 @@
       "target_resource": {
         "description": "Target resource (file path, receipt ID) for proof verification.",
         "type": "string"
+      },
+      "criteria": {
+        "description": "List of criteria dictionaries or pointer strings for goal scoring rubric.",
+        "type": ["array", "string"]
+      },
+      "rubric_id": {
+        "description": "Identifier for the goal scoring rubric contract.",
+        "type": "string"
+      },
+      "target_score": {
+        "description": "Target composite goal attainment score threshold (default 0.95 for >= 95%).",
+        "type": "number"
+      },
+      "evaluations": {
+        "description": "List of criterion evaluation dictionaries or score updates for evaluate_goal_rubric.",
+        "type": ["array", "string"]
+      },
+      "pipeline_name": {
+        "description": "Name or identifier of the autonomous closed-loop pipeline.",
+        "type": "string"
+      },
+      "pipeline_type": {
+        "description": "Type classification of the autonomous pipeline (e.g. 'closed_loop', 'fuzzing', 'verification').",
+        "type": "string"
+      },
+      "generator_cmd": {
+        "description": "Shell command or executable script for the pipeline generator phase.",
+        "type": "string"
+      },
+      "evaluator_cmd": {
+        "description": "Shell command or executable script for the pipeline evaluator phase.",
+        "type": "string"
+      },
+      "max_iterations": {
+        "description": "Maximum number of autonomous generator-evaluator iterations before halting.",
+        "type": "integer"
       }
     },
     "required": [
