@@ -87,38 +87,51 @@ Fable-Mode pre-wires 5 baseline lobes located in `skills/fable-mode/cortex/`:
 
 ---
 
-## 3. Mathematical Formulation: Synaptic Learning & Homeostasis
+## 3. Mathematical Formulation: BCM Directional Plasticity, Continuous Signals & Homeostasis
 
-### Hebbian Weight Delta
-When a task within domain $D$ executes, co-activated tools, subagent engines, and domain concepts $i$ and $j$ experience a synaptic weight adjustment governed by:
+### Directional BCM / STDP Plasticity (LTD on Failure vs. LTP on Success)
+Rather than naively reinforcing broken pathways with positive weight updates on failure, Fable-Mode implements biologically grounded **Bienenstock-Cooper-Munro (BCM) and Spike-Timing-Dependent Plasticity (STDP)**. The direction and magnitude of synaptic weight modification $\Delta W_{ij}$ depend strictly on the verified execution outcome:
 
-$$\Delta W_{ij} = \eta \cdot \text{Score} \cdot (A_i \cdot A_j)$$
+- **When `final_passed == True` (Long-Term Potentiation, LTP)**:
+  $$\Delta W_{ij} = +\eta \cdot (A_i \cdot A_j)$$
+  Where learning rate $\eta = 0.10$. Successful patterns, robust invariant guards, and verified tool co-activations are actively potentiated and reinforced.
 
-Where:
-- $\eta = 0.10$: The learning rate coefficient.
-- $\text{Score} \in [0.20, 1.00]$: Quantitative success metric. Tasks passing all verification and Red-Team gates receive $\text{Score} = 1.00$; partial or remediated runs receive lower scores.
-- $A_i, A_j \in [0.0, 1.0]$: Activation levels of nodes $i$ and $j$ during the execution episode ($A = 1.0$ when actively utilized).
+- **When `final_passed == False` (Long-Term Depression, LTD)**:
+  $$\Delta W_{ij} = -\lambda \cdot (A_i \cdot A_j)$$
+  Where depression rate $\lambda = 0.15$. Failing code pathways, brittle tools, and unhandled execution paths are actively **weakened and depressed** ($\Delta W < 0$), while synthesized `HeuristicAntibody` instances immunize the lobe against repeating the flaw.
 
-For connections between the master domain lobe $D$ and active tool $i$:
+### Continuous Activity-Dependent Signals ($A_{domain}$ & $A_j$)
+Activation levels are continuously scaled according to empirical runtime telemetry:
 
-$$\Delta W_{Di} = \eta \cdot \text{Score} \cdot (A_D \cdot A_i) = 0.10 \cdot \text{Score}$$
+1. **Continuous Domain Activation ($A_{domain}$)**:
+   $$A_{domain} = \min(1.0, \max(0.30, 0.40 + 0.10 \cdot |\text{co\_activated\_nodes}|))$$
+   Spans smoothly across $[0.30, 1.00]$, scaling with the depth and breadths of collaborating nodes.
 
-### Homeostatic Normalization
-Unchecked Hebbian learning leads to runaway synaptic excitation where weights saturate at maximum values. In accordance with neurobiological homeostatic synaptic plasticity (Turrigiano, 2008), the engine maintains balance through dual mechanisms:
+2. **Continuous Node Activation ($A_j$)**:
+   - When caller passes empirical `activation_metrics: dict[str, float]`:
+     $$A_j = \min\left(1.0, \max\left(0.15, \frac{\text{metric}(j)}{\max(\text{metrics}) + \epsilon}\right)\right)$$
+   - When metrics are omitted, continuous scaling defaults based on node invocation order/role:
+     $$A_j = \max(0.75, \min(0.90, 0.90 - 0.03 \cdot \text{index}))$$
+     Bounded within $[0.75, 0.90]$.
 
-1. **Strict Bounding**:
+### Homeostatic Synaptic Normalization & Bounds
+Unchecked plasticity causes runaway synaptic explosion or total signal decay. In accordance with neurobiological homeostatic synaptic plasticity (Turrigiano, 2008), the engine maintains equilibrium:
+
+1. **Strict Homeostatic Clamping**:
    Every synaptic weight is strictly clamped to the operational interval:
    $$W_{ij} \in [0.05, 1.00]$$
+   Synapses never drop below $0.05$ (preventing permanent synaptic death/extinction) and never exceed $1.00$ (preventing monopolization).
 
 2. **Network Capacity Scaling**:
    When total synaptic weight within a lobe exceeds maximum capacity $C_{\text{max}} = 25.0$:
    $$W_{ij} \leftarrow W_{ij} \cdot \frac{C_{\text{max}}}{\sum_{k} W_{ik}}$$
-   Followed by clamping each weight back into $[0.05, 1.00]$. This guarantees that relative synaptic importance is preserved without saturation.
+   Followed by clamping each weight back into $[0.05, 1.00]$. This guarantees relative synaptic priority is preserved without saturation.
 
 ---
 
-## 4. The Immunological Memory Gate: `HeuristicAntibody`
+## 4. The Immunological Memory Gate: `HeuristicAntibody` & Automated Closed-Loop
 
+### Immunological Defense Structure
 When the Adversarial Red-Team Swarm (`RedTeamSwarm`) uncovers vulnerabilities (e.g., deadlock under load, TOCTOU race, memory leak, unhandled cancellation), the engine does not merely patch the immediate file. It synthesizes a permanent **Heuristic Antibody**:
 
 ```python
@@ -135,7 +148,38 @@ class HeuristicAntibody:
     verified_counterfactual: str # Attested proof that defense defeated the attack
 ```
 
-Antibodies are appended directly to the corresponding `cortex/<domain>.md` lobe. Once recorded, the antibody is recalled during every future prompt construction for that domain, preventing the entire agent fleet from ever repeating the mistake.
+### Fully Automated Closed-Loop RedTeam $\to$ Remediation $\to$ Cortical Consolidation
+The entire learning loop is fully automated across the subagent workflow:
+
+```mermaid
+sequenceDiagram
+    participant Agent as Subagent / Fleet
+    participant Swarm as RedTeamSwarm
+    participant Cortex as HebbianPlasticityEngine
+    participant Disk as cortex/<domain>.md
+
+    Note over Agent,Swarm: 1. Adversarial Review Cycle
+    Agent->>Swarm: run_full_review_cycle(target_callable, target_name)
+    Swarm->>Swarm: Execute 5-vector counterfactual attack probes
+    alt Attack Detects Breakages (passed == False)
+        Swarm->>Cortex: consolidate_task(domain=target, final_passed=False, broken_scenarios)
+        Cortex->>Disk: Apply LTD (Delta W < 0), synthesize HeuristicAntibody, commit to disk
+        Swarm-->>Agent: RedTeamBreakageReport [REJECTED - REMEDIATION REQUIRED]
+    else Attack Clean (passed == True)
+        Swarm->>Cortex: consolidate_task(domain=target, final_passed=True)
+        Cortex->>Disk: Apply LTP (Delta W > 0), commit to disk
+        Swarm-->>Agent: RedTeamBreakageReport [APPROVED]
+    end
+
+    Note over Agent,Swarm: 2. Remediation Verification Cycle
+    Agent->>Swarm: verify_remediation(remediated_callable, prior_report)
+    Swarm->>Swarm: Re-probe prior breaking scenarios
+    alt All Fixed (all_fixed == True)
+        Swarm->>Cortex: consolidate_task(domain=target, final_passed=True, lessons, co_activated_nodes)
+        Cortex->>Disk: Apply LTP (Delta W > 0), update verified counterfactual proof, commit to disk
+        Swarm-->>Agent: (True, new_report) [HARDENED & CONSOLIDATED]
+    end
+```
 
 ---
 
@@ -182,6 +226,6 @@ The Coder Fleet Dispatcher (`fable_v2.coder_fleet.fleet_dispatcher`) exposes the
 | `cortical_define_lobe` | `{"name": str, "description": str, "initial_heuristics": list[str], "initial_synaptic_weights": dict}` | `CorticalLobe` | Dynamically sprouts a customizable new cortical lobe from scratch with persistent disk markdown. |
 | `cortical_list_lobes` | `{}` | `list[dict]` | Dynamically scans and returns metadata for all available baseline and custom lobes on disk. |
 | `cortical_activate_lobe` | `{"domain": str, "description": str, "co_activated_nodes": list[str]}` | `CorticalLobe` | Activates or auto-sprouts domain lobe, increments counter, and primes synaptic weights. |
-| `cortical_consolidate_task` | `{"domain": str, "task_id": str, "broken_scenarios": list, "final_passed": bool, "lessons": list, "co_activated_nodes": list}` | `dict` | Executes Hebbian weight updates, normalizes homeostasis, synthesizes antibodies, and commits to disk. |
+| `cortical_consolidate_task` | `{"domain": str, "task_id": str, "broken_scenarios": list, "final_passed": bool, "lessons": list, "co_activated_nodes": list, "activation_metrics": dict}` | `dict` | Executes BCM directional weight updates (LTP/LTD), normalizes homeostasis, synthesizes antibodies, and commits to disk. |
 | `cortical_recall_context` | `{"domain": str, "max_antibodies": int}` | `str` | Generates prompt-ready Markdown memory block. |
 | `cortical_inspect_matrix` | `{}` | `dict` | Returns the global cross-domain synaptic co-activation graph. |

@@ -632,28 +632,62 @@ class HebbianPlasticityEngine:
         final_passed: bool = True,
         lessons: Optional[list[Union[dict[str, Any], str]]] = None,
         co_activated_nodes: Optional[list[str]] = None,
+        activation_metrics: Optional[dict[str, float]] = None,
     ) -> dict[str, Any]:
-        """Consolidate task outcomes using Donald Hebb's learning rule.
+        """Consolidate task outcomes using directional BCM / STDP plasticity.
 
-        Applies:
-            ΔW_ij = η * Score * (A_i * A_j)
-            where η = 0.1, Score = 1.0 (passed) or 0.2 (failed),
-            and homeostatically normalizes weights bounded within [0.05, 1.0].
-        Synthesizes HeuristicAntibody instances from red-team scars and broken scenarios.
+        Applies Asymmetric BCM Plasticity:
+            When final_passed == True (Long-Term Potentiation, LTP):
+                ΔW_ij = + learning_rate * A_domain * A_node   (learning_rate = 0.10)
+            When final_passed == False (Long-Term Depression, LTD):
+                ΔW_ij = - depression_rate * A_domain * A_node (depression_rate = 0.15)
+
+            Where continuous domain activation:
+                A_domain = min(1.0, max(0.30, 0.40 + 0.10 * len(co_activated_nodes)))
+            And continuous node activation A_j:
+                If activation_metrics is provided:
+                    A_j = min(1.0, max(0.15, float(activation_metrics.get(node, 0.5)) / max(max(activation_metrics.values(), default=1.0), 0.001)))
+                Otherwise, based on node position/role in [0.75, 0.90].
+
+        Homeostatically bounds all weights strictly within [0.05, 1.00].
+        Failed pathways actively depress/weaken, while synthesized HeuristicAntibody instances
+        preserve the critical scars and lessons.
         """
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
         lobe.activation_count += 1
 
         learning_rate = 0.10
-        score = 1.0 if final_passed else 0.20
+        depression_rate = 0.15
+        plasticity_mode = "LTP" if final_passed else "LTD"
+        score = 1.0 if final_passed else -1.0
         active_nodes = [str(n).strip() for n in (co_activated_nodes or []) if str(n).strip()]
 
-        # 1. Update lobe synaptic weights via Hebb's rule
-        # A_domain = 1.0, A_node = 1.0
+        # Compute continuous domain activation A_domain
+        A_domain = min(1.0, max(0.30, 0.40 + 0.10 * len(active_nodes)))
+
+        # Compute continuous node activation signals A_j
+        node_activations: dict[str, float] = {}
+        if activation_metrics is not None and len(activation_metrics) > 0:
+            max_metric = max(activation_metrics.values(), default=1.0)
+            denom = max(float(max_metric), 0.001)
+            for node in active_nodes:
+                val = float(activation_metrics.get(node, 0.5))
+                A_j = min(1.0, max(0.15, val / denom))
+                node_activations[node] = round(A_j, 4)
+        else:
+            for idx, node in enumerate(active_nodes):
+                A_j = max(0.75, min(0.90, 0.90 - (idx * 0.03)))
+                node_activations[node] = round(A_j, 4)
+
+        # 1. Update lobe synaptic weights via directional BCM rule
         for node in active_nodes:
             old_w = lobe.synaptic_weights.get(node, 0.30)
-            delta_w = learning_rate * score * (1.0 * 1.0)
+            A_node = node_activations.get(node, 0.80)
+            if final_passed:
+                delta_w = learning_rate * A_domain * A_node
+            else:
+                delta_w = - depression_rate * A_domain * A_node
             new_w = min(1.0, max(0.05, old_w + delta_w))
             lobe.synaptic_weights[node] = round(new_w, 4)
 
@@ -672,15 +706,20 @@ class HebbianPlasticityEngine:
         if len(active_nodes) >= 2:
             for i in range(len(active_nodes)):
                 u = active_nodes[i]
+                A_u = node_activations.get(u, 0.80)
                 if u not in self._synaptic_matrix:
                     self._synaptic_matrix[u] = {}
                 for j in range(i + 1, len(active_nodes)):
                     v = active_nodes[j]
+                    A_v = node_activations.get(v, 0.80)
                     if v not in self._synaptic_matrix:
                         self._synaptic_matrix[v] = {}
 
                     old_pair_w = self._synaptic_matrix[u].get(v, 0.15)
-                    delta_pair_w = learning_rate * score * (1.0 * 1.0)
+                    if final_passed:
+                        delta_pair_w = learning_rate * A_u * A_v
+                    else:
+                        delta_pair_w = - depression_rate * A_u * A_v
                     new_pair_w = round(min(1.0, max(0.05, old_pair_w + delta_pair_w)), 4)
 
                     self._synaptic_matrix[u][v] = new_pair_w
@@ -691,8 +730,13 @@ class HebbianPlasticityEngine:
         if dom_name not in self._synaptic_matrix:
             self._synaptic_matrix[dom_name] = {}
         for node in active_nodes:
+            A_node = node_activations.get(node, 0.80)
             old_dom_w = self._synaptic_matrix[dom_name].get(node, 0.20)
-            new_dom_w = round(min(1.0, max(0.05, old_dom_w + (learning_rate * score))), 4)
+            if final_passed:
+                delta_dom_w = learning_rate * A_domain * A_node
+            else:
+                delta_dom_w = - depression_rate * A_domain * A_node
+            new_dom_w = round(min(1.0, max(0.05, old_dom_w + delta_dom_w)), 4)
             self._synaptic_matrix[dom_name][node] = new_dom_w
             if node not in self._synaptic_matrix:
                 self._synaptic_matrix[node] = {}
@@ -735,11 +779,16 @@ class HebbianPlasticityEngine:
                 )
 
                 # Deduplicate by antibody_id or trigger_condition
-                existing = any(
-                    a.antibody_id == ab_id or a.trigger_condition == trigger
-                    for a in lobe.antibodies
+                existing_ab = next(
+                    (a for a in lobe.antibodies if a.antibody_id == ab_id or a.trigger_condition == trigger),
+                    None,
                 )
-                if not existing:
+                if existing_ab is not None:
+                    if counterfac and (not existing_ab.verified_counterfactual or "Counterfactual validation" in existing_ab.verified_counterfactual):
+                        existing_ab.verified_counterfactual = counterfac
+                    if prescribed and "Enforce strict precondition" in existing_ab.prescribed_defense:
+                        existing_ab.prescribed_defense = prescribed
+                else:
                     antibody = HeuristicAntibody(
                         antibody_id=ab_id,
                         domain=slug,
@@ -762,9 +811,20 @@ class HebbianPlasticityEngine:
                 if isinstance(item, str):
                     heuristic_text = item.strip()
                 elif isinstance(item, dict):
-                    heuristic_text = str(
-                        item.get("heuristic") or item.get("lesson") or item.get("rule") or ""
-                    ).strip()
+                    if item.get("heuristic") or item.get("lesson") or item.get("rule"):
+                        heuristic_text = str(
+                            item.get("heuristic") or item.get("lesson") or item.get("rule") or ""
+                        ).strip()
+                    elif item.get("defense") or item.get("trigger"):
+                        trigger = str(item.get("trigger", "")).strip()
+                        defense = str(item.get("defense", "")).strip()
+                        mistake = str(item.get("mistake", "")).strip()
+                        if trigger and defense:
+                            heuristic_text = f"Defense against [{trigger}]: {defense}"
+                        elif defense:
+                            heuristic_text = f"Invariant: {defense}"
+                        elif mistake:
+                            heuristic_text = f"Avoid mistake: {mistake}"
 
                 if heuristic_text and heuristic_text not in lobe.specialized_heuristics:
                     lobe.specialized_heuristics.append(heuristic_text)
@@ -782,8 +842,12 @@ class HebbianPlasticityEngine:
             "name": slug,
             "task_id": task_id,
             "final_passed": final_passed,
+            "plasticity_mode": plasticity_mode,
             "learning_rate": learning_rate,
+            "depression_rate": depression_rate,
             "score": score,
+            "A_domain": round(A_domain, 4),
+            "activation_signals": {k: round(v, 4) for k, v in node_activations.items()},
             "antibodies_added": antibodies_added,
             "total_antibodies": len(lobe.antibodies),
             "heuristics_added": heuristics_added,

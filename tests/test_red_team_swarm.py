@@ -29,6 +29,7 @@ from fable_v2.coder_fleet import (
     RedTeamBreakageReport,
     RedTeamSwarm,
 )
+from fable_v2.cortical import HebbianPlasticityEngine
 
 
 class TestRedTeamSwarmScenarios(unittest.TestCase):
@@ -215,7 +216,13 @@ class TestReportFormattingAndSerialization(unittest.TestCase):
 
 class TestPingPongRemediationCycle(unittest.TestCase):
     def setUp(self) -> None:
-        self.swarm = RedTeamSwarm()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cortex_path = Path(self.temp_dir.name)
+        self.engine = HebbianPlasticityEngine(cortex_dir=self.cortex_path)
+        self.swarm = RedTeamSwarm(plasticity_engine=self.engine)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
 
     def test_full_ping_pong_hardening_cycle(self) -> None:
         # Stage 1: Fragile initial implementation submitted by subagent
@@ -227,7 +234,7 @@ class TestPingPongRemediationCycle(unittest.TestCase):
                 raise KeyError("Byzantine null byte rejected with raw error")
             return f"processed_{input_data}"
 
-        # Stage 2: Swarm attack breaks candidate_v1
+        # Stage 2: Swarm attack breaks candidate_v1 -> auto-consolidates with LTD
         initial_report = self.swarm.run_full_review_cycle(
             candidate_v1,
             target_name="candidate_service",
@@ -235,6 +242,13 @@ class TestPingPongRemediationCycle(unittest.TestCase):
         self.assertFalse(initial_report.passed)
         self.assertGreater(initial_report.broken_count, 0)
         self.assertGreater(len(initial_report.remediation_directives), 0)
+
+        # Verify automated closed-loop LTD consolidation
+        lobe = self.engine._load_or_create_lobe("candidate_service")
+        self.assertGreaterEqual(len(lobe.antibodies), 1)
+        self.assertIn("test_harness", lobe.synaptic_weights)
+        # Weight depressed under failure
+        self.assertLess(lobe.synaptic_weights["test_harness"], 0.30)
 
         # Stage 3: Subagent remediates and hardens implementation
         lock = threading.Lock()
@@ -248,7 +262,7 @@ class TestPingPongRemediationCycle(unittest.TestCase):
                     return f"processed_{clean}"
                 return f"processed_{str(input_data)[:200]}"
 
-        # Stage 4: Swarm re-attacks and verifies remediation
+        # Stage 4: Swarm re-attacks and verifies remediation -> auto-consolidates with LTP
         all_fixed, new_report = self.swarm.verify_remediation(
             target_callable=candidate_v2,
             prior_report=initial_report,
@@ -258,10 +272,24 @@ class TestPingPongRemediationCycle(unittest.TestCase):
         self.assertTrue(new_report.passed)
         self.assertEqual(new_report.broken_count, 0)
 
+        # Verify automated closed-loop LTP consolidation and antibody minting
+        lobe_reloaded = self.engine._load_or_create_lobe("candidate_service")
+        self.assertGreater(len(lobe_reloaded.antibodies), 0)
+        self.assertIn("mutation", lobe_reloaded.synaptic_weights)
+        # Remediated pathway potentiated (LTP)
+        self.assertGreater(lobe_reloaded.synaptic_weights["mutation"], 0.30)
+        self.assertGreater(len(lobe_reloaded.specialized_heuristics), 0)
+
 
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
     def setUp(self) -> None:
-        self.dispatcher = CoderFleetDispatcher()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cortex_path = Path(self.temp_dir.name)
+        self.engine = HebbianPlasticityEngine(cortex_dir=self.cortex_path)
+        self.dispatcher = CoderFleetDispatcher(plasticity_engine=self.engine)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
 
     def test_registered_red_team_actions(self) -> None:
         actions = self.dispatcher.list_actions()

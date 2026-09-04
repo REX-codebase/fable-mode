@@ -9,7 +9,7 @@ import unittest
 # Ensure workspace root is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fable_v2.coder_fleet import CoderFleetDispatcher
+from fable_v2.coder_fleet import CoderFleetDispatcher, RedTeamSwarm
 from fable_v2.cortical import (
     CorticalDomain,
     CorticalLobe,
@@ -127,10 +127,16 @@ class TestHebbianCorticalPlasticity(unittest.TestCase):
         self.assertTrue(receipt["final_passed"])
         self.assertEqual(receipt["learning_rate"], 0.10)
         self.assertEqual(receipt["score"], 1.0)
+        self.assertEqual(receipt["plasticity_mode"], "LTP")
 
-        # Verify weight increased by exactly ~0.10
+        # Verify weight increased via BCM LTP (delta_w = learning_rate * A_domain * A_node)
+        # A_domain = min(1.0, max(0.30, 0.40 + 0.10 * 2)) = 0.60
+        # A_node = max(0.75, min(0.90, 0.90 - 0 * 0.03)) = 0.90
+        # delta_w = 0.10 * 0.60 * 0.90 = 0.054
+        expected_delta = 0.10 * (0.40 + 0.10 * 2) * 0.90
         updated_w = receipt["synaptic_weights"]["atomic_cas"]
-        self.assertAlmostEqual(updated_w, initial_w + 0.10, places=2)
+        self.assertAlmostEqual(updated_w, initial_w + expected_delta, places=2)
+        self.assertGreater(updated_w, initial_w)
 
         # Verify global synaptic matrix pair co-activation was recorded
         matrix = self.engine.get_synaptic_matrix()
@@ -431,6 +437,137 @@ class TestHebbianCorticalPlasticity(unittest.TestCase):
         self.assertIn("What happens if SIMD vector width", context)
         self.assertIn("Enforce dynamic tail padding and vectorized mask loading", context)
         self.assertIn("compile-time SIMD width querying", context)
+
+    def test_continuous_activity_dependent_activation_metrics(self) -> None:
+        """Verify continuous A_j scaling with activation_metrics and A_domain computation."""
+        receipt = self.engine.consolidate_task(
+            domain="python",
+            task_id="task_metrics_01",
+            final_passed=True,
+            co_activated_nodes=["asyncio", "typing", "celery"],
+            activation_metrics={"asyncio": 100.0, "typing": 50.0, "celery": 5.0},
+        )
+        signals = receipt["activation_signals"]
+        # Max metric is 100.0, denom is 100.0
+        # asyncio: 100/100 = 1.0 -> min(1.0, max(0.15, 1.0)) = 1.0
+        # typing: 50/100 = 0.50 -> min(1.0, max(0.15, 0.50)) = 0.50
+        # celery: 5/100 = 0.05 -> min(1.0, max(0.15, 0.05)) = 0.15 (floored at 0.15)
+        self.assertAlmostEqual(signals["asyncio"], 1.0, places=3)
+        self.assertAlmostEqual(signals["typing"], 0.50, places=3)
+        self.assertAlmostEqual(signals["celery"], 0.15, places=3)
+
+        # Domain activation with 3 nodes: min(1.0, max(0.30, 0.40 + 0.10 * 3)) = 0.70
+        self.assertAlmostEqual(receipt["A_domain"], 0.70, places=3)
+
+    def test_bcm_asymmetric_plasticity_ltd_vs_ltp(self) -> None:
+        """Verify BCM plasticity: LTD on failure (ΔW < 0) vs LTP on success (ΔW > 0)."""
+        # Set up an initial node weight in concurrency lobe
+        lobe = self.engine._load_or_create_lobe("concurrency")
+        lobe.synaptic_weights["broken_pathway"] = 0.60
+        initial_w = lobe.synaptic_weights["broken_pathway"]
+
+        # 1. Synaptic Depression (LTD) on final_passed=False: strictly decreases weight
+        receipt_fail = self.engine.consolidate_task(
+            domain="concurrency",
+            task_id="task_ltd_01",
+            final_passed=False,
+            co_activated_nodes=["broken_pathway"],
+        )
+        self.assertEqual(receipt_fail["plasticity_mode"], "LTD")
+        w_after_fail = receipt_fail["synaptic_weights"]["broken_pathway"]
+        self.assertLess(w_after_fail, initial_w, f"LTD must decrease weight: {w_after_fail} >= {initial_w}")
+        # Expected LTD delta: -0.15 * A_domain (0.50) * A_node (0.90) = -0.0675
+        expected_ltd_delta = - 0.15 * 0.50 * 0.90
+        self.assertAlmostEqual(w_after_fail, initial_w + expected_ltd_delta, places=2)
+
+        # 2. Synaptic Potentiation (LTP) on final_passed=True: strictly increases weight
+        receipt_pass = self.engine.consolidate_task(
+            domain="concurrency",
+            task_id="task_ltp_01",
+            final_passed=True,
+            co_activated_nodes=["broken_pathway"],
+        )
+        self.assertEqual(receipt_pass["plasticity_mode"], "LTP")
+        w_after_pass = receipt_pass["synaptic_weights"]["broken_pathway"]
+        self.assertGreater(w_after_pass, w_after_fail, f"LTP must increase weight: {w_after_pass} <= {w_after_fail}")
+        # Expected LTP delta: +0.10 * A_domain (0.50) * A_node (0.90) = +0.045
+        expected_ltp_delta = 0.10 * 0.50 * 0.90
+        self.assertAlmostEqual(w_after_pass, w_after_fail + expected_ltp_delta, places=2)
+
+    def test_homeostatic_weight_bounding_ltd_floor(self) -> None:
+        """Verify synaptic depression (LTD) strictly respects the [0.05, 1.00] homeostatic floor."""
+        lobe = self.engine._load_or_create_lobe("research")
+        lobe.synaptic_weights["failing_path"] = 0.10
+
+        for i in range(15):
+            receipt = self.engine.consolidate_task(
+                domain="research",
+                task_id=f"fail_burst_{i}",
+                final_passed=False,
+                co_activated_nodes=["failing_path"],
+            )
+
+        final_w = receipt["synaptic_weights"]["failing_path"]
+        self.assertGreaterEqual(final_w, 0.05)
+        self.assertEqual(final_w, 0.05)
+
+    def test_automated_closed_loop_red_team_to_cortical_consolidation(self) -> None:
+        """Verify full automated closed-loop RedTeam -> Remediation -> Cortical Consolidation."""
+        swarm = RedTeamSwarm(plasticity_engine=self.engine)
+
+        # Fragile target that breaks under adversarial probe
+        def fragile_target(payload: Any = None) -> str:
+            if payload is None or (isinstance(payload, str) and "\x00" in payload):
+                raise ValueError("Fatal unhandled payload corruption")
+            return "ok"
+
+        # 1. Swarm attack breaks fragile target -> auto-consolidates with LTD
+        report_break = swarm.run_full_review_cycle(
+            fragile_target,
+            target_name="crypto_service",
+        )
+        self.assertFalse(report_break.passed)
+        self.assertGreater(report_break.broken_count, 0)
+
+        # Verify LTD was automatically applied to crypto_service lobe
+        lobe = self.engine._load_or_create_lobe("crypto_service")
+        self.assertIn("test_harness", lobe.synaptic_weights)
+        self.assertIn("red_team_swarm", lobe.synaptic_weights)
+        # 0.30 baseline depressed by -0.15 * A_domain * A_node
+        self.assertLess(lobe.synaptic_weights["test_harness"], 0.30)
+        self.assertGreaterEqual(len(lobe.antibodies), 1)
+
+        # 2. Subagent remediates and hardens target
+        def hardened_target(payload: Any = None) -> str:
+            if payload is None:
+                return "ok_default"
+            if isinstance(payload, str):
+                return "ok_" + payload.replace("\x00", "")[:100]
+            return "ok_" + str(payload)[:100]
+
+        # 3. Swarm verifies remediation -> auto-consolidates with LTP and synthesizes verified antibody
+        all_fixed, report_fixed = swarm.verify_remediation(
+            target_callable=hardened_target,
+            prior_report=report_break,
+        )
+        self.assertTrue(all_fixed)
+        self.assertTrue(report_fixed.passed)
+        self.assertEqual(report_fixed.broken_count, 0)
+
+        # Verify LTP was automatically applied to remediating pathway
+        lobe_after = self.engine._load_or_create_lobe("crypto_service")
+        self.assertIn("mutation", lobe_after.synaptic_weights)
+        # 0.30 baseline potentiated by +0.10 * A_domain * A_node
+        self.assertGreater(lobe_after.synaptic_weights["mutation"], 0.30)
+        self.assertGreater(len(lobe_after.antibodies), 0)
+        self.assertGreater(len(lobe_after.specialized_heuristics), 0)
+
+        # Verify disk persistence
+        lobe_file = self.cortex_path / "crypto_service.md"
+        self.assertTrue(lobe_file.exists())
+        loaded_lobe = CorticalLobe.load_from_disk(lobe_file)
+        self.assertEqual(loaded_lobe.name, "crypto_service")
+        self.assertGreater(len(loaded_lobe.antibodies), 0)
 
     def test_production_baseline_lobes_integrity(self) -> None:
         """Verify the repository's 5 production baseline lobes in skills/fable-mode/cortex/ are fully valid."""

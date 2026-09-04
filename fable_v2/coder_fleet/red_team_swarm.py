@@ -62,6 +62,20 @@ class BreakFinding:
     severity: str = "MEDIUM"  # "CRITICAL", "HIGH", "MEDIUM", "LOW"
     details: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize finding to dictionary."""
+        return {
+            "scenario_id": self.scenario_id,
+            "vector": self.vector,
+            "hypothesis": self.hypothesis,
+            "broken": self.broken,
+            "error_message": self.error_message,
+            "traceback_snippet": self.traceback_snippet,
+            "reproduction_code": self.reproduction_code,
+            "severity": self.severity,
+            "details": self.details,
+        }
+
 
 @dataclass
 class RedTeamBreakageReport:
@@ -212,10 +226,23 @@ class RedTeamSwarm:
         test_harness: Optional[TestHarnessEngine] = None,
         mock_auditor: Optional[MockAuditorEngine] = None,
         property_oracle: Optional[PropertyOracleEngine] = None,
+        plasticity_engine: Optional[Any] = None,
     ) -> None:
         self.test_harness = test_harness or TestHarnessEngine()
         self.mock_auditor = mock_auditor or MockAuditorEngine()
         self.property_oracle = property_oracle or PropertyOracleEngine(test_harness=self.test_harness)
+        if plasticity_engine is not None:
+            self.plasticity_engine = plasticity_engine
+        else:
+            try:
+                from ..cortical.plasticity_engine import HebbianPlasticityEngine
+                self.plasticity_engine = HebbianPlasticityEngine()
+            except Exception:
+                try:
+                    from fable_v2.cortical.plasticity_engine import HebbianPlasticityEngine
+                    self.plasticity_engine = HebbianPlasticityEngine()
+                except Exception:
+                    self.plasticity_engine = None
 
     @staticmethod
     def _compile_code_to_callable(code: str) -> Callable[..., Any]:
@@ -560,22 +587,23 @@ class RedTeamSwarm:
         target_callable: Optional[Callable[..., Any]] = None,
         scenarios: Optional[list[BreakScenario]] = None,
         timeout_seconds: float = 3.0,
+        target_name: Optional[str] = None,
     ) -> RedTeamBreakageReport:
         """Executes the break scenarios against target_callable with sandboxed execution.
 
         Detects unhandled crashes, memory/resource leaks, invariant violations, and timeouts.
         """
         callable_fn = self._resolve_callable(target_callable)
-        target_name = getattr(callable_fn, "__name__", "target")
+        actual_name = target_name or getattr(callable_fn, "__name__", "target")
 
         if not scenarios:
-            scenarios = self.generate_break_scenarios(target_name=target_name)
+            scenarios = self.generate_break_scenarios(target_name=actual_name)
 
         findings: list[BreakFinding] = []
 
         for sc in scenarios:
             attack_fn = sc.attack_fn
-            repro_code = sc.metadata.get("reproduction") or f"{target_name}(<adversarial_probe>)"
+            repro_code = sc.metadata.get("reproduction") or f"{actual_name}(<adversarial_probe>)"
 
             if attack_fn is None:
                 # If no attack function is defined, pass by default
@@ -705,7 +733,7 @@ class RedTeamSwarm:
 
         return RedTeamBreakageReport(
             report_id=report_id,
-            target_name=target_name,
+            target_name=actual_name,
             total_probes=len(findings),
             broken_count=broken_count,
             passed=passed,
@@ -744,6 +772,7 @@ class RedTeamSwarm:
         target_callable: Any,
         prior_report: Union[RedTeamBreakageReport, dict[str, Any]],
         additional_scenarios: Optional[list[BreakScenario]] = None,
+        auto_consolidate: bool = True,
     ) -> tuple[bool, RedTeamBreakageReport]:
         """Re-runs the scenarios that previously caused breakages against the remediated callable.
 
@@ -806,24 +835,65 @@ class RedTeamSwarm:
         new_report = self.execute_swarm_attack(
             target_callable=callable_fn,
             scenarios=scenarios_to_rerun,
+            target_name=p_rep.target_name,
         )
 
-        return new_report.passed, new_report
+        all_fixed = new_report.passed
+        if auto_consolidate and all_fixed and self.plasticity_engine is not None:
+            self.plasticity_engine.consolidate_task(
+                domain=p_rep.target_name,
+                task_id=p_rep.report_id,
+                broken_scenarios=[f.to_dict() for f in p_rep.findings if f.broken],
+                final_passed=True,
+                lessons=[
+                    {
+                        "trigger": f.hypothesis,
+                        "mistake": f.error_message or "Unhandled break condition",
+                        "defense": f.reproduction_code or "Hardened implementation",
+                        "severity": f.severity,
+                    }
+                    for f in p_rep.findings
+                    if f.broken
+                ],
+                co_activated_nodes=["mutation", "test_harness", "red_team_swarm", "property_oracle"],
+            )
+
+        return all_fixed, new_report
 
     def run_full_review_cycle(
         self,
         target_callable: Any,
         target_name: str = "system",
         custom_hypotheses: Optional[list[str]] = None,
+        auto_consolidate: bool = True,
     ) -> RedTeamBreakageReport:
         """Generates scenarios, executes swarm attack, and compiles the breakage report."""
         callable_fn = self._resolve_callable(target_callable)
         actual_name = getattr(callable_fn, "__name__", target_name)
+        effective_name = target_name if target_name and target_name != "system" else (actual_name or target_name)
         scenarios = self.generate_break_scenarios(
-            target_name=actual_name,
+            target_name=effective_name,
             custom_hypotheses=custom_hypotheses,
         )
-        return self.execute_swarm_attack(
+        report = self.execute_swarm_attack(
             target_callable=callable_fn,
             scenarios=scenarios,
+            target_name=effective_name,
         )
+        if auto_consolidate and self.plasticity_engine is not None:
+            if not report.passed:
+                self.plasticity_engine.consolidate_task(
+                    domain=effective_name,
+                    task_id=report.report_id,
+                    broken_scenarios=[f.to_dict() for f in report.findings if f.broken],
+                    final_passed=False,
+                    co_activated_nodes=["test_harness", "red_team_swarm"],
+                )
+            else:
+                self.plasticity_engine.consolidate_task(
+                    domain=effective_name,
+                    task_id=report.report_id,
+                    final_passed=True,
+                    co_activated_nodes=["test_harness", "red_team_swarm", "diagnostics"],
+                )
+        return report

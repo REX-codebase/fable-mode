@@ -50,12 +50,13 @@ class CoderFleetDispatcher:
         self.property_oracle = property_oracle or PropertyOracleEngine(test_harness=self.test_harness)
         self.receipt_attestor = receipt_attestor or ReceiptAttestorEngine()
         self.compute = compute or ComputeOrchestratorEngine()
+        self.plasticity_engine = plasticity_engine or HebbianPlasticityEngine()
         self.red_team_swarm = red_team_swarm or RedTeamSwarm(
             test_harness=self.test_harness,
             mock_auditor=self.mock_auditor,
             property_oracle=self.property_oracle,
+            plasticity_engine=self.plasticity_engine,
         )
-        self.plasticity_engine = plasticity_engine or HebbianPlasticityEngine()
 
         self._actions: dict[str, Callable[..., Any]] = {
             # 1. Visual Grounding Engine
