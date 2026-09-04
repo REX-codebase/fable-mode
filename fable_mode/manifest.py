@@ -18,6 +18,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_mode/resources.json",
     "fable_engine/__init__.py",
     "fable_engine/server.py",
+    "fable_engine/updater.py",
     "fable_engine/fable_session.json",
     "fable_v2/__init__.py",
     "fable_v2/adapters.py",

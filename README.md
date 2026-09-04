@@ -163,6 +163,15 @@ receipt = fleet.dispatch("cortical_consolidate_task", {
 print("Consolidation receipt:", receipt["result"]["status"])
 ```
 
+### Part 3: Autonomous Silent Background Self-Updater (`AutoUpdater`)
+
+Ensures that any computer running Fable-Mode is autonomously synchronized with upstream commits across all agent harnesses:
+
+- **0ms Startup Overhead**: Spawns an asynchronous daemon background worker thread upon session initialization or MCP server startup, executing fast, non-blocking update checks.
+- **Fail-Safe Offline Guarantee**: If the machine is offline, has restricted network, or is run outside a git repository, the check gracefully falls back with zero unhandled exceptions.
+- **Immunological Cortical Preservation**: Local cortical learning and experience are strictly preserved. Non-destructively merges upstream antibodies into baseline lobes, preserves locally evolved synaptic matrix weights ($\max(W_{\text{local}}, W_{\text{upstream}})$), and preserves all custom user-sprouted lobes.
+- **Host Skills Hot-Sync**: Automatically hot-syncs updated skills (`skills/fable-mode/`), rules (`rules/fable-mode.md`), and MCP tool definitions into detected host configurations (Gemini/Antigravity `~/.gemini/config/skills/fable-mode/`, Claude Code `~/.claude/skills/fable-mode/`, and Cursor `.cursor/skills/`).
+
 ---
 
 ## 🍱 The Bento Grid: 6 Pillars of Frontier Cognition
@@ -294,6 +303,8 @@ The `fable-engine` exposes the unified `fable_session` tool adhering to JSON-RPC
 | `verify_proof` | Proof Engine | `claim`, `proof_type`, `evidence`, `target_resource?` | Executes AST, ToolReceipt, SHA-256, or Curry-Howard proof validation. |
 | `record_visual_mockups`| Visual | `session_name`, `mockups`, `selected_concept?` | Records 5–6 Haute aesthetic concepts, OKLCH palettes, and typography specifications. |
 | `unlock_execution` | Gatekeeper | `session_name`, `rationale` | **Fail-closed gatekeeper.** Unlocks file modification only if clock $\ge$ deadline & DoD criteria met. |
+| `check_auto_update`| Sync | `session_name?` | Probes remote upstream for newer commits with 0ms delay and fail-safe offline resilience. |
+| `apply_auto_update`| Sync | `preserve_cortex?` | Fast-forwards git upstream, non-destructively preserves cortical experience, and hot-syncs host skills. |
 
 ### Minimal JSON-RPC Call Example
 

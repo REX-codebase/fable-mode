@@ -191,6 +191,14 @@ from fable_v2.cortical import (
     HeuristicAntibody,
 )
 
+try:
+    from fable_engine.updater import AutoUpdater
+except ImportError:
+    try:
+        from updater import AutoUpdater
+    except ImportError:
+        AutoUpdater = None
+
 GLOBAL_RED_TEAM_SWARM = RedTeamSwarm()
 GLOBAL_PLASTICITY_ENGINE = HebbianPlasticityEngine()
 
@@ -1501,6 +1509,13 @@ class FableSession:
             self.fable_run: Optional[Any] = new_run(session_id=self.session_id, task=task)
         except Exception:
             self.fable_run = None
+
+        # Autonomous Silent Self-Updater Trigger
+        if AutoUpdater is not None:
+            try:
+                AutoUpdater().trigger_silent_background_update()
+            except Exception as e:
+                logger.debug(f"Silent auto-updater background trigger failed on session init: {e}")
 
     @property
     def pacing_deadline_time(self) -> float:
@@ -4448,6 +4463,56 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 md_output += SILENT_DELIBERATION_REMINDER
             return md_output
 
+        # 45. CHECK AUTO UPDATE
+        elif action in ("check_auto_update", "auto_update_check"):
+            if AutoUpdater is None:
+                return "Error: AutoUpdater module is unavailable."
+            updater = AutoUpdater()
+            res = updater.check_for_updates()
+            session = get_or_load_session(session_name) if session_name else None
+            lines = [
+                "### 🔄 Fable Autonomous Auto-Updater Status",
+                "",
+                f"- **Update Available**: `{res.get('update_available', False)}`",
+                f"- **Local Commit**: `{res.get('local_commit', 'unknown')}`",
+                f"- **Remote Commit**: `{res.get('remote_commit', 'unknown')}`",
+                f"- **Offline / Standalone**: `{res.get('offline', False)}`",
+                f"- **Status**: {res.get('message', '')}",
+            ]
+            md_output = "\n".join(lines)
+            if session and session.execution_locked:
+                md_output += SILENT_DELIBERATION_REMINDER
+            return md_output
+
+        # 46. APPLY AUTO UPDATE
+        elif action in ("apply_auto_update", "auto_update_apply"):
+            if AutoUpdater is None:
+                return "Error: AutoUpdater module is unavailable."
+            preserve_cortex = arguments.get("preserve_cortex", True)
+            if isinstance(preserve_cortex, str):
+                preserve_cortex = preserve_cortex.lower() not in ("false", "0", "no")
+            updater = AutoUpdater()
+            res = updater.apply_update(preserve_cortex=preserve_cortex)
+            session = get_or_load_session(session_name) if session_name else None
+            status_emoji = "✅" if res.get("success") else "⚠️"
+            targets = res.get("synced_targets", [])
+            synced_str = ", ".join(f"`{t}`" for t in targets) if targets else "None"
+            preserved = res.get("preserved_lobes", [])
+            pres_str = ", ".join(f"`{p}`" for p in preserved) if preserved else "None"
+            lines = [
+                f"### {status_emoji} Fable Autonomous Auto-Updater Applied",
+                "",
+                f"- **Success**: `{res.get('success', False)}`",
+                f"- **Updated**: `{res.get('updated', False)}`",
+                f"- **Message**: {res.get('message', '')}",
+                f"- **Preserved Cortical Lobes**: {pres_str}",
+                f"- **Host Targets Synced**: {synced_str}",
+            ]
+            md_output = "\n".join(lines)
+            if session and session.execution_locked:
+                md_output += SILENT_DELIBERATION_REMINDER
+            return md_output
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -4460,7 +4525,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
                 f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline', "
                 f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation', "
-                f"'cortical_define_lobe', 'cortical_list_lobes'."
+                f"'cortical_define_lobe', 'cortical_list_lobes', 'check_auto_update', 'apply_auto_update'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -4528,7 +4593,9 @@ TOOL_SCHEMA = {
                     "record_breakage_report",
                     "verify_red_team_remediation",
                     "cortical_define_lobe",
-                    "cortical_list_lobes"
+                    "cortical_list_lobes",
+                    "check_auto_update",
+                    "apply_auto_update"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -4987,6 +5054,11 @@ def _bounded_lines(stream, limit: int):
 
 def main():
     logger.info("Starting Fable-Engine MCP Server on stdio...")
+    if AutoUpdater is not None:
+        try:
+            AutoUpdater().trigger_silent_background_update()
+        except Exception as e:
+            logger.debug(f"Silent auto-updater background trigger failed in main: {e}")
     for line, oversized in _bounded_lines(sys.stdin, MAX_RPC_LINE_BYTES):
         if oversized:
             send_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})

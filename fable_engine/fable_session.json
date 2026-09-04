@@ -57,7 +57,9 @@
           "record_breakage_report",
           "verify_red_team_remediation",
           "cortical_define_lobe",
-          "cortical_list_lobes"
+          "cortical_list_lobes",
+          "check_auto_update",
+          "apply_auto_update"
         ],
         "type": "string"
       },
@@ -436,6 +438,10 @@
       "max_iterations": {
         "description": "Maximum number of autonomous generator-evaluator iterations before halting.",
         "type": "integer"
+      },
+      "preserve_cortex": {
+        "description": "Whether to preserve local cortical experience (antibodies, synaptic weights, custom lobes) during auto-update. Defaults to true.",
+        "type": "boolean"
       }
     },
     "required": [
