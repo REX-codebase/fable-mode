@@ -42,6 +42,8 @@
     "fable_v2/coder_fleet/visual.py",
     "fable_v2/coder_fleet/workspace.py",
     "fable_v2/coder_fleet/red_team_swarm.py",
+    "fable_v2/cortical/__init__.py",
+    "fable_v2/cortical/plasticity_engine.py",
     "fable_compressor.py",
     "rules/AGENTS.md",
     "rules/GEMINI.md",
@@ -75,6 +77,12 @@
     "skills/fable-mode/references/visual-imagination-engine.md",
     "skills/fable-mode/references/weak-model-frontier-uplift.md",
     "skills/fable-mode/references/adversarial-code-review-swarm.md",
+    "skills/fable-mode/references/hebbian-cortical-plasticity.md",
+    "skills/fable-mode/cortex/rust.md",
+    "skills/fable-mode/cortex/python.md",
+    "skills/fable-mode/cortex/design_3d.md",
+    "skills/fable-mode/cortex/research.md",
+    "skills/fable-mode/cortex/concurrency.md",
     "LICENSE"
   ]
 }

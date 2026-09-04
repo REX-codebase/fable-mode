@@ -42,6 +42,7 @@ description: >-
 17. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**: Proactive compilation and registration of closed-loop generator-evaluator pipelines (`register_automation_pipeline`) to autonomously converge solutions without human micromanagement.
 18. **10-Tool Coder Subagent MCP Fleet (`fable_v2.coder_fleet`)**: Mandatory injection of 10 specialized engines (VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, ComputeOrchestrator) into subagent contracts to eliminate fake tests, tautological assertions, and ungrounded code edits.
 19. **Modular Fable Part 1: Adversarial Code Review Swarm (`RedTeamSwarm`)**: Mandatory summoning of a 5-vector red team swarm (Chaos Environment, Byzantine Payload, Concurrency/TOCTOU Race, Resource Exhaustion, State Invariant) whenever subagents implement code—enforcing closed-loop ping-pong hardening before milestone commits.
+20. **Modular Fable Part 2: Hebbian Cortical Plasticity & Specialized Domain Lobes (`HebbianPlasticityEngine`)**: Lifelong neuro-evolutionary adaptation replacing static vector RAG with living cortical domain lobes (`rust`, `python`, `design_3d`, `research`, `concurrency`). Dynamically updates synaptic weights via Hebbian co-activation ($\Delta W_{ij} = \eta \cdot \text{Score} \cdot (A_i \cdot A_j)$) with homeostatic normalization bounded in $[0.05, 1.0]$, and synthesizes persistent `HeuristicAntibody` defenses directly from Red-Team scars.
 
 --------------------------------------------------------------------------------
 
@@ -280,6 +281,7 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 - [Prompt Scaffolds & Mental Frameworks](./references/prompt-scaffolds.md) — Reusable cognitive scaffolds, System 2 Epistemic Ledgers, Refinement Cycle Traces, Fable Session MCP templates, and OODA self-healing blocks.
 - [10-Tool Coder Subagent MCP Fleet & Tool Injection Protocol](./references/agentic-execution.md#the-coder-fleet-tool-injection-protocol) — Mandatory tool contracts for VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, and ComputeOrchestrator.
 - [Modular Fable Part 1: Adversarial Code Review Swarm Reference](./references/adversarial-code-review-swarm.md) — Counterfactual 'What If?' falsification, 5 attack personas (Chaos, Byzantine, Concurrency/TOCTOU, Resource Exhaustion, State Invariant), closed-loop ping-pong hardening protocol, and RedTeamBreakageReport generation.
+- [Modular Fable Part 2: Hebbian Cortical Plasticity & Specialized Domain Lobes Reference](./references/hebbian-cortical-plasticity.md) — Hebbian co-activation learning rule ($\Delta W_{ij}$), homeostatic synaptic scaling, 5 specialized domain lobes, immunological `HeuristicAntibody` synthesis, and prompt recall injection.
 
 --------------------------------------------------------------------------------
 

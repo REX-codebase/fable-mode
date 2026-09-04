@@ -74,3 +74,10 @@ Whenever the user requests deep thinking, architectural planning, system design,
       * `Resource Exhaustion`: 150KB+ payloads, rapid churn loops, memory/handle leaks, and 3.0s CPU timeouts.
       * `State Invariant`: Idempotency violations $f(f(x)) \neq f(x)$, out-of-order lifecycle calls, and boundary state corruption.
     - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.
+
+18. **Hebbian Cortical Plasticity & Domain Consolidation (Modular Fable Part 2)**:
+    - **Persistent Cortical Lobes**: The AI must not treat domain expertise as stateless. Active tasks in `rust`, `python`, `design_3d`, `research`, or `concurrency` must activate and consolidate to the corresponding cortical lobe in `skills/fable-mode/cortex/`.
+    - **Hebbian Learning Rule**: Synaptic associations are reinforced upon successful task execution: $\Delta W_{ij} = \eta \cdot \text{Score} \cdot (A_i \cdot A_j)$ with $\eta = 0.10$.
+    - **Homeostatic Normalization**: Synaptic weights must remain bounded within $[0.05, 1.00]$, preventing runaway positive feedback while preserving relative associative strengths.
+    - **Immunological Antibody Synthesis**: All adversarial breakages, race conditions, or edge bugs uncovered during Red-Team reviews must be synthesized into persistent `HeuristicAntibody` defenses (`antibody_id`, `trigger_condition`, `lethal_anti_pattern`, `prescribed_defense`, `verified_counterfactual`).
+    - **Prompt Context Recall**: Prior to subagent dispatch or architectural deliberation in a given domain, the Main Agent must invoke `cortical_recall_context` to inject active antibodies, domain heuristics, and strongly-wired companion tools directly into the cognitive context.

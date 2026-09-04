@@ -104,6 +104,65 @@ if not report.passed:
     assert all_fixed, "All breakages must be verified fixed!"
 ```
 
+### Part 2: Living Hebbian Brain & Specialized Cortical Lobes
+
+Traditional LLM assistants suffer from **session amnesia**: every conversation starts from zero, repeatedly falling into the same language-specific traps, compiler idiosyncrasies, and concurrency hazards. Vector RAG attempts to patch this with string-matching chunks, introducing semantic drift and context pollution.
+
+**Modular Fable Part 2** introduces the **Hebbian Cortical Plasticity Engine (`HebbianPlasticityEngine`)**, providing persistent lifelong learning that specializes on the user's local machine over time across 5 domain lobes:
+
+```
+                            ┌───────────────────────────────────────┐
+                            │      HEBBIAN PLASTICITY ENGINE        │
+                            │   ΔW_ij = η · Score · (A_i · A_j)     │
+                            └───────────────────┬───────────────────┘
+                                                │
+         ┌───────────────────┬──────────────────┼───────────────────┬───────────────────┐
+         ▼                   ▼                  ▼                   ▼                   ▼
+ ┌───────────────┐   ┌───────────────┐  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+ │    RUST.MD    │   │   PYTHON.MD   │  │ DESIGN_3D.MD  │   │  RESEARCH.MD  │   │CONCURRENCY.MD │
+ ├───────────────┤   ├───────────────┤  ├───────────────┤   ├───────────────┤   ├───────────────┤
+ │• Zero-cost abs│   │• Asyncio TG   │  │• WebGPU / TSL │   │• First-princip│   │• Lock-free CAS│
+ │• Pin/Unpin    │   │• Nogil 3.13   │  │• Spring motion│   │• DOI grounding│   │• Acq/Release  │
+ │• Tokio bounds │   │• Protocols    │  │• Fluid clamp  │   │• Causal DAGs  │   │• ABA hazards  │
+ │• Unsafe proof │   │• Slots memory │  │• 60fps budget │   │• TRIZ dialect │   │• TOCTOU fixes │
+ └───────────────┘   └───────────────┘  └───────────────┘   └───────────────┘   └───────────────┘
+```
+
+#### How Fable Specializes Over Time
+1. **Hebbian Synaptic Wiring**:
+   Whenever a tool or domain concept is activated, its synaptic weight updates according to Hebb's rule:
+   $$\Delta W_{ij} = \eta \cdot \text{Score} \cdot (A_i \cdot A_j) \quad (\eta = 0.10)$$
+   Co-activated tools that produce verified passing runs wire together strongly.
+2. **Homeostatic Synaptic Normalization**:
+   Prevents runaway excitation by bounding all weights strictly within $[0.05, 1.00]$, preserving relative associative strengths without saturation.
+3. **Immunological Antibody Memory**:
+   Adversarial breakages detected by `RedTeamSwarm` are synthesized into permanent `HeuristicAntibody` records cataloged in `skills/fable-mode/cortex/<domain>.md`.
+4. **Prompt Context Recall**:
+   Prior to delegating implementation tasks, `cortical_recall_context` retrieves active antibodies, specialized domain invariants, and top-wired companion tools to inject into subagent prompts.
+
+```python
+# Direct Python invocation via Coder Fleet Dispatcher
+from fable_v2.coder_fleet import CoderFleetDispatcher
+
+fleet = CoderFleetDispatcher()
+
+# 1. Activate lobe before task execution
+fleet.dispatch("cortical_activate_lobe", {"domain": "rust", "co_activated_nodes": ["tokio", "pin_project"]})
+
+# 2. Recall high-signal context memory block for prompt injection
+context = fleet.dispatch("cortical_recall_context", {"domain": "rust", "max_antibodies": 3})
+print(context["result"])
+
+# 3. Consolidate task outcomes and synthesize antibodies from red-team breakages
+receipt = fleet.dispatch("cortical_consolidate_task", {
+    "domain": "rust",
+    "task_id": "task_async_engine",
+    "final_passed": True,
+    "co_activated_nodes": ["tokio", "pin_project", "concurrency_fuzz"],
+})
+print("Consolidation receipt:", receipt["result"]["status"])
+```
+
 ---
 
 ## 🍱 The Bento Grid: 6 Pillars of Frontier Cognition
@@ -397,10 +456,13 @@ fable-mode/
 ├── fable_v2/                      # Deliberative & Verification Architecture
 │   ├── coder_fleet/              # Coder Subagent MCP Fleet & Swarm Engines
 │   │   ├── red_team_swarm.py     # Modular Fable Part 1: Adversarial Review Swarm
-│   │   ├── fleet_dispatcher.py   # Unified 11-engine fleet router
+│   │   ├── fleet_dispatcher.py   # Unified 12-engine fleet router
 │   │   ├── test_harness.py       # Sandboxed scratch test runner & concurrency fuzzer
 │   │   ├── mock_auditor.py       # Tautology assertion & mock leakage auditor
 │   │   └── property_oracle.py    # Algebraic invariant & boundary matrix oracle
+│   ├── cortical/                 # Modular Fable Part 2: Hebbian Plasticity Engine
+│   │   ├── __init__.py           # Exports CorticalDomain, Lobe, Engine, Antibody
+│   │   └── plasticity_engine.py  # Hebbian learning, homeostatic bounds & antibodies
 │   ├── execution_broker.py       # Workspace sandboxing & execution gate
 │   ├── runtime.py                # Dynamic search & state verification runtime
 │   └── system3/                  # System 3 Meta-Cognitive Modules
@@ -413,8 +475,11 @@ fable-mode/
 │       └── evolution.py          # Genetic evolutionary paradigm search
 ├── fable_compressor.py           # Content-Addressed Storage & Grammar333 bytecode
 ├── skills/                       # Deliberative Agent Protocols & References
-│   └── fable-mode/SKILL.md       # Core cognitive instructions
-├── tests/                        # 183-test formal verification suite
+│   └── fable-mode/
+│       ├── SKILL.md              # Core cognitive instructions & 20 pillars
+│       ├── cortex/               # Living domain lobes (rust, python, design, research, concurrency)
+│       └── references/           # Technical deep-dive reference manuals
+├── tests/                        # 194-test formal verification suite
 └── LICENSE                       # Open-source MIT License
 ```
 

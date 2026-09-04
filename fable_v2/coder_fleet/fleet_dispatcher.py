@@ -8,6 +8,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable
 
+from ..cortical import HebbianPlasticityEngine
 from .ast_tools import TreeSitterCodemodEngine
 from .compute import ComputeOrchestratorEngine
 from .diagnostics import DiagnosticsEngine
@@ -22,7 +23,7 @@ from .workspace import AtomicWorkspaceEngine
 
 
 class CoderFleetDispatcher:
-    """Unified dispatcher for the 10-Tool Coder Subagent MCP Fleet."""
+    """Unified dispatcher for the 10-Tool Coder Subagent MCP Fleet and Cortical Engine."""
 
     def __init__(
         self,
@@ -37,6 +38,7 @@ class CoderFleetDispatcher:
         receipt_attestor: ReceiptAttestorEngine | None = None,
         compute: ComputeOrchestratorEngine | None = None,
         red_team_swarm: RedTeamSwarm | None = None,
+        plasticity_engine: HebbianPlasticityEngine | None = None,
     ) -> None:
         self.visual = visual or VisualGroundingEngine()
         self.diagnostics = diagnostics or DiagnosticsEngine()
@@ -53,6 +55,7 @@ class CoderFleetDispatcher:
             mock_auditor=self.mock_auditor,
             property_oracle=self.property_oracle,
         )
+        self.plasticity_engine = plasticity_engine or HebbianPlasticityEngine()
 
         self._actions: dict[str, Callable[..., Any]] = {
             # 1. Visual Grounding Engine
@@ -98,6 +101,11 @@ class CoderFleetDispatcher:
             "red_team_document_breakage": self.red_team_swarm.document_breakage,
             "red_team_verify_remediation": self.red_team_swarm.verify_remediation,
             "red_team_full_review_cycle": self.red_team_swarm.run_full_review_cycle,
+            # 12. Cortical Plasticity Engine (Modular Fable Part 2: Hebbian Learning & Domain Lobes)
+            "cortical_activate_lobe": self.plasticity_engine.activate_lobe,
+            "cortical_consolidate_task": self.plasticity_engine.consolidate_task,
+            "cortical_recall_context": self.plasticity_engine.recall_cortical_context,
+            "cortical_inspect_matrix": self.plasticity_engine.get_synaptic_matrix,
         }
 
     def list_actions(self) -> list[str]:
