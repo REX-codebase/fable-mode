@@ -177,6 +177,15 @@ from fable_v2.system3 import (
     Abort,
 )
 from fable_v2.proof_engine import DeterministicProofValidator
+from fable_v2.coder_fleet import (
+    AttackVector,
+    BreakFinding,
+    BreakScenario,
+    RedTeamBreakageReport,
+    RedTeamSwarm,
+)
+
+GLOBAL_RED_TEAM_SWARM = RedTeamSwarm()
 
 # Standard Fable Phases
 PHASES = [
@@ -1446,6 +1455,7 @@ class FableSession:
         self.proof_receipts: List[Dict[str, Any]] = []
         self.goal_rubrics: List[Dict[str, Any]] = []
         self.automation_pipelines: List[Dict[str, Any]] = []
+        self.breakage_reports: List[Dict[str, Any]] = []
         self.phase_history: List[Dict[str, Any]] = [
             {
                 "phase": self.active_phase,
@@ -2083,6 +2093,14 @@ class FableSession:
         self.automation_pipelines.append(spec)
         return spec
 
+    def record_breakage_report(
+        self,
+        report_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Records an adversarial red team breakage report in session history."""
+        self.breakage_reports.append(report_data)
+        return report_data
+
     def log_refinement_cycle(
         self,
         refinement_type: str,
@@ -2297,6 +2315,7 @@ class FableSession:
             "proof_receipts": self.proof_receipts,
             "goal_rubrics": self.goal_rubrics,
             "automation_pipelines": self.automation_pipelines,
+            "breakage_reports": self.breakage_reports,
             "phase_history": self.phase_history,
             "unlock_details": self.unlock_details,
             "system3_causal_graphs": self.system3_causal_graphs,
@@ -2336,6 +2355,7 @@ class FableSession:
         session.proof_receipts = data.get("proof_receipts", [])
         session.goal_rubrics = data.get("goal_rubrics", [])
         session.automation_pipelines = data.get("automation_pipelines", [])
+        session.breakage_reports = data.get("breakage_reports", [])
         session.active_phase = PHASES[0]
         session.phase_history = [{"phase": PHASES[0], "entered_at": session.start_time,
                                  "summary": "Restored in safe locked state; fresh gates required"}]
@@ -4269,6 +4289,106 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
+        # 40. RED TEAM CODE REVIEW
+        elif action in ("red_team_code_review", "red_team_review", "code_review_swarm", "adversarial_review"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'red_team_code_review'."
+            target_name = arguments.get("target_name", "system")
+            code_snippet = arguments.get("target_code") or arguments.get("code_snippet") or arguments.get("code") or ""
+            custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
+            output_path = arguments.get("output_path")
+
+            session = get_or_load_session(session_name)
+            report = GLOBAL_RED_TEAM_SWARM.run_full_review_cycle(
+                target_callable=code_snippet if code_snippet else None,
+                target_name=target_name,
+                custom_hypotheses=custom_hypotheses,
+            )
+            report_dict = report.to_dict()
+            session.record_breakage_report(report_dict)
+            session.save()
+
+            md_report = GLOBAL_RED_TEAM_SWARM.document_breakage(report, output_path=output_path)
+            return (
+                f"{md_report}\n\n"
+                f"- **Session Recorded**: `{session.session_name}`\n"
+                f"- **Total Breakage Reports in Session**: `{len(session.breakage_reports)}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 41. RECORD BREAKAGE REPORT
+        elif action in ("record_breakage_report", "log_breakage_report", "breakage_report"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'record_breakage_report'."
+            report_data = arguments.get("report") or arguments.get("report_data") or {}
+            if not report_data and arguments.get("findings") is not None:
+                report_data = {
+                    "report_id": arguments.get("report_id", f"report_{int(time.time())}"),
+                    "target_name": arguments.get("target_name", "system"),
+                    "total_probes": arguments.get("total_probes", len(arguments.get("findings", []))),
+                    "broken_count": arguments.get("broken_count", 0),
+                    "passed": arguments.get("passed", arguments.get("broken_count", 0) == 0),
+                    "findings": arguments.get("findings", []),
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "remediation_directives": arguments.get("remediation_directives", [])
+                }
+            if not report_data:
+                return "Error: 'report' or 'report_data' is required for 'record_breakage_report'."
+
+            session = get_or_load_session(session_name)
+            session.record_breakage_report(report_data)
+            session.save()
+
+            return (
+                f"### 📋 Adversarial Breakage Report Recorded (`{report_data.get('report_id', 'N/A')}`)\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Target**: `{report_data.get('target_name', 'system')}`\n"
+                f"- **Total Probes**: `{report_data.get('total_probes', 0)}`\n"
+                f"- **Broken Count**: `{report_data.get('broken_count', 0)}`\n"
+                f"- **Passed / Resilient**: `{'🟢 YES' if report_data.get('passed') else '🔴 NO (Breakages Detected)'}`\n"
+                f"- **Lineage Count**: `{len(session.breakage_reports)} reports logged`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
+        # 42. VERIFY RED TEAM REMEDIATION
+        elif action in ("verify_red_team_remediation", "verify_remediation", "red_team_verify"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'verify_red_team_remediation'."
+            session = get_or_load_session(session_name)
+
+            report_id = arguments.get("report_id")
+            prior_report = arguments.get("prior_report")
+
+            if not prior_report:
+                if report_id:
+                    prior_report = next((r for r in session.breakage_reports if r.get("report_id") == str(report_id).strip()), None)
+                elif session.breakage_reports:
+                    prior_report = session.breakage_reports[-1]
+
+            if not prior_report:
+                return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
+
+            remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
+            all_fixed, new_report = GLOBAL_RED_TEAM_SWARM.verify_remediation(
+                target_callable=remediated_code,
+                prior_report=prior_report
+            )
+            session.record_breakage_report(new_report.to_dict())
+            session.save()
+
+            md_report = new_report.to_markdown()
+            status_badge = "🟢 **ALL PRIOR BREAKAGES VERIFIED FIXED!**" if all_fixed else "🔴 **REMEDIATION INCOMPLETE - BREAKAGES REMAIN**"
+
+            return (
+                f"### 🛡️ Remediation Verification Attestation\n\n"
+                f"{status_badge}\n\n"
+                f"{md_report}\n\n"
+                f"- **Session**: `{session.session_name}`\n"
+                f"- **Prior Report ID**: `{prior_report.get('report_id', 'N/A')}`\n"
+                f"- **Verification Report ID**: `{new_report.report_id}`"
+                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+            )
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -4279,7 +4399,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'system3_dialectical_synthesis', 'system3_causal_simulate', 'system3_evolve_paradigms', 'system3_induce_axioms', 'system3_meta_reflect', 'system3_tri_level_orchestrate', "
                 f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle', "
                 f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
-                f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline'."
+                f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline', "
+                f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -4342,7 +4463,10 @@ TOOL_SCHEMA = {
                     "set_goal_rubric",
                     "evaluate_goal_rubric",
                     "get_goal_rubric",
-                    "register_automation_pipeline"
+                    "register_automation_pipeline",
+                    "red_team_code_review",
+                    "record_breakage_report",
+                    "verify_red_team_remediation"
                 ],
                 "description": "The Fable session action to perform."
             },

@@ -195,8 +195,14 @@ Inject this template when formulating subagent instructions:
 - **Strict Invariants**: Types, concurrency constraints, error handling rules
 - **Verification Command**: Exact CLI command subagent must run (`pytest`, `cargo test`, `npm test`)
 - **Required Report Output**: Git diff summary, test pass/fail counts, and invariant proof
-- **Mandatory Coder Fleet Tool Injection**:
-  Subagent must import and initialize the 10-Tool Coder Fleet:
+- **MCP Tooling Notification & Enablement**:
+  * Subagent is explicitly informed that MCP tools (`call_mcp_tool` with `fable_coder_fleet`, `fable-engine`, `context7`, `narsil`) are enabled and available.
+  * When defining subagents (`define_subagent`), `enable_mcp_tools: true` and `enable_write_tools: true` must be set so the subagent does not crash from permission errors.
+- **Zero-Crash Non-Restriction Policy**:
+  * Subagent is strictly **NOT restricted, penalized, or rejected for not using an MCP tool**.
+  * If native workspace tools (`write_to_file`, `replace_file_content`, `run_command`) are used, or if an MCP server is unavailable or unneeded, work is accepted without artificial failure.
+- **Coder Fleet Tool Options**:
+  Subagent may import and initialize the 10-Tool Coder Fleet:
   ```python
   from fable_v2.coder_fleet import (
       VisualGroundingEngine, DiagnosticsEngine, TreeSitterCodemodEngine,
@@ -207,8 +213,8 @@ Inject this template when formulating subagent instructions:
   ```
 ```
 
-### 🛠️ Mandatory Coder Fleet Verification Protocol in Subagent Workflows
-Every Coder Subagent contract dispatched by the Main Agent must declare and execute the following verification steps using `fable_v2.coder_fleet`:
+### 🛠️ Recommended Coder Fleet Verification Workflows in Subagent Workflows
+Coder Subagents are equipped with and encouraged to use `fable_v2.coder_fleet` where applicable, with resilient fallback to native tool suites:
 
 1. **Mutation Verification & Fake-Test Elimination (`MutationVerifierEngine`)**:
    - Subagents must invoke `MutationVerifierEngine.audit_test_strength()` against test suites.

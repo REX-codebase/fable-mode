@@ -15,6 +15,7 @@ from .mock_auditor import MockAuditorEngine
 from .mutation import MutationVerifierEngine
 from .property_oracle import PropertyOracleEngine
 from .receipt_attestor import ReceiptAttestorEngine
+from .red_team_swarm import RedTeamSwarm
 from .test_harness import TestHarnessEngine
 from .visual import VisualGroundingEngine
 from .workspace import AtomicWorkspaceEngine
@@ -35,6 +36,7 @@ class CoderFleetDispatcher:
         property_oracle: PropertyOracleEngine | None = None,
         receipt_attestor: ReceiptAttestorEngine | None = None,
         compute: ComputeOrchestratorEngine | None = None,
+        red_team_swarm: RedTeamSwarm | None = None,
     ) -> None:
         self.visual = visual or VisualGroundingEngine()
         self.diagnostics = diagnostics or DiagnosticsEngine()
@@ -46,6 +48,11 @@ class CoderFleetDispatcher:
         self.property_oracle = property_oracle or PropertyOracleEngine(test_harness=self.test_harness)
         self.receipt_attestor = receipt_attestor or ReceiptAttestorEngine()
         self.compute = compute or ComputeOrchestratorEngine()
+        self.red_team_swarm = red_team_swarm or RedTeamSwarm(
+            test_harness=self.test_harness,
+            mock_auditor=self.mock_auditor,
+            property_oracle=self.property_oracle,
+        )
 
         self._actions: dict[str, Callable[..., Any]] = {
             # 1. Visual Grounding Engine
@@ -85,6 +92,12 @@ class CoderFleetDispatcher:
             "calculate_thinking_budget": self.compute.calculate_thinking_budget,
             "mcts_explore": self.compute.mcts_explore,
             "best_of_n_consensus": self.compute.best_of_n_consensus,
+            # 11. Red Team Swarm Engine (Modular Fable Part 1: Adversarial Code Review)
+            "red_team_generate_scenarios": self.red_team_swarm.generate_break_scenarios,
+            "red_team_execute_attack": self.red_team_swarm.execute_swarm_attack,
+            "red_team_document_breakage": self.red_team_swarm.document_breakage,
+            "red_team_verify_remediation": self.red_team_swarm.verify_remediation,
+            "red_team_full_review_cycle": self.red_team_swarm.run_full_review_cycle,
         }
 
     def list_actions(self) -> list[str]:

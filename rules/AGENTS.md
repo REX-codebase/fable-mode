@@ -41,6 +41,10 @@
   2. Main Agent dispatches subagents (`invoke_subagent`) to implement the code and run local tests once execution is unlocked.
   3. Subagents report code diffs, compiler outputs, and test logs back to the Main Agent.
   4. Main Agent audits the results against the Definition of Done and enforces the quality gate.
+- **Subagent MCP Tooling Mandate & Zero-Crash Protocol**:
+  * The Main Agent **must explicitly inform subagents** during dispatch to use MCP tools (e.g. via `call_mcp_tool` for available servers like `fable-engine`, `context7`, `narsil`, `fable_coder_fleet`).
+  * When defining subagents (`define_subagent`), the Main Agent **must set `enable_mcp_tools: true`** (along with `enable_write_tools: true`) so that subagents are properly enabled to use MCPs and do not crash from unauthorized tool calls.
+  * **Non-Restriction Policy (Graceful Fallback)**: Subagents are **strictly NOT restricted, penalized, or rejected for not using an MCP tool**. If a task is executed cleanly using native workspace tools (`write_to_file`, `replace_file_content`, `run_command`), or if an MCP is unavailable or unneeded, subagents are fully authorized to proceed without crashing or blocking.
 
 14. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
     - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
@@ -62,5 +66,14 @@
       * `PropertyOracleEngine`: Extreme boundary matrices and algebraic roundtrip invariant proofs.
       * `ReceiptAttestorEngine`: Tamper-evident HMAC-SHA256 authenticated `ToolReceipt` execution proofs.
       * `ComputeOrchestratorEngine`: Dynamic thinking token budgets up to 64k tokens and Monte Carlo Tree Search (MCTS).
-    - Subagents must audit test suites with `MutationVerifierEngine` and `MockAuditorEngine` and provide verifiable execution receipts before code changes are accepted.
+    - Subagents are encouraged to audit test suites with `MutationVerifierEngine` and `MockAuditorEngine` where available, but are strictly never restricted, penalized, or blocked if using native test runners (`pytest`, `cargo test`, `npm test`) or if MCP tools are omitted.
 
+17. **Mandatory Adversarial Code Review Swarm (Project Glasswing Red Team Loop)**:
+    - **Immutable Review Obligation**: The Main Agent is strictly forbidden from directly accepting subagent implementations or relying on superficial line-by-line inspection or happy-path author unit tests.
+    - **Summoning the Swarm**: Whenever a subagent completes code modifications, the Main Agent must deploy `RedTeamSwarm` (`fable_v2.coder_fleet`) across the 5 core attack vectors:
+      * `Chaos Environment`: Missing paths, permission errors, stream truncations, corrupt configurations.
+      * `Byzantine Payload`: Embedded null bytes (`\x00`), 60+ level recursive dictionary bombs, type confusion (`None`), and extreme numbers (NaN/Inf).
+      * `Concurrency Race`: Multithreaded burst contention (6-16 threads), TOCTOU state mutations, and reentrancy.
+      * `Resource Exhaustion`: 150KB+ payloads, rapid churn loops, memory/handle leaks, and 3.0s CPU timeouts.
+      * `State Invariant`: Idempotency violations $f(f(x)) \neq f(x)$, out-of-order lifecycle calls, and boundary state corruption.
+    - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.

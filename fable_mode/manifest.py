@@ -48,6 +48,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_v2/coder_fleet/test_harness.py",
     "fable_v2/coder_fleet/visual.py",
     "fable_v2/coder_fleet/workspace.py",
+    "fable_v2/coder_fleet/red_team_swarm.py",
     "fable_compressor.py",
     "rules/AGENTS.md",
     "rules/GEMINI.md",
@@ -80,6 +81,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "skills/fable-mode/references/system3-meta-cognition.md",
     "skills/fable-mode/references/visual-imagination-engine.md",
     "skills/fable-mode/references/weak-model-frontier-uplift.md",
+    "skills/fable-mode/references/adversarial-code-review-swarm.md",
     "LICENSE",
 )
 

@@ -207,10 +207,13 @@ graph TD
   - The Critic Worker independently constructs a hostile test harness designed explicitly to break invariants (race fuzzing, memory exhaustion, malformed payloads).
   - The implementation is merged only when the Coder's artifact passes the Critic's adversarial suite with zero invariant breaches.
 
-### 6.3 The Coder Fleet Tool Injection Protocol
+### 6.3 Subagent MCP Tooling Mandate, Enablement & Non-Restriction Protocol
 
 > [!IMPORTANT]
-> **Zero Blind Dispatches**: The Main Agent must never dispatch subagents blind. Every subagent contract must explicitly declare the available `fable_v2.coder_fleet` engines and mandate concrete verification workflows. Subagents reporting code changes without Coder Fleet verification will have their work rejected at the Definition of Done gate.
+> **Subagent MCP Tooling Mandate & Zero-Crash Protocol**:
+> 1. **Mandatory MCP Notification**: In every subagent dispatch specification (`invoke_subagent`), the Main Agent **must explicitly inform the subagent** that MCP tools are available and instruct it on how to invoke them (e.g., via `call_mcp_tool` for available MCP servers and tools like `fable_coder_fleet`, `fable-engine`, `context7`, `narsil`).
+> 2. **Explicit MCP Tool Enablement (`enable_mcp_tools: true`)**: When defining custom subagents (via `define_subagent`), the Main Agent **must explicitly set `enable_mcp_tools: true`** (along with `enable_write_tools: true`). This ensures the subagent is properly enabled to call MCP tools and will never crash or error out from missing tool permissions.
+> 3. **Non-Restriction Policy (Graceful Native Fallback)**: The subagent is **strictly NOT restricted, penalized, or rejected for not using an MCP tool**. If a task is executed cleanly using native workspace tools (`write_to_file`, `replace_file_content`, `run_command`), or if an MCP server/tool is unavailable, unconfigured, or unnecessary for the immediate edit, the subagent has full pragmatic authority to proceed with native tools. Subagents must never crash, stall, or have their work rejected solely for omitting an MCP tool when build, test, and verification checks pass.
 
 #### The 10 Specialized Coder Fleet Engines (`fable_v2.coder_fleet`)
 Subagents operate with pure-Python, zero-external-C-dependency engines tailored for robust, ungameable implementation:

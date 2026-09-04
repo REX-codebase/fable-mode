@@ -23,6 +23,13 @@ from .mock_auditor import MockAuditorEngine
 from .mutation import MutationVerifierEngine
 from .property_oracle import PropertyOracleEngine
 from .receipt_attestor import ReceiptAttestorEngine
+from .red_team_swarm import (
+    AttackVector,
+    BreakFinding,
+    BreakScenario,
+    RedTeamBreakageReport,
+    RedTeamSwarm,
+)
 from .test_harness import TestHarnessEngine
 from .visual import VisualGroundingEngine
 from .workspace import AtomicWorkspaceEngine
@@ -39,4 +46,9 @@ __all__ = [
     "ReceiptAttestorEngine",
     "ComputeOrchestratorEngine",
     "CoderFleetDispatcher",
+    "AttackVector",
+    "BreakScenario",
+    "BreakFinding",
+    "RedTeamBreakageReport",
+    "RedTeamSwarm",
 ]

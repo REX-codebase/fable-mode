@@ -52,7 +52,10 @@
           "set_goal_rubric",
           "evaluate_goal_rubric",
           "get_goal_rubric",
-          "register_automation_pipeline"
+          "register_automation_pipeline",
+          "red_team_code_review",
+          "record_breakage_report",
+          "verify_red_team_remediation"
         ],
         "type": "string"
       },

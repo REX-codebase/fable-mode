@@ -10,18 +10,21 @@
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-090d16?style=flat-square&logo=python&logoColor=fafafa)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-090d16?style=flat-square)](./LICENSE)
+[![GitHub Stars](https://img.shields.io/badge/GitHub%20Stars-21%20%E2%AD%90%20Milestone-ffd700?style=flat-square&logo=github&logoColor=090d16)](https://github.com/REX-codebase/fable-mode)
 [![MCP JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0-090d16?style=flat-square&logo=json&logoColor=fafafa)](https://modelcontextprotocol.io/)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(Stdlib)-090d16?style=flat-square)](#-installation--client-integration)
-[![172 Tests Passed](https://img.shields.io/badge/Tests-172%2F172%20Passed-090d16?style=flat-square)](#-epistemic-invariant--test-verification)
+[![183 Tests Passed](https://img.shields.io/badge/Tests-183%2F183%20Passed-090d16?style=flat-square)](#-epistemic-invariant--test-verification)
 [![Release v1.3.0](https://img.shields.io/badge/Release-v1.3.0%20Frontier-090d16?style=flat-square)](https://github.com/REX-codebase/fable-mode/releases/tag/v1.3.0)
 
 <br/>
 
+> **🎉 Celebrating 21 ⭐ on GitHub!** Thank you to the community for supporting deterministic cognitive agent architectures.
+>
 > **"LLMs rush complex engineering within 30 seconds. Fable-Mode locks the workspace, enforces mathematical System 2 deliberation, validates claims with an ungameable proof engine, and scales exploration to model velocity."**
 
 <br/>
 
-[Overview](#-the-dilemma-and-the-invariant) • [Bento Grid: 6 Pillars](#-the-bento-grid-6-pillars-of-frontier-cognition) • [6-Phase State Machine](#-how-it-works-the-6-phase-state-machine) • [MCP Tool Reference](#-mcp-quick-reference-table) • [Installation & Integration](#-installation--client-integration) • [Formal Verification](#-epistemic-invariant--test-verification)
+[Overview](#-the-dilemma-and-the-invariant) • [Modular Fable Architecture](#-modular-fable-architecture) • [Bento Grid: 6 Pillars](#-the-bento-grid-6-pillars-of-frontier-cognition) • [6-Phase State Machine](#-how-it-works-the-6-phase-state-machine) • [MCP Tool Reference](#-mcp-quick-reference-table) • [Installation & Integration](#-installation--client-integration) • [Formal Verification](#-epistemic-invariant--test-verification)
 
 ---
 
@@ -36,6 +39,70 @@ Soft self-prompting and stochastic Monte Carlo Tree Search (MCTS) fail in softwa
 $$\boxed{\text{System 1 Impulse} \xrightarrow{\quad\text{Mechanical Lock}\quad} \text{Formal Proofs} \xrightarrow{\quad\text{Adversarial Refinement}\quad} \text{Authority Unlock} \implies \text{Flawless Code}}$$
 
 **Fable-Mode converts the reasoning workspace into an ungameable, evidence-gated crucible.** The main agent operates as an immutable Master Architect; workspace writes remain physically locked until an external monotonic deadline elapses, empirical proof receipts are validated, and the implementation fleet is dispatched under strict contracts.
+
+---
+
+## 🐝 Modular Fable Architecture
+### Part 1: Adversarial Code Review Swarm (Project Glasswing Red Team Loop)
+
+Traditional line-by-line review and author-written unit tests fail due to **confirmation bias** and the **happy-path mirror effect**: models write tests only for the scenarios they anticipated, leaving race conditions, buffer overflows, and state corruptions completely undetected.
+
+**Modular Fable Part 1** introduces the **Adversarial Code Review Swarm (`RedTeamSwarm`)**, codifying an immutable obligation:
+> **The Main Agent MUST NEVER accept subagent code blindly.**  
+> Whenever a subagent implements a feature or refactors a module, the Main Agent **must summon an adversarial swarm of red-team personas** to counterfactually stress-test the implementation across 5 vectors before milestone commits.
+
+```
+                              ┌───────────────────────────┐
+                              │      RED TEAM SWARM       │
+                              │   5 Attack Personas       │
+                              └─────────────┬─────────────┘
+                                            │
+        ┌───────────────────┬───────────────┼───────────────┬───────────────────┐
+        ▼                   ▼               ▼               ▼                   ▼
+┌───────────────┐   ┌───────────────┐ ┌───────────┐ ┌───────────────┐   ┌───────────────┐
+│     CHAOS     │   │   BYZANTINE   │ │CONCURRENCY│ │   RESOURCE    │   │     STATE     │
+│  ENVIRONMENT  │   │    PAYLOAD    │ │   RACE    │ │  EXHAUSTION   │   │   INVARIANT   │
+├───────────────┤   ├───────────────┤ ├───────────┤ ├───────────────┤   ├───────────────┤
+│• Missing path │   │• Null bytes   │ │• 8-thread │ │• 150KB string │   │• f(f(x)) !=   │
+│• Denied perms │   │• 60-level nest│ │  burst    │ │• 100x churn   │   │  f(x) check   │
+│• Truncated I/O│   │• None/Type-con│ │• TOCTOU   │ │• 3.0s timeout │   │• Out-of-order │
+│• Corrupt env  │   │• NaN/Inf/huge │ │• Lock race│ │• Handle leak  │   │  lifecycle    │
+└───────────────┘   └───────────────┘ └───────────┘ └───────────────┘   └───────────────┘
+```
+
+#### The 5 Attack Personas
+1. **Chaos Environment (`chaos_environment`)**: Missing paths, unlinked temporary directories, permission denials, broken stream pipes, corrupt environment variables.
+2. **Byzantine Payload (`byzantine_payload`)**: Embedded null bytes (`\x00`), 60+ level recursive dictionary bombs, type confusion (`None`), and extreme numbers (`NaN`, `Infinity`, $2^{64}$).
+3. **Concurrency Race (`concurrency_race`)**: Multithreaded burst contention (6–16 threads), Time-of-Check to Time-of-Use (TOCTOU) shared state mutations, and reentrancy deadlocks.
+4. **Resource Exhaustion (`resource_exhaustion`)**: 150,000+ character payloads, 100x rapid sequential churn, file handle leakage, and hard 3.0s CPU timeouts.
+5. **State Invariant (`state_invariant`)**: Non-idempotent re-execution $f(f(x)) \neq f(x)$, out-of-order lifecycle calls (finalize before init, double-close), and state boundary corruption.
+
+#### The Closed-Loop Ping-Pong Hardening Cycle
+```
+Subagent Implementation ──▶ Swarm Attack ──▶ Breakage Report (💥 Failures)
+                                                   │
+Verified Resilience (🟢 Sealed) ◀── Swarm Re-Attack ◀── Subagent Remediation
+```
+1. **Subagent Implementation**: Coder subagent completes task and runs local tests.
+2. **Swarm Attack**: Main Agent summons `RedTeamSwarm.run_full_review_cycle()`.
+3. **Breakage Report**: The swarm compiles `RedTeamBreakageReport` with reproduction code snippets.
+4. **Subagent Remediation**: If `broken_count > 0`, code changes are **REJECTED**; subagent receives remediation directives.
+5. **Swarm Re-Attack**: Swarm invokes `verify_remediation()` re-running prior breaking scenarios.
+6. **Milestone Sealing**: Only when all prior breakages are verified fixed (`0` breakages) is the milestone sealed.
+
+```python
+# Direct Python invocation via Coder Fleet
+from fable_v2.coder_fleet import RedTeamSwarm
+
+swarm = RedTeamSwarm()
+report = swarm.run_full_review_cycle(target_callable=my_service, target_name="auth_service")
+
+if not report.passed:
+    print(f"Swarm identified {report.broken_count} breakages!")
+    # Verify remediation after subagent hardening
+    all_fixed, new_report = swarm.verify_remediation(target_callable=hardened_service, prior_report=report)
+    assert all_fixed, "All breakages must be verified fixed!"
+```
 
 ---
 
@@ -194,6 +261,41 @@ The `fable-engine` exposes the unified `fable_session` tool adhering to JSON-RPC
 
 Fable-Mode requires **zero third-party dependencies**. It is implemented purely with the Python standard library (Python 3.10+) and runs directly on Windows, macOS, and Linux.
 
+### Release Downloaders & Artifacts
+
+The downloader scripts are available from the `main` branch now. The release links become available only after a tagged release has completed successfully; until then, GitHub will return no release asset for those URLs. All links below are explicit GitHub-hosted download URLs and download files only.
+
+**Downloaders (available from the `main` branch now):**
+
+- [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
+- [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
+
+**Latest release artifacts (only after a tagged release has completed successfully):**
+
+- [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
+- [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
+- [macOS arm64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip)
+- [Linux x86_64 tar.gz](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz)
+- [SHA256SUMS](https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS)
+
+### Release artifacts and trust status
+
+Artifacts are **not available until a version tag build succeeds**. When a tagged workflow completes successfully, it publishes these architecture-specific names (the exact version is inserted in the GitHub Release):
+
+- `fable-mode-vX.Y.Z-windows-x86_64.zip` (contains `fable-mode.exe`)
+- `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`)
+- `fable-mode-vX.Y.Z-macos-arm64.zip` (contains `fable-mode`)
+- `fable-mode-vX.Y.Z-linux-x86_64.tar.gz` (contains `fable-mode`)
+- `SHA256SUMS` (one SHA-256 line for each archive)
+
+Supported release targets:
+- `windows-x86_64`
+- `macos-x86_64`
+- `macos-arm64`
+- `linux-x86_64`
+
+These downloaders fetch **unsigned binaries**. The workflow publishes SHA-256 checksums for transport and integrity verification, but cryptographic publisher signing, certificate validation, and macOS notarization are not included. Review the release and its checksums before use.
+
 ### One-Line Installers
 
 #### Windows (PowerShell)
@@ -273,7 +375,7 @@ python fable_engine/test_server.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-All 172 tests pass under clean standard-library isolation with zero runtime network requirements.
+All 183 tests pass under clean standard-library isolation with zero runtime network requirements.
 
 ---
 
@@ -286,6 +388,12 @@ fable-mode/
 │   ├── fable_session.json        # Unified MCP tool declaration schema
 │   └── test_server.py            # Canonical integration test suite
 ├── fable_v2/                      # Deliberative & Verification Architecture
+│   ├── coder_fleet/              # Coder Subagent MCP Fleet & Swarm Engines
+│   │   ├── red_team_swarm.py     # Modular Fable Part 1: Adversarial Review Swarm
+│   │   ├── fleet_dispatcher.py   # Unified 11-engine fleet router
+│   │   ├── test_harness.py       # Sandboxed scratch test runner & concurrency fuzzer
+│   │   ├── mock_auditor.py       # Tautology assertion & mock leakage auditor
+│   │   └── property_oracle.py    # Algebraic invariant & boundary matrix oracle
 │   ├── execution_broker.py       # Workspace sandboxing & execution gate
 │   ├── runtime.py                # Dynamic search & state verification runtime
 │   └── system3/                  # System 3 Meta-Cognitive Modules
@@ -299,7 +407,7 @@ fable-mode/
 ├── fable_compressor.py           # Content-Addressed Storage & Grammar333 bytecode
 ├── skills/                       # Deliberative Agent Protocols & References
 │   └── fable-mode/SKILL.md       # Core cognitive instructions
-├── tests/                        # 172-test formal verification suite
+├── tests/                        # 183-test formal verification suite
 └── LICENSE                       # Open-source MIT License
 ```
 

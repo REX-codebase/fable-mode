@@ -41,6 +41,7 @@ description: >-
 16. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**: Mandatory declaration of weighted criteria pointers (`set_goal_rubric`) and verifiable receipt-backed scoring before declaring any objective complete (`evaluate_goal_rubric`).
 17. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**: Proactive compilation and registration of closed-loop generator-evaluator pipelines (`register_automation_pipeline`) to autonomously converge solutions without human micromanagement.
 18. **10-Tool Coder Subagent MCP Fleet (`fable_v2.coder_fleet`)**: Mandatory injection of 10 specialized engines (VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, ComputeOrchestrator) into subagent contracts to eliminate fake tests, tautological assertions, and ungrounded code edits.
+19. **Modular Fable Part 1: Adversarial Code Review Swarm (`RedTeamSwarm`)**: Mandatory summoning of a 5-vector red team swarm (Chaos Environment, Byzantine Payload, Concurrency/TOCTOU Race, Resource Exhaustion, State Invariant) whenever subagents implement code—enforcing closed-loop ping-pong hardening before milestone commits.
 
 --------------------------------------------------------------------------------
 
@@ -193,9 +194,12 @@ graph TD
     - Actively construct self-contained, closed-loop generation and verification pipelines (`register_automation_pipeline`) for iterative code synthesis, fuzzing, property testing, and regression benchmarking.
     - Eliminate manual step-by-step human intervention: pipelines run bounded generator-evaluator iteration loops with automated stop conditions upon crossing target score thresholds.
 
-15. **Coder Subagent MCP Fleet & Mandatory Tool Injection Protocol (`fable_v2.coder_fleet`)**:
-    - The Main Agent is strictly required to inject the 10-Tool Coder Subagent MCP Fleet into all subagent contracts.
-    - Subagents must not rely on ungrounded edits, unverified mocks, or unchecked test suites. The 10 specialized engines in `fable_v2.coder_fleet` provide pure-Python, zero-external-C-dependency capabilities:
+15. **Coder Subagent MCP Fleet, Tool Enablement & Non-Restriction Protocol (`fable_v2.coder_fleet`)**:
+    - **Official Species & Dispatch**: Subagents are dispatched (`type: self` or defined as `type: fable_mode_subagent`) for coding and testing once execution unlocks.
+    - **Mandatory Subagent MCP Notification**: The Main Agent **must explicitly inform the subagent** during dispatch that MCP tools are available and instruct it on how to invoke them (e.g. via `call_mcp_tool` for available MCP servers and tools like `fable_coder_fleet`, `fable-engine`, `context7`, `narsil`).
+    - **Mandatory MCP Tool Enablement (`enable_mcp_tools: true`)**: When defining custom subagents via `define_subagent`, the Main Agent **must explicitly set `enable_mcp_tools: true`** (along with `enable_write_tools: true`). This ensures the subagent is properly enabled to use MCPs and will not crash from missing tool permissions.
+    - **Zero-Crash Non-Restriction Policy (Graceful Native Fallback)**: The subagent is **strictly NOT restricted, penalized, or rejected for not using an MCP tool**. If a task is executed cleanly using native workspace tools (`write_to_file`, `replace_file_content`, `run_command`), or if an MCP server/tool is unavailable, unconfigured, or unnecessary for the immediate edit, the subagent has full pragmatic authority to proceed with native tools. Subagents must never crash, stall, or have their work rejected solely for omitting an MCP tool.
+    - Subagents operate with pure-Python, zero-external-C-dependency capabilities in `fable_v2.coder_fleet`:
       1. `VisualGroundingEngine`: Vector/SVG rendering validation, coordinate and viewBox verification, color palette extraction, and perceptual diffing before frontend/vector assets are committed.
       2. `DiagnosticsEngine`: AST syntax and semantic diagnostics, catching compilation/linting errors and applying automated quick fixes before test execution.
       3. `TreeSitterCodemodEngine`: AST structural queries, AST-aware pattern matching, and safe semantic identifier renaming across multi-file repositories.
@@ -206,7 +210,7 @@ graph TD
       8. `PropertyOracleEngine`: Generates extreme boundary matrices (underflows, overflows, Unicode, empty sets) and verifies algebraic roundtrip invariants ($\text{decode}(\text{encode}(x)) == x$).
       9. `ReceiptAttestorEngine`: Validates subprocess execution with tamper-evident, HMAC-SHA256 authenticated `ToolReceipt`s for all test and build outputs.
      10. `ComputeOrchestratorEngine`: Allocates dynamic thinking token budgets (up to 64k tokens) and conducts Monte Carlo Tree Search (MCTS) with Best-of-N consensus selection.
-    - **Contract Mandate**: Every subagent dispatch must import and execute the appropriate engines to guarantee zero-hallucination code delivery.
+    - **Verification Policy**: Subagents are encouraged to audit test suites with `MutationVerifierEngine` and `MockAuditorEngine` where available, but are strictly never restricted, penalized, or blocked if using native test runners (`pytest`, `cargo test`, `npm test`) or if MCP tools are omitted.
 
 --------------------------------------------------------------------------------
 
@@ -233,9 +237,11 @@ PHASE 3: System 2 Invariants & Ungameable Proofs ───┘
                          │
                          ▼ 🔓 EXECUTION UNLOCKED (Timer Elapsed & DoD Verified)
 PHASE 4: Orchestrated Subagent Implementation
-   - Main Agent dispatches Coder Subagents (`type: self`)
+   - Main Agent dispatches Coder Subagents (`type: self` or `type: fable_mode_subagent`)
+   - Main Agent informs subagents of MCP tools and ensures `enable_mcp_tools: true`
+   - Equipped with `fable_coder_fleet` MCP tool with resilient native tool fallback
    - Subagents write code, edit files, and run local unit tests
-   - Subagents report diffs and test logs back to Main Agent
+   - Subagents report diffs and test results back to Main Agent (no restriction for omitting MCPs)
 
 PHASE 5: Multi-Tier Verification & Rubric Attestation
    - Tier 1: Strict Lint & Compiler Check (-D warnings)
@@ -273,6 +279,7 @@ For comprehensive deep-dives, mental models, and production blueprints, refer to
 - [Interleaved Verification & Adversarial Red-Teaming](./references/interleaved-verification.md) — Post-action reflection gates, Project Glasswing v2 adversarial fuzzing, and property-based verification.
 - [Prompt Scaffolds & Mental Frameworks](./references/prompt-scaffolds.md) — Reusable cognitive scaffolds, System 2 Epistemic Ledgers, Refinement Cycle Traces, Fable Session MCP templates, and OODA self-healing blocks.
 - [10-Tool Coder Subagent MCP Fleet & Tool Injection Protocol](./references/agentic-execution.md#the-coder-fleet-tool-injection-protocol) — Mandatory tool contracts for VisualGrounding, Diagnostics, TreeSitterCodemod, AtomicWorkspace, TestHarness, MutationVerifier, MockAuditor, PropertyOracle, ReceiptAttestor, and ComputeOrchestrator.
+- [Modular Fable Part 1: Adversarial Code Review Swarm Reference](./references/adversarial-code-review-swarm.md) — Counterfactual 'What If?' falsification, 5 attack personas (Chaos, Byzantine, Concurrency/TOCTOU, Resource Exhaustion, State Invariant), closed-loop ping-pong hardening protocol, and RedTeamBreakageReport generation.
 
 --------------------------------------------------------------------------------
 

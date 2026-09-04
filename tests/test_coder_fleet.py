@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import sys
 import unittest
+from pathlib import Path
+
+# Ensure workspace root is in sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fable_v2.coder_fleet import (
     AtomicWorkspaceEngine,
