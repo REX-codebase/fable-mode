@@ -1,6 +1,9 @@
 ---
+name: research
+description: First-principles epistemology, causal DAG inference, and TRIZ contradiction
+  resolution
 domain: research
-activation_count: 12
+activation_count: 13
 synaptic_weights:
   citation_verifier: 0.96
   contradiction_resolver: 0.91
@@ -66,11 +69,14 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 # Cortical Lobe: `research`
 
 > [!NOTE]
-> Living cortical memory lobe for specialized domain reasoning. Activation count: 12.
+> First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution
+> Activation count: 13.
 
 ## Metadata & Telemetry
+- **Name**: `research`
+- **Description**: First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution
 - **Domain**: `research`
-- **Activation Count**: `12`
+- **Activation Count**: `13`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

@@ -44,9 +44,15 @@ graph TD
 
 ---
 
-## 2. The 5 Specialized Domain Lobes
+## 2. Open-Ended Cortical Sprouting Architecture & Domain Lobes
 
-Fable-Mode partitions its cortical architecture into 5 persistent lobes located in `skills/fable-mode/cortex/`:
+A fatal design flaw in traditional AI architectures is rigid, hardcoded domain categorization. Fable-Mode **strictly rejects hardcoded enums as cognitive boundaries**. While the engine initializes with 5 baseline lobes for universal systems reasoning, the architecture is **fully customizable and open-ended from scratch**: the AI dynamically defines, names, describes, sprouts, and evolves specialized cortical lobes for any language, framework, or frontier scientific domain—such as `zig_systems`, `elixir_otp`, `mojo_kernels`, `solidity_evm`, `bioinformatics_genomics`, `kubernetes_operators`, or `distributed_raft`.
+
+When a novel domain is encountered, the AI or user sprouts a new lobe on the fly via `define_cortical_lobe` or implicit auto-sprouting via `activate_lobe`, seeding specialized heuristics and synaptic connections in `skills/fable-mode/cortex/<name>.md`.
+
+### The 5 Foundational Baseline Lobes
+
+Fable-Mode pre-wires 5 baseline lobes located in `skills/fable-mode/cortex/`:
 
 ### 1. `rust.md` — Systems Invariants & Zero-Cost Abstractions
 - **Ownership Semantics**: Uncompromising adherence to single-writer / multiple-reader invariants without `RefCell` crutches.
@@ -173,7 +179,9 @@ The Coder Fleet Dispatcher (`fable_v2.coder_fleet.fleet_dispatcher`) exposes the
 
 | Action | Parameters | Return Type | Description |
 | :--- | :--- | :--- | :--- |
-| `cortical_activate_lobe` | `{"domain": str, "co_activated_nodes": list[str]}` | `CorticalLobe` | Activates domain lobe, increments counter, and primes synaptic weights. |
+| `cortical_define_lobe` | `{"name": str, "description": str, "initial_heuristics": list[str], "initial_synaptic_weights": dict}` | `CorticalLobe` | Dynamically sprouts a customizable new cortical lobe from scratch with persistent disk markdown. |
+| `cortical_list_lobes` | `{}` | `list[dict]` | Dynamically scans and returns metadata for all available baseline and custom lobes on disk. |
+| `cortical_activate_lobe` | `{"domain": str, "description": str, "co_activated_nodes": list[str]}` | `CorticalLobe` | Activates or auto-sprouts domain lobe, increments counter, and primes synaptic weights. |
 | `cortical_consolidate_task` | `{"domain": str, "task_id": str, "broken_scenarios": list, "final_passed": bool, "lessons": list, "co_activated_nodes": list}` | `dict` | Executes Hebbian weight updates, normalizes homeostasis, synthesizes antibodies, and commits to disk. |
 | `cortical_recall_context` | `{"domain": str, "max_antibodies": int}` | `str` | Generates prompt-ready Markdown memory block. |
 | `cortical_inspect_matrix` | `{}` | `dict` | Returns the global cross-domain synaptic co-activation graph. |

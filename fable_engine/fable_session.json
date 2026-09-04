@@ -55,7 +55,9 @@
           "register_automation_pipeline",
           "red_team_code_review",
           "record_breakage_report",
-          "verify_red_team_remediation"
+          "verify_red_team_remediation",
+          "cortical_define_lobe",
+          "cortical_list_lobes"
         ],
         "type": "string"
       },

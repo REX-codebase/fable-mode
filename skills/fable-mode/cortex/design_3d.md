@@ -1,6 +1,8 @@
 ---
+name: design_3d
+description: Haute aesthetics, WebGPU TSL shaders, and responsive UI motion
 domain: design_3d
-activation_count: 12
+activation_count: 13
 synaptic_weights:
   webgpu_tsl: 0.95
   spring_motion_physics: 0.9
@@ -65,11 +67,14 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 # Cortical Lobe: `design_3d`
 
 > [!NOTE]
-> Living cortical memory lobe for specialized domain reasoning. Activation count: 12.
+> Haute aesthetics, WebGPU TSL shaders, and responsive UI motion
+> Activation count: 13.
 
 ## Metadata & Telemetry
+- **Name**: `design_3d`
+- **Description**: Haute aesthetics, WebGPU TSL shaders, and responsive UI motion
 - **Domain**: `design_3d`
-- **Activation Count**: `12`
+- **Activation Count**: `13`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

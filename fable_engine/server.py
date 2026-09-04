@@ -184,8 +184,15 @@ from fable_v2.coder_fleet import (
     RedTeamBreakageReport,
     RedTeamSwarm,
 )
+from fable_v2.cortical import (
+    CorticalDomain,
+    CorticalLobe,
+    HebbianPlasticityEngine,
+    HeuristicAntibody,
+)
 
 GLOBAL_RED_TEAM_SWARM = RedTeamSwarm()
+GLOBAL_PLASTICITY_ENGINE = HebbianPlasticityEngine()
 
 # Standard Fable Phases
 PHASES = [
@@ -4389,6 +4396,58 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
+        # 43. CORTICAL DEFINE LOBE
+        elif action in ("cortical_define_lobe", "define_cortical_lobe", "sprout_cortical_lobe"):
+            name = arguments.get("name") or arguments.get("lobe_name") or ""
+            if not name:
+                return "Error: 'name' or 'lobe_name' is required for action 'cortical_define_lobe'."
+            description = arguments.get("description") or arguments.get("desc") or ""
+            initial_heuristics = arguments.get("initial_heuristics") or arguments.get("heuristics") or []
+            initial_synaptic_weights = arguments.get("initial_synaptic_weights") or arguments.get("synaptic_weights") or {}
+
+            lobe = GLOBAL_PLASTICITY_ENGINE.define_cortical_lobe(
+                name=str(name),
+                description=str(description),
+                initial_heuristics=initial_heuristics if isinstance(initial_heuristics, list) else [str(initial_heuristics)],
+                initial_synaptic_weights=initial_synaptic_weights if isinstance(initial_synaptic_weights, dict) else {},
+            )
+            session = get_or_load_session(session_name) if session_name else None
+
+            md_output = (
+                f"### 🧠 Cortical Lobe Sprouted: `{lobe.name}`\n\n"
+                f"- **Name**: `{lobe.name}`\n"
+                f"- **Description**: {lobe.description}\n"
+                f"- **Domain**: `{lobe.domain}`\n"
+                f"- **Heuristics Initialized**: `{len(lobe.specialized_heuristics)}`\n"
+                f"- **Synaptic Nodes**: `{len(lobe.synaptic_weights)}`\n"
+                f"- **File Path**: `skills/fable-mode/cortex/{lobe.name}.md`\n"
+            )
+            if session and session.execution_locked:
+                md_output += SILENT_DELIBERATION_REMINDER
+            return md_output
+
+        # 44. CORTICAL LIST LOBES
+        elif action in ("cortical_list_lobes", "list_cortical_lobes", "list_lobes"):
+            lobes = GLOBAL_PLASTICITY_ENGINE.list_cortical_lobes()
+            session = get_or_load_session(session_name) if session_name else None
+
+            lines = [
+                "### 🧠 Available Cortical Lobes",
+                "",
+                f"Total Lobes: `{len(lobes)}`",
+                "",
+                "| Lobe Name | Description | Activations | Antibodies | Heuristics |",
+                "| :--- | :--- | :--- | :--- | :--- |",
+            ]
+            for l in lobes:
+                desc = l['description'][:60] + "..." if len(l['description']) > 60 else (l['description'] or "—")
+                lines.append(f"| `{l['name']}` | {desc} | `{l['activation_count']}` | `{l['antibody_count']}` | `{l['heuristic_count']}` |")
+
+            md_output = "\n".join(lines)
+            if session and session.execution_locked:
+                md_output += SILENT_DELIBERATION_REMINDER
+            return md_output
+
         else:
             return (
                 f"Error: Unknown action '{action}'. Supported actions: "
@@ -4400,7 +4459,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'system3_hyperbolic_embed', 'system3_kripke_verify', 'system3_active_inference', 'system3_proof_oracle', "
                 f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
                 f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline', "
-                f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation'."
+                f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation', "
+                f"'cortical_define_lobe', 'cortical_list_lobes'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -4466,7 +4526,9 @@ TOOL_SCHEMA = {
                     "register_automation_pipeline",
                     "red_team_code_review",
                     "record_breakage_report",
-                    "verify_red_team_remediation"
+                    "verify_red_team_remediation",
+                    "cortical_define_lobe",
+                    "cortical_list_lobes"
                 ],
                 "description": "The Fable session action to perform."
             },

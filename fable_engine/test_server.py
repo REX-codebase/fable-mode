@@ -643,6 +643,41 @@ class TestFableHandlerDispatch(unittest.TestCase):
         })
         self.assertIn(self.session_name, res)
 
+    def test_cortical_actions_dispatch(self):
+        """Tests handle_fable_session routing for cortical_define_lobe and cortical_list_lobes."""
+        cortex_dir = Path(__file__).resolve().parents[1] / "skills" / "fable-mode" / "cortex"
+        test_file = cortex_dir / "test_distributed_raft.md"
+        try:
+            # 1. Sprout custom lobe
+            res_sprout = handle_fable_session({
+                "action": "cortical_define_lobe",
+                "name": "test_distributed_raft",
+                "description": "Raft consensus, leader election, and term invariants",
+                "initial_heuristics": ["Followers only vote once per term"],
+                "initial_synaptic_weights": {"quorum": 0.95},
+            })
+            self.assertIn("Cortical Lobe Sprouted: `test_distributed_raft`", res_sprout)
+            self.assertIn("Raft consensus", res_sprout)
+
+            # 2. List lobes
+            res_list = handle_fable_session({
+                "action": "cortical_list_lobes",
+            })
+            self.assertIn("Available Cortical Lobes", res_list)
+            self.assertIn("test_distributed_raft", res_list)
+
+            # 3. Missing name error
+            res_err = handle_fable_session({
+                "action": "cortical_define_lobe",
+            })
+            self.assertIn("Error: 'name' or 'lobe_name' is required", res_err)
+        finally:
+            if test_file.exists():
+                try:
+                    test_file.unlink()
+                except Exception:
+                    pass
+
     def test_edge_cases_and_error_handling(self):
         """Tests dispatcher error handling on invalid inputs."""
         # Missing action

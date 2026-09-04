@@ -1,6 +1,8 @@
 ---
+name: concurrency
+description: Lock-free synchronization, atomic memory ordering, and race hardening
 domain: concurrency
-activation_count: 12
+activation_count: 13
 synaptic_weights:
   concurrency_fuzz: 0.96
   atomic_cas_loop: 0.94
@@ -67,11 +69,14 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 # Cortical Lobe: `concurrency`
 
 > [!NOTE]
-> Living cortical memory lobe for specialized domain reasoning. Activation count: 12.
+> Lock-free synchronization, atomic memory ordering, and race hardening
+> Activation count: 13.
 
 ## Metadata & Telemetry
+- **Name**: `concurrency`
+- **Description**: Lock-free synchronization, atomic memory ordering, and race hardening
 - **Domain**: `concurrency`
-- **Activation Count**: `12`
+- **Activation Count**: `13`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

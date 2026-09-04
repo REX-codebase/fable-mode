@@ -1,6 +1,9 @@
 ---
+name: python
+description: High-performance CPython, modern typing protocols, and asyncio event
+  loops
 domain: python
-activation_count: 12
+activation_count: 13
 synaptic_weights:
   asyncio_event_loop: 0.94
   typing_protocols: 0.91
@@ -64,11 +67,14 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 # Cortical Lobe: `python`
 
 > [!NOTE]
-> Living cortical memory lobe for specialized domain reasoning. Activation count: 12.
+> High-performance CPython, modern typing protocols, and asyncio event loops
+> Activation count: 13.
 
 ## Metadata & Telemetry
+- **Name**: `python`
+- **Description**: High-performance CPython, modern typing protocols, and asyncio event loops
 - **Domain**: `python`
-- **Activation Count**: `12`
+- **Activation Count**: `13`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

@@ -97,17 +97,57 @@ class HeuristicAntibody:
 class CorticalLobe:
     """A persistent specialized domain lobe in the cortical cognitive engine."""
 
-    domain: CorticalDomain
+    name: str = ""
+    description: str = ""
     activation_count: int = 0
     synaptic_weights: dict[str, float] = field(default_factory=dict)
     antibodies: list[HeuristicAntibody] = field(default_factory=list)
     specialized_heuristics: list[str] = field(default_factory=list)
     last_consolidated_at: str = ""
 
+    def __init__(
+        self,
+        name: str = "",
+        description: str = "",
+        activation_count: int = 0,
+        synaptic_weights: Optional[dict[str, float]] = None,
+        antibodies: Optional[list[HeuristicAntibody]] = None,
+        specialized_heuristics: Optional[list[str]] = None,
+        last_consolidated_at: str = "",
+        domain: Optional[Union[CorticalDomain, str]] = None,
+    ) -> None:
+        if not name and domain is not None:
+            self.name = domain.value if isinstance(domain, CorticalDomain) else str(domain)
+        else:
+            self.name = name or (domain.value if isinstance(domain, CorticalDomain) else str(domain or ""))
+        self.description = description
+        self.activation_count = activation_count
+        self.synaptic_weights = synaptic_weights if synaptic_weights is not None else {}
+        self.antibodies = antibodies if antibodies is not None else []
+        self.specialized_heuristics = specialized_heuristics if specialized_heuristics is not None else []
+        self.last_consolidated_at = last_consolidated_at
+
+    @property
+    def domain(self) -> Union[CorticalDomain, str]:
+        """Backward compatibility: returns CorticalDomain enum if matched, else string."""
+        for d in CorticalDomain:
+            if d.value == self.name:
+                return d
+        return self.name
+
+    @domain.setter
+    def domain(self, value: Union[CorticalDomain, str]) -> None:
+        if isinstance(value, CorticalDomain):
+            self.name = value.value
+        else:
+            self.name = str(value)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize lobe to dictionary."""
         return {
-            "domain": self.domain.value if isinstance(self.domain, CorticalDomain) else str(self.domain),
+            "name": self.name,
+            "description": self.description,
+            "domain": self.name,
             "activation_count": self.activation_count,
             "synaptic_weights": {k: round(float(v), 4) for k, v in self.synaptic_weights.items()},
             "antibodies": [ab.to_dict() for ab in self.antibodies],
@@ -118,14 +158,15 @@ class CorticalLobe:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CorticalLobe:
         """Construct CorticalLobe from dictionary."""
-        raw_domain = d.get("domain", CorticalDomain.PYTHON.value)
-        if isinstance(raw_domain, CorticalDomain):
-            domain_val = raw_domain
-        else:
-            try:
-                domain_val = CorticalDomain(str(raw_domain))
-            except ValueError:
-                domain_val = CorticalDomain.PYTHON
+        name = str(d.get("name") or d.get("domain") or "general")
+        baseline_descs = {
+            "rust": "Systems invariants, borrow checker mechanics, and zero-cost abstractions",
+            "python": "High-performance CPython, modern typing protocols, and asyncio event loops",
+            "design_3d": "Haute aesthetics, WebGPU TSL shaders, and responsive UI motion",
+            "research": "First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution",
+            "concurrency": "Lock-free synchronization, atomic memory ordering, and race hardening",
+        }
+        description = str(d.get("description") or baseline_descs.get(name, ""))
 
         raw_antibodies = d.get("antibodies", [])
         antibodies: list[HeuristicAntibody] = []
@@ -145,7 +186,8 @@ class CorticalLobe:
         heuristics = [str(h) for h in d.get("specialized_heuristics", [])]
 
         return cls(
-            domain=domain_val,
+            name=name,
+            description=description,
             activation_count=int(d.get("activation_count", 0)),
             synaptic_weights=weights,
             antibodies=antibodies,
@@ -156,7 +198,7 @@ class CorticalLobe:
     def to_markdown(self) -> str:
         """Render complete cortical lobe markdown with frontmatter and human-readable body."""
         data = self.to_dict()
-        
+
         # Build YAML frontmatter
         if _HAS_YAML:
             frontmatter = yaml.safe_dump(data, sort_keys=False)
@@ -168,13 +210,16 @@ class CorticalLobe:
             frontmatter.strip(),
             "---",
             "",
-            f"# Cortical Lobe: `{self.domain.value if isinstance(self.domain, CorticalDomain) else str(self.domain)}`",
+            f"# Cortical Lobe: `{self.name}`",
             "",
             "> [!NOTE]",
-            f"> Living cortical memory lobe for specialized domain reasoning. Activation count: {self.activation_count}.",
+            f"> {self.description}" if self.description else f"> Living cortical memory lobe for {self.name} reasoning.",
+            f"> Activation count: {self.activation_count}.",
             "",
             "## Metadata & Telemetry",
-            f"- **Domain**: `{self.domain.value if isinstance(self.domain, CorticalDomain) else str(self.domain)}`",
+            f"- **Name**: `{self.name}`",
+            f"- **Description**: {self.description or 'Specialized cortical lobe'}",
+            f"- **Domain**: `{self.name}`",
             f"- **Activation Count**: `{self.activation_count}`",
             f"- **Total Antibodies**: `{len(self.antibodies)}`",
             f"- **Specialized Heuristics**: `{len(self.specialized_heuristics)}`",
@@ -223,12 +268,8 @@ class CorticalLobe:
         """Load cortical lobe from disk at lobe_path, supporting frontmatter or markdown extraction."""
         path = Path(lobe_path)
         if not path.exists():
-            domain_name = path.stem
-            try:
-                domain = CorticalDomain(domain_name)
-            except ValueError:
-                domain = CorticalDomain.PYTHON
-            return cls(domain=domain)
+            lobe_name = path.stem
+            return cls(name=lobe_name)
 
         text = path.read_text(encoding="utf-8")
 
@@ -254,22 +295,42 @@ class CorticalLobe:
                         pass
 
                 if parsed_dict is not None:
-                    return cls.from_dict(parsed_dict)
+                    lobe = cls.from_dict(parsed_dict)
+                    if not lobe.name:
+                        lobe.name = path.stem
+                    return lobe
 
         # 2. Resilient fallback: parse human-authored markdown directly
-        domain_name = path.stem
-        try:
-            domain = CorticalDomain(domain_name)
-        except ValueError:
-            domain = CorticalDomain.PYTHON
-
+        lobe_name = path.stem
         activation_count = 0
+        description = ""
         last_consolidated = ""
         heuristics: list[str] = []
         antibodies: list[HeuristicAntibody] = []
         weights: dict[str, float] = {}
 
-        # Regex extractions
+        desc_match = re.search(r"Description\*\*:\s*([^\n]+)", text)
+        if desc_match:
+            description = desc_match.group(1).strip()
+        elif lobe_name in {
+            "rust": "Systems invariants, borrow checker mechanics, and zero-cost abstractions",
+            "python": "High-performance CPython, modern typing protocols, and asyncio event loops",
+            "design_3d": "Haute aesthetics, WebGPU TSL shaders, and responsive UI motion",
+            "research": "First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution",
+            "concurrency": "Lock-free synchronization, atomic memory ordering, and race hardening",
+        }:
+            description = {
+                "rust": "Systems invariants, borrow checker mechanics, and zero-cost abstractions",
+                "python": "High-performance CPython, modern typing protocols, and asyncio event loops",
+                "design_3d": "Haute aesthetics, WebGPU TSL shaders, and responsive UI motion",
+                "research": "First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution",
+                "concurrency": "Lock-free synchronization, atomic memory ordering, and race hardening",
+            }[lobe_name]
+
+        name_match = re.search(r"Name\*\*:\s*`?([^`\n]+)`?", text)
+        if name_match:
+            lobe_name = name_match.group(1).strip()
+
         act_match = re.search(r"Activation Count\*\*:\s*`?(\d+)`?", text)
         if act_match:
             activation_count = int(act_match.group(1))
@@ -318,7 +379,8 @@ class CorticalLobe:
             )
 
         return cls(
-            domain=domain,
+            name=lobe_name,
+            description=description,
             activation_count=activation_count,
             synaptic_weights=weights,
             antibodies=antibodies,
@@ -347,45 +409,67 @@ class HebbianPlasticityEngine:
         self._lobes: dict[str, CorticalLobe] = {}
         self._synaptic_matrix: dict[str, dict[str, float]] = self._load_synaptic_matrix()
 
-    def _normalize_domain(self, domain: Union[CorticalDomain, str]) -> CorticalDomain:
-        """Convert string or enum to canonical CorticalDomain."""
+    def _normalize_domain(self, domain: Union[CorticalDomain, str]) -> str:
+        """Convert string or enum to canonical lobe name slug."""
         if isinstance(domain, CorticalDomain):
-            return domain
-        domain_str = str(domain).lower().strip()
+            return domain.value
+        domain_str = str(domain).strip()
+        slug = re.sub(r'[^a-zA-Z0-9_-]', '_', domain_str.lower()).strip('_')
+        if not slug:
+            return "custom_lobe"
+        # Check if slug directly matches a built-in domain
         for d in CorticalDomain:
-            if d.value == domain_str:
-                return d
-        # Fallback mapping
-        if "rust" in domain_str:
-            return CorticalDomain.RUST
-        if "python" in domain_str:
-            return CorticalDomain.PYTHON
-        if "design" in domain_str or "3d" in domain_str:
-            return CorticalDomain.DESIGN_3D
-        if "research" in domain_str or "paper" in domain_str:
-            return CorticalDomain.RESEARCH
-        if "concurr" in domain_str or "race" in domain_str or "thread" in domain_str:
-            return CorticalDomain.CONCURRENCY
-        return CorticalDomain.PYTHON
+            if d.value == slug:
+                return d.value
+        # Check if lobe file already exists on disk
+        if (self.cortex_dir / f"{slug}.md").exists():
+            return slug
+        if slug in self._lobes:
+            return slug
+        # Backward compatibility aliases for built-in lobes
+        if "rust" in slug:
+            return CorticalDomain.RUST.value
+        if "python" in slug:
+            return CorticalDomain.PYTHON.value
+        if "design" in slug or "3d" in slug:
+            return CorticalDomain.DESIGN_3D.value
+        if "research" in slug or "paper" in slug:
+            return CorticalDomain.RESEARCH.value
+        if "concurr" in slug or "race" in slug or "thread" in slug:
+            return CorticalDomain.CONCURRENCY.value
+        return slug
 
-    def _get_lobe_path(self, domain: CorticalDomain) -> Path:
+    def _get_lobe_path(self, domain_or_name: Union[CorticalDomain, str]) -> Path:
         """Return filesystem path for a domain lobe markdown file."""
-        return self.cortex_dir / f"{domain.value}.md"
+        slug = self._normalize_domain(domain_or_name)
+        return self.cortex_dir / f"{slug}.md"
 
-    def _load_or_create_lobe(self, domain: CorticalDomain) -> CorticalLobe:
-        """Retrieve lobe from memory or disk, initializing baseline if not found."""
-        domain_key = domain.value
-        if domain_key in self._lobes:
-            return self._lobes[domain_key]
+    def _load_or_create_lobe(
+        self,
+        domain_or_name: Union[CorticalDomain, str],
+        description: Optional[str] = None,
+    ) -> CorticalLobe:
+        """Retrieve lobe from memory or disk, initializing or auto-sprouting if not found."""
+        slug = self._normalize_domain(domain_or_name)
+        if slug in self._lobes:
+            lobe = self._lobes[slug]
+            if description and not lobe.description:
+                lobe.description = description
+            return lobe
 
-        lobe_path = self._get_lobe_path(domain)
+        lobe_path = self._get_lobe_path(slug)
         if lobe_path.exists():
             lobe = CorticalLobe.load_from_disk(lobe_path)
-            lobe.domain = domain
+            if not lobe.name:
+                lobe.name = slug
+            if description and not lobe.description:
+                lobe.description = description
         else:
-            lobe = CorticalLobe(domain=domain)
+            desc = description or f"Custom cortical lobe for {slug} development and specialized heuristics"
+            lobe = CorticalLobe(name=slug, description=desc)
+            lobe.save_to_disk(lobe_path)
 
-        self._lobes[domain_key] = lobe
+        self._lobes[slug] = lobe
         return lobe
 
     def _load_synaptic_matrix(self) -> dict[str, dict[str, float]]:
@@ -408,15 +492,91 @@ class HebbianPlasticityEngine:
         payload = json.dumps(self._synaptic_matrix, indent=2, sort_keys=True)
         self.matrix_path.write_text(payload, encoding="utf-8")
 
+    def define_cortical_lobe(
+        self,
+        name: str = "",
+        description: str = "",
+        initial_heuristics: Optional[list[str]] = None,
+        initial_synaptic_weights: Optional[dict[str, float]] = None,
+        lobe_name: str = "",
+    ) -> CorticalLobe:
+        """Allows the AI or user to dynamically sprout a new Cortical Lobe from scratch!
+
+        Cleans/slugifies the name, creates the lobe with name, description, initial heuristics,
+        saves it to disk as cortex/<slug>.md, and integrates it into the synaptic matrix.
+        """
+        raw = str(name or lobe_name).strip()
+        slug = re.sub(r'[^a-zA-Z0-9_-]', '_', raw.lower()).strip('_')
+        if not slug:
+            slug = "custom_lobe"
+
+        clean_heuristics = [str(h).strip() for h in (initial_heuristics or []) if str(h).strip()]
+        weights: dict[str, float] = {}
+        if initial_synaptic_weights:
+            for k, v in initial_synaptic_weights.items():
+                try:
+                    weights[str(k)] = round(min(1.0, max(0.05, float(v))), 4)
+                except (ValueError, TypeError):
+                    weights[str(k)] = 0.50
+
+        desc = description.strip() if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
+
+        lobe = CorticalLobe(
+            name=slug,
+            description=desc,
+            activation_count=1,
+            synaptic_weights=weights,
+            specialized_heuristics=clean_heuristics,
+            last_consolidated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        lobe_path = self.cortex_dir / f"{slug}.md"
+        lobe.save_to_disk(lobe_path)
+        self._lobes[slug] = lobe
+
+        # Integrate into synaptic matrix
+        if slug not in self._synaptic_matrix:
+            self._synaptic_matrix[slug] = {}
+        for node, w in weights.items():
+            self._synaptic_matrix[slug][node] = w
+            if node not in self._synaptic_matrix:
+                self._synaptic_matrix[node] = {}
+            self._synaptic_matrix[node][slug] = w
+
+        self._save_synaptic_matrix()
+        return lobe
+
     def activate_lobe(
         self,
-        domain: Union[CorticalDomain, str],
+        domain_or_name: Union[CorticalDomain, str] = "",
+        description: Optional[str] = None,
         co_activated_nodes: Optional[list[str]] = None,
+        domain: Optional[Union[CorticalDomain, str]] = None,
+        name: Optional[Union[CorticalDomain, str]] = None,
     ) -> CorticalLobe:
-        """Activate a domain lobe, incrementing its usage count and priming synaptic nodes."""
-        dom = self._normalize_domain(domain)
-        lobe = self._load_or_create_lobe(dom)
-        lobe.activation_count += 1
+        """Activate a domain lobe, incrementing its usage count and priming synaptic nodes.
+
+        If the lobe does not exist, dynamically auto-sprouts it with name and description.
+        """
+        # Handle positional argument fallback if co_activated_nodes was passed as 2nd arg
+        if isinstance(description, (list, tuple, set)):
+            co_activated_nodes = list(description)
+            description = None
+
+        target = domain or name or domain_or_name
+        if not target:
+            raise ValueError("activate_lobe requires domain or lobe name.")
+
+        slug = self._normalize_domain(target)
+        lobe_path = self._get_lobe_path(slug)
+
+        is_new = (slug not in self._lobes) and (not lobe_path.exists())
+        if is_new:
+            desc = description or f"Custom cortical lobe for {slug} development and specialized heuristics"
+            lobe = self.define_cortical_lobe(name=slug, description=desc)
+        else:
+            lobe = self._load_or_create_lobe(slug, description=description)
+            lobe.activation_count += 1
 
         if co_activated_nodes:
             for node in co_activated_nodes:
@@ -428,8 +588,41 @@ class HebbianPlasticityEngine:
                 primed_w = min(1.0, max(0.05, current_w + 0.02))
                 lobe.synaptic_weights[node_clean] = round(primed_w, 4)
 
-        lobe.save_to_disk(self._get_lobe_path(dom))
+        lobe.save_to_disk(self._get_lobe_path(slug))
         return lobe
+
+    def list_cortical_lobes(self) -> list[dict[str, Any]]:
+        """Dynamically scans <cortex_dir>/*.md on disk.
+
+        Returns list of metadata dicts for all available lobes:
+        (name, description, activation_count, antibody_count, heuristic_count, file_path).
+        """
+        lobes_meta: list[dict[str, Any]] = []
+        if not self.cortex_dir.exists():
+            return lobes_meta
+
+        for md_file in sorted(self.cortex_dir.glob("*.md")):
+            try:
+                lobe = CorticalLobe.load_from_disk(md_file)
+                lobes_meta.append({
+                    "name": lobe.name or md_file.stem,
+                    "description": lobe.description,
+                    "activation_count": lobe.activation_count,
+                    "antibody_count": len(lobe.antibodies),
+                    "heuristic_count": len(lobe.specialized_heuristics),
+                    "file_path": str(md_file.resolve()),
+                })
+            except Exception:
+                lobes_meta.append({
+                    "name": md_file.stem,
+                    "description": "",
+                    "activation_count": 0,
+                    "antibody_count": 0,
+                    "heuristic_count": 0,
+                    "file_path": str(md_file.resolve()),
+                })
+
+        return lobes_meta
 
     def consolidate_task(
         self,
@@ -448,8 +641,8 @@ class HebbianPlasticityEngine:
             and homeostatically normalizes weights bounded within [0.05, 1.0].
         Synthesizes HeuristicAntibody instances from red-team scars and broken scenarios.
         """
-        dom = self._normalize_domain(domain)
-        lobe = self._load_or_create_lobe(dom)
+        slug = self._normalize_domain(domain)
+        lobe = self._load_or_create_lobe(slug)
         lobe.activation_count += 1
 
         learning_rate = 0.10
@@ -494,7 +687,7 @@ class HebbianPlasticityEngine:
                     self._synaptic_matrix[v][u] = new_pair_w
 
         # Also connect domain to active nodes in global matrix
-        dom_name = dom.value
+        dom_name = slug
         if dom_name not in self._synaptic_matrix:
             self._synaptic_matrix[dom_name] = {}
         for node in active_nodes:
@@ -511,7 +704,7 @@ class HebbianPlasticityEngine:
             for sc in broken_scenarios:
                 sc_dict = sc if isinstance(sc, dict) else (sc.to_dict() if hasattr(sc, "to_dict") else asdict(sc))
                 sc_id = str(sc_dict.get("scenario_id") or uuid.uuid4().hex[:6])
-                ab_id = f"ab_{dom.value}_{sc_id}"
+                ab_id = f"ab_{slug}_{sc_id}"
 
                 trigger = str(
                     sc_dict.get("hypothesis")
@@ -549,7 +742,7 @@ class HebbianPlasticityEngine:
                 if not existing:
                     antibody = HeuristicAntibody(
                         antibody_id=ab_id,
-                        domain=dom.value,
+                        domain=slug,
                         trigger_condition=trigger,
                         lethal_anti_pattern=lethal,
                         prescribed_defense=prescribed,
@@ -580,12 +773,13 @@ class HebbianPlasticityEngine:
         # 6. Save lobe and synaptic matrix to disk
         timestamp = datetime.now(timezone.utc).isoformat()
         lobe.last_consolidated_at = timestamp
-        lobe.save_to_disk(self._get_lobe_path(dom))
+        lobe.save_to_disk(self._get_lobe_path(slug))
         self._save_synaptic_matrix()
 
         return {
             "status": "CONSOLIDATED",
-            "domain": dom.value,
+            "domain": slug,
+            "name": slug,
             "task_id": task_id,
             "final_passed": final_passed,
             "learning_rate": learning_rate,
@@ -604,16 +798,23 @@ class HebbianPlasticityEngine:
         max_antibodies: int = 5,
     ) -> str:
         """Recall high-signal cortical memory block to inject into agent/subagent prompts."""
-        dom = self._normalize_domain(domain)
-        lobe = self._load_or_create_lobe(dom)
+        slug = self._normalize_domain(domain)
+        lobe = self._load_or_create_lobe(slug)
 
         lines: list[str] = [
-            f"### 🧠 Cortical Lobe Memory: `{dom.value.upper()}` (Activations: {lobe.activation_count})",
+            f"### 🧠 Cortical Lobe Memory: `{slug.upper()}` (Activations: {lobe.activation_count})",
             "",
+        ]
+
+        if lobe.description:
+            lines.append(f"> **Description**: {lobe.description}")
+            lines.append("")
+
+        lines.extend([
             "> [!IMPORTANT]",
             f"> Cortical recall retrieved {len(lobe.antibodies)} heuristic antibodies and {len(lobe.specialized_heuristics)} domain invariants.",
             "",
-        ]
+        ])
 
         # Top antibodies sorted by severity
         severity_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}

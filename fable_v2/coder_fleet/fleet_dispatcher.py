@@ -102,6 +102,8 @@ class CoderFleetDispatcher:
             "red_team_verify_remediation": self.red_team_swarm.verify_remediation,
             "red_team_full_review_cycle": self.red_team_swarm.run_full_review_cycle,
             # 12. Cortical Plasticity Engine (Modular Fable Part 2: Hebbian Learning & Domain Lobes)
+            "cortical_define_lobe": self.plasticity_engine.define_cortical_lobe,
+            "cortical_list_lobes": self.plasticity_engine.list_cortical_lobes,
             "cortical_activate_lobe": self.plasticity_engine.activate_lobe,
             "cortical_consolidate_task": self.plasticity_engine.consolidate_task,
             "cortical_recall_context": self.plasticity_engine.recall_cortical_context,

@@ -1,6 +1,8 @@
 ---
+name: rust
+description: Systems invariants, borrow checker mechanics, and zero-cost abstractions
 domain: rust
-activation_count: 12
+activation_count: 13
 synaptic_weights:
   tokio: 0.92
   pin_project: 0.88
@@ -66,11 +68,14 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 # Cortical Lobe: `rust`
 
 > [!NOTE]
-> Living cortical memory lobe for specialized domain reasoning. Activation count: 12.
+> Systems invariants, borrow checker mechanics, and zero-cost abstractions
+> Activation count: 13.
 
 ## Metadata & Telemetry
+- **Name**: `rust`
+- **Description**: Systems invariants, borrow checker mechanics, and zero-cost abstractions
 - **Domain**: `rust`
-- **Activation Count**: `12`
+- **Activation Count**: `13`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

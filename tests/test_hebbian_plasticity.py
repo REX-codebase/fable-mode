@@ -286,6 +286,152 @@ class TestHebbianCorticalPlasticity(unittest.TestCase):
         self.assertTrue(res_mat["success"])
         self.assertIsInstance(res_mat["result"], dict)
 
+        # 5. cortical_define_lobe
+        res_def = dispatcher.dispatch(
+            "cortical_define_lobe",
+            {
+                "name": "solidity_evm",
+                "description": "Smart contract reentrancy defenses and EVM gas profiling",
+                "initial_heuristics": ["Follow Checks-Effects-Interactions pattern strictly"],
+                "initial_synaptic_weights": {"reentrancy_guard": 0.95},
+            },
+        )
+        self.assertTrue(res_def["success"])
+        self.assertEqual(res_def["action"], "cortical_define_lobe")
+        self.assertIsInstance(res_def["result"], CorticalLobe)
+        self.assertEqual(res_def["result"].name, "solidity_evm")
+
+        # 6. cortical_list_lobes
+        res_list = dispatcher.dispatch("cortical_list_lobes", {})
+        self.assertTrue(res_list["success"])
+        self.assertEqual(res_list["action"], "cortical_list_lobes")
+        self.assertIsInstance(res_list["result"], list)
+        names = [l["name"] for l in res_list["result"]]
+        self.assertIn("solidity_evm", names)
+
+    def test_define_cortical_lobe_custom_sprouting(self) -> None:
+        """Verify dynamic open-ended sprouting of a customizable cortical lobe from scratch."""
+        heuristics = [
+            "Always pass an explicit Allocator; never hide heap allocation inside structs",
+            "Use comptime assertions to eliminate invalid type configurations at build time",
+        ]
+        weights = {"std_mem": 0.88, "comptime": 0.95, "c_interop": 0.70}
+        lobe = self.engine.define_cortical_lobe(
+            name="zig_systems",
+            description="Low-level Zig memory management, comptime, and C-interop",
+            initial_heuristics=heuristics,
+            initial_synaptic_weights=weights,
+        )
+
+        self.assertEqual(lobe.name, "zig_systems")
+        self.assertEqual(lobe.description, "Low-level Zig memory management, comptime, and C-interop")
+        self.assertEqual(lobe.domain, "zig_systems")
+        self.assertEqual(lobe.activation_count, 1)
+        self.assertEqual(len(lobe.specialized_heuristics), 2)
+        self.assertAlmostEqual(lobe.synaptic_weights["comptime"], 0.95, places=2)
+
+        # Verify disk persistence
+        lobe_file = self.cortex_path / "zig_systems.md"
+        self.assertTrue(lobe_file.exists())
+        loaded = CorticalLobe.load_from_disk(lobe_file)
+        self.assertEqual(loaded.name, "zig_systems")
+        self.assertEqual(loaded.description, "Low-level Zig memory management, comptime, and C-interop")
+        self.assertEqual(len(loaded.specialized_heuristics), 2)
+        self.assertAlmostEqual(loaded.synaptic_weights["comptime"], 0.95, places=2)
+
+        # Verify matrix integration
+        matrix = self.engine.get_synaptic_matrix()
+        self.assertIn("zig_systems", matrix)
+        self.assertIn("comptime", matrix["zig_systems"])
+        self.assertAlmostEqual(matrix["zig_systems"]["comptime"], 0.95, places=2)
+
+    def test_activate_lobe_auto_sprouting(self) -> None:
+        """Verify activate_lobe automatically sprouts a novel lobe when it does not exist."""
+        lobe_file = self.cortex_path / "elixir_otp.md"
+        self.assertFalse(lobe_file.exists())
+
+        # Auto-sprout with explicit description
+        lobe = self.engine.activate_lobe(
+            domain_or_name="elixir_otp",
+            description="Actor-model concurrency, supervision trees, and GenServer invariants",
+            co_activated_nodes=["gen_server", "supervision_tree"],
+        )
+        self.assertTrue(lobe_file.exists())
+        self.assertEqual(lobe.name, "elixir_otp")
+        self.assertEqual(lobe.description, "Actor-model concurrency, supervision trees, and GenServer invariants")
+        self.assertEqual(lobe.activation_count, 1)
+        self.assertIn("gen_server", lobe.synaptic_weights)
+
+        # Auto-sprout with default description fallback
+        lobe_bio = self.engine.activate_lobe("bioinformatics_genomics")
+        self.assertEqual(lobe_bio.name, "bioinformatics_genomics")
+        self.assertIn("Custom cortical lobe for bioinformatics_genomics", lobe_bio.description)
+
+        # Subsequent activation increments count
+        lobe2 = self.engine.activate_lobe("elixir_otp", co_activated_nodes=["gen_server"])
+        self.assertEqual(lobe2.activation_count, 2)
+
+    def test_list_cortical_lobes(self) -> None:
+        """Verify list_cortical_lobes discovers and returns metadata for all available lobes."""
+        # Create baseline and custom lobes
+        self.engine.activate_lobe("rust")
+        self.engine.define_cortical_lobe(
+            name="kubernetes_operators",
+            description="Reconciliation loop invariants and CRD controllers",
+            initial_heuristics=["Always use idempotent reconcile loops"],
+        )
+
+        lobes = self.engine.list_cortical_lobes()
+        self.assertIsInstance(lobes, list)
+        names = [l["name"] for l in lobes]
+        self.assertIn("rust", names)
+        self.assertIn("kubernetes_operators", names)
+
+        k8s_meta = next(l for l in lobes if l["name"] == "kubernetes_operators")
+        self.assertEqual(k8s_meta["description"], "Reconciliation loop invariants and CRD controllers")
+        self.assertEqual(k8s_meta["heuristic_count"], 1)
+        self.assertTrue(Path(k8s_meta["file_path"]).exists())
+
+    def test_task_consolidation_and_antibodies_custom_lobe(self) -> None:
+        """Verify task consolidation, Hebbian weight updating, and antibody synthesis in a custom lobe."""
+        broken_scenarios = [
+            {
+                "scenario_id": "simd_tile_misalignment",
+                "hypothesis": "What happens if SIMD vector width does not evenly divide tensor shape?",
+                "error_message": "AlignmentError: unaligned memory access in vector register load",
+                "reproduction_code": "mojo_kernel.execute(tensor_shape=(13, 17))",
+                "prescribed_defense": "Enforce dynamic tail padding and vectorized mask loading",
+                "severity": "CRITICAL",
+            }
+        ]
+
+        receipt = self.engine.consolidate_task(
+            domain="mojo_kernels",
+            task_id="task_mojo_vectorization_01",
+            broken_scenarios=broken_scenarios,
+            final_passed=True,
+            lessons=["Always utilize compile-time SIMD width querying via sys.info.simdwidthof"],
+            co_activated_nodes=["autotune", "vectorize"],
+        )
+
+        self.assertEqual(receipt["status"], "CONSOLIDATED")
+        self.assertEqual(receipt["domain"], "mojo_kernels")
+        self.assertEqual(receipt["name"], "mojo_kernels")
+        self.assertEqual(receipt["antibodies_added"], 1)
+        self.assertEqual(receipt["heuristics_added"], 1)
+
+        lobe = self.engine._load_or_create_lobe("mojo_kernels")
+        self.assertEqual(len(lobe.antibodies), 1)
+        self.assertEqual(lobe.antibodies[0].antibody_id, "ab_mojo_kernels_simd_tile_misalignment")
+        self.assertEqual(lobe.antibodies[0].domain, "mojo_kernels")
+
+        # Verify recall reflects custom lobe
+        context = self.engine.recall_cortical_context("mojo_kernels")
+        self.assertIn("### 🧠 Cortical Lobe Memory: `MOJO_KERNELS`", context)
+        self.assertIn("What happens if SIMD vector width", context)
+        self.assertIn("Enforce dynamic tail padding and vectorized mask loading", context)
+        self.assertIn("compile-time SIMD width querying", context)
+
     def test_production_baseline_lobes_integrity(self) -> None:
         """Verify the repository's 5 production baseline lobes in skills/fable-mode/cortex/ are fully valid."""
         repo_engine = HebbianPlasticityEngine()  # Resolves to repo cortex dir

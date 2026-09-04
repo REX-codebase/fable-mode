@@ -1,0 +1,8 @@
+{
+  "quorum": {
+    "test_distributed_raft": 0.95
+  },
+  "test_distributed_raft": {
+    "quorum": 0.95
+  }
+}
