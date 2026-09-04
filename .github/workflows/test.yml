@@ -34,8 +34,6 @@ jobs:
         run: python fable_engine/test_server.py
       - name: Canonical V2 and packaging/security suites
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Validate packaging definition
-        run: python -c "from pathlib import Path; assert Path('packaging/fable_mode.spec').is_file(); assert 'pyinstaller==' in Path('requirements-build.txt').read_text()"
       - name: Validate shell wrapper and dry-run
         if: "${{ runner.os != 'Windows' }}"
         shell: bash

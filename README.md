@@ -261,42 +261,49 @@ The `fable-engine` exposes the unified `fable_session` tool adhering to JSON-RPC
 
 Fable-Mode requires **zero third-party dependencies**. It is implemented purely with the Python standard library (Python 3.10+) and runs directly on Windows, macOS, and Linux.
 
-### Release Downloaders & Artifacts
+### ⚡ Universal 1-Click Installation (Master Agent Prompt)
 
-The downloader scripts are available from the `main` branch now. The release links become available only after a tagged release has completed successfully; until then, GitHub will return no release asset for those URLs. All links below are explicit GitHub-hosted download URLs and download files only.
+To install Fable-Mode in seconds with zero manual downloads or compilation, copy the Master Prompt below and paste it directly into your AI agent harness (Antigravity, Cursor, Claude Code, Windsurf, Codex, Cline, Roo Code, Aider, etc.). Your AI agent will autonomously handle the entire setup.
 
-**Downloaders (available from the `main` branch now):**
+```text
+You are an autonomous AI software engineer. Install and configure Fable-Mode into this environment following these instructions:
 
-- [Windows PowerShell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-windows.ps1)
-- [macOS shell downloader](https://raw.githubusercontent.com/REX-codebase/fable-mode/main/download-macos.sh)
+1. Download/Clone:
+   - Clone the official repository:
+     git clone https://github.com/REX-codebase/fable-mode.git
+     (Or download and extract https://github.com/REX-codebase/fable-mode/archive/refs/heads/main.zip if git is unavailable).
 
-**Latest release artifacts (only after a tagged release has completed successfully):**
+2. Install Skill:
+   - Locate the host agent harness's skill directory:
+     * Antigravity: ~/.gemini/config/skills/fable-mode/
+     * Claude Code: ~/.claude/skills/fable-mode/
+     * Cursor: .cursor/skills/ (or .cursor/skills/fable-mode/)
+     * Generic / Codex / Roo / Cline: ./skills/fable-mode/
+   - Copy the entire contents of skills/fable-mode from the cloned repository into the target skill directory.
 
-- [Windows x86_64 ZIP (contains `fable-mode.exe`)](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-windows-x86_64.zip)
-- [macOS x86_64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-x86_64.zip)
-- [macOS arm64 ZIP](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-macos-arm64.zip)
-- [Linux x86_64 tar.gz](https://github.com/REX-codebase/fable-mode/releases/latest/download/fable-mode-linux-x86_64.tar.gz)
-- [SHA256SUMS](https://github.com/REX-codebase/fable-mode/releases/latest/download/SHA256SUMS)
+3. Setup MCP Server:
+   - Configure fable-engine in your host's MCP settings (e.g., mcp_config.json, claude_desktop_config.json, .cursor/mcp.json, or ~/.gemini/antigravity/mcp/):
+     Add the stdio command:
+     python -m fable_engine.server
+     (or execute fable_mode_entry.py mcp) with the repository root as the working directory.
+   - Verify that both fable_session and fable_coder_fleet tools are registered and enabled.
 
-### Release artifacts and trust status
+4. Configure Rules & Instruction File:
+   - Identify the active host instruction file (e.g., AGENTS.md, GEMINI.md, CLAUDE.md, .cursorrules, or ~/.gemini/config/rules/fable-mode.md).
+   - Inject the core Fable-Mode directives:
+     * DeepThink Activation: Engage structured deliberative reasoning before making any codebase modifications.
+     * Strict Cognitive Separation: Formulate invariants, epistemic hypotheses, and proof receipts prior to implementation.
+     * Anti-Rush Lockout: Respect minimum deliberation time budgets; do not modify files until deliberative gates pass.
+     * Mandatory Adversarial Red Team Swarm: Subject all non-trivial code modifications to adversarial review, invariant checking, and property testing.
 
-Artifacts are **not available until a version tag build succeeds**. When a tagged workflow completes successfully, it publishes these architecture-specific names (the exact version is inserted in the GitHub Release):
+5. Subagent MCP Access Mandate:
+   - Whenever invoking subagents or dispatching Fable-mode coder agents (type: fable_mode_subagent or type: self), you MUST explicitly grant them fable-engine MCP access (enable_mcp_tools: true with access to fable_session and fable_coder_fleet).
 
-- `fable-mode-vX.Y.Z-windows-x86_64.zip` (contains `fable-mode.exe`)
-- `fable-mode-vX.Y.Z-macos-x86_64.zip` (contains `fable-mode`)
-- `fable-mode-vX.Y.Z-macos-arm64.zip` (contains `fable-mode`)
-- `fable-mode-vX.Y.Z-linux-x86_64.tar.gz` (contains `fable-mode`)
-- `SHA256SUMS` (one SHA-256 line for each archive)
+Verify the installation by running:
+python fable_engine/test_server.py
+```
 
-Supported release targets:
-- `windows-x86_64`
-- `macos-x86_64`
-- `macos-arm64`
-- `linux-x86_64`
-
-These downloaders fetch **unsigned binaries**. The workflow publishes SHA-256 checksums for transport and integrity verification, but cryptographic publisher signing, certificate validation, and macOS notarization are not included. Review the release and its checksums before use.
-
-### One-Line Installers
+### Manual One-Line Installers (Offline / Developer Alternative)
 
 #### Windows (PowerShell)
 ```powershell

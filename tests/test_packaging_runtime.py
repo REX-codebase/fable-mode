@@ -169,14 +169,7 @@ class RemediationRegressionTests(unittest.TestCase):
         self.assertEqual(skipped, [str(config)])
         self.assertIn("keep", json.loads(config.read_text())["mcpServers"])
 
-    def test_release_and_windows_wrapper_regressions_are_static(self):
-        workflow = Path(".github/workflows/release.yml").read_text()
-        self.assertIn('PATH="$PWD/home/bin:$PATH"', workflow)
-        self.assertIn('$env:Path = "$bin;$env:Path"', workflow)
-        self.assertIn(".gemini/config/mcp_config.json", workflow)
-        self.assertNotIn('home/agy.json', workflow)
-        self.assertIn(".gemini\\config\\mcp_config.json", workflow)
-        self.assertNotIn('"agy.json"', workflow)
+    def test_windows_wrapper_regressions_are_static(self):
         self.assertIn("-3", Path("install.ps1").read_text())
         self.assertIn("-3", Path("install-antigravity.ps1").read_text())
 
