@@ -2,11 +2,11 @@
 name: security
 description: Custom cortical lobe for security development and specialized heuristics
 domain: security
-activation_count: 11
+activation_count: 15
 synaptic_weights:
-  red_team_swarm: 0.6822
-  mutation: 0.6765
-  test_harness: 0.6636
+  red_team_swarm: 0.8082
+  mutation: 0.7983
+  test_harness: 0.7812
   property_oracle: 0.3648
 antibodies:
 - antibody_id: ab_security_sec_sqli_01
@@ -19,23 +19,23 @@ antibodies:
   created_at: '2026-09-05T12:58:11.469175+00:00'
   verified_counterfactual: query("' OR 1=1 --")
 specialized_heuristics: []
-last_consolidated_at: '2026-09-05T13:16:06.970698+00:00'
+last_consolidated_at: '2026-09-05T14:30:10.209868+00:00'
 ---
 
 # Cortical Lobe: `security`
 
 > [!NOTE]
 > Custom cortical lobe for security development and specialized heuristics
-> Activation count: 11.
+> Activation count: 15.
 
 ## Metadata & Telemetry
 - **Name**: `security`
 - **Description**: Custom cortical lobe for security development and specialized heuristics
 - **Domain**: `security`
-- **Activation Count**: `11`
+- **Activation Count**: `15`
 - **Total Antibodies**: `1`
 - **Specialized Heuristics**: `0`
-- **Last Consolidated**: `2026-09-05T13:16:06.970698+00:00`
+- **Last Consolidated**: `2026-09-05T14:30:10.209868+00:00`
 
 ## Specialized Domain Heuristics
 - *(No domain heuristics registered yet)*
@@ -43,9 +43,9 @@ last_consolidated_at: '2026-09-05T13:16:06.970698+00:00'
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
 | :--- | :--- | :--- |
-| `red_team_swarm` | `0.6822` | 🟡 Moderate |
-| `mutation` | `0.6765` | 🟡 Moderate |
-| `test_harness` | `0.6636` | 🟡 Moderate |
+| `red_team_swarm` | `0.8082` | 🟢 Strong |
+| `mutation` | `0.7983` | 🟢 Strong |
+| `test_harness` | `0.7812` | 🟢 Strong |
 | `property_oracle` | `0.3648` | ⚪ Latent |
 
 ## Immunological Antibodies (Red-Team Scars)

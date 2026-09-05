@@ -20,7 +20,10 @@
   - Mandatory generation of 5–6 distinct visual concept mockups via `generate_image` across Haute aesthetic universes before UI/web coding.
   - OKLCH color spaces calibrated for APCA $L_c \ge 75$ accessibility and pre-calculated SVG/Canvas vector mathematics.
 - **AAA Three.js Game-Grade Standards**:
-  - Locked 60–120+ FPS deterministic game loop with decoupled 120 Hz physics accumulator, TSL WebGPU node shaders, HDR post-processing, GPU mass instancing (100k+ particles), 3D spatial audio, and zero-leak memory management.
+  - Locked 60–120+ FPS deterministic game loop with decoupled 120 Hz physics accumulator, TSL WebGPU node shaders, HDR post-processing, GPU mass instancing (100k+ particles with `frustumCulled = false`), 3D spatial audio with autoplay unlocking, and zero-leak memory management.
+  - **Mandatory 5-Point Scene Grounding Contract**: Every 3D scene must enforce (1) Container sizing fallback (`clientWidth || innerWidth`) with `ResizeObserver`, (2) Camera placed outside geometry bounds (e.g. `(0, 3, 8)` looking at `(0, 0, 0)` or auto-framed), (3) Baseline PBR lighting (`AmbientLight(0.6)` + `DirectionalLight(1.8)` at `(5, 10, 7)`), (4) ColorSpace discipline (`SRGBColorSpace` for output and diffuse maps; `NoColorSpace` for normal/roughness/metalness/AO data maps), and (5) Universal recursive teardown (`disposeSceneHierarchy` and `renderer.forceContextLoss()`).
+  - **Strict Backend Isolation**: Never mix graphics backends. Use `WebGLRenderer` with `EffectComposer`; use `WebGPURenderer` (with mandatory `await renderer.init()`) exclusively with `PostProcessing` from `'three/webgpu'`. Passing `WebGPURenderer` into legacy `EffectComposer` is strictly banned.
+  - **React Three Fiber (R3F) Direct Mutation**: In React/R3F codebases, wrap async asset loaders in `<Suspense>` and **NEVER** call `useState` or state dispatch inside `useFrame()`. Always mutate object refs directly to eliminate render-loop thrashing. Scale fidelity to task scope.
 - **Omniscient Session Lineage & Working Memory**:
   - Track file deltas in real-time (`track_file_change`), historical tree lineage (`get_session_lineage`), structured plan introspection (`inspect_plan`), verified proof sealing (`verify_proof`), and visual mockup registries (`record_visual_mockups`).
 - **Model Velocity Calibration**:
