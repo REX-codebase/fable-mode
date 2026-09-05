@@ -100,6 +100,20 @@ antibodies:
   created_at: '2026-09-05T12:00:00+00:00'
   verified_counterfactual: Visual difference analyzer confirmed accurate PBR reflectance
     and normal perturbation without gamma warping
+- antibody_id: ab_design_threejs_hypertrophic_overkill
+  domain: design_3d
+  trigger_condition: Implementing a 120Hz physics accumulator, post-processing composer,
+    or instanced fleet for simple ambient UI, hero badges, or decorative 3D cards
+  lethal_anti_pattern: 'const loop = new DeterministicGameLoop(updatePhysics, render);
+    const composer = new EffectComposer(renderer); # Hypertrophic overkill for simple
+    hero badge'
+  prescribed_defense: Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple
+    PBR, zero physics accumulators, no post-processing).
+  severity: HIGH
+  source_task_id: task_threejs_triage_audit
+  created_at: '2026-09-05T12:00:00+00:00'
+  verified_counterfactual: Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator
+    overhead on ambient UI components
 specialized_heuristics:
 - 'Three.js / WebGPU Standards: Prefer Three Shading Language (TSL) node shaders and
   WebGPURenderer over legacy raw WebGL1 strings; verify hardware fallback.'
@@ -122,7 +136,10 @@ specialized_heuristics:
   NoColorSpace on normal/roughness/metalness/AO textures.'
 - 'Universal Recursive Teardown: Recursively dispose all geometries, texture slots,
   buffer attributes, and call renderer.forceContextLoss().'
-last_consolidated_at: '2026-09-04T12:00:00+00:00'
+- '3D Complexity Triage: Classify task into Tier 1 (Ambient UI), Tier 2 (Configurator/HUD),
+  or Tier 3 (Real-Time Game) before coding; never apply Tier 3 game-engine loops to
+  Tier 1 decorative widgets.'
+last_consolidated_at: '2026-09-05T12:00:00+00:00'
 ---
 
 # Cortical Lobe: `design_3d`
@@ -136,9 +153,9 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 - **Description**: Haute aesthetics, WebGPU TSL shaders, and responsive UI motion
 - **Domain**: `design_3d`
 - **Activation Count**: `18`
-- **Total Antibodies**: `7`
-- **Specialized Heuristics**: `10`
-- **Last Consolidated**: `2026-09-04T12:00:00+00:00`
+- **Total Antibodies**: `8`
+- **Specialized Heuristics**: `11`
+- **Last Consolidated**: `2026-09-05T12:00:00+00:00`
 
 ## Specialized Domain Heuristics
 1. Three.js / WebGPU Standards: Prefer Three Shading Language (TSL) node shaders and WebGPURenderer over legacy raw WebGL1 strings; verify hardware fallback.
@@ -151,6 +168,7 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 8. React Three Fiber (R3F) Direct Mutation: Never call useState inside useFrame(); mutate object refs directly. Wrap async loaders (useGLTF) in <Suspense>.
 9. Strict Color Space Separation: Set SRGBColorSpace on diffuse/color textures; set NoColorSpace on normal/roughness/metalness/AO textures.
 10. Universal Recursive Teardown: Recursively dispose all geometries, texture slots, buffer attributes, and call renderer.forceContextLoss().
+11. 3D Complexity Triage: Classify task into Tier 1 (Ambient UI), Tier 2 (Configurator/HUD), or Tier 3 (Real-Time Game) before coding; never apply Tier 3 game-engine loops to Tier 1 decorative widgets.
 
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
@@ -220,4 +238,12 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 - **Prescribed Defense**: Diffuse maps MUST be THREE.SRGBColorSpace; normal/roughness/metalness/ao maps MUST be THREE.NoColorSpace.
 - **Verified Counterfactual**: `Visual difference analyzer confirmed accurate PBR reflectance and normal perturbation without gamma warping`
 - **Source Task ID**: `task_pbr_colorspace_audit`
+
+#### Antibody `ab_design_threejs_hypertrophic_overkill` [HIGH]
+- **Domain**: `design_3d`
+- **Trigger Condition**: Implementing a 120Hz physics accumulator, post-processing composer, or instanced fleet for simple ambient UI, hero badges, or decorative 3D cards
+- **Lethal Anti-Pattern**: const loop = new DeterministicGameLoop(updatePhysics, render); const composer = new EffectComposer(renderer); // Hypertrophic overkill for simple hero badge
+- **Prescribed Defense**: Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple PBR, zero physics accumulators, no post-processing).
+- **Verified Counterfactual**: `Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator overhead on ambient UI components`
+- **Source Task ID**: `task_threejs_triage_audit`
 

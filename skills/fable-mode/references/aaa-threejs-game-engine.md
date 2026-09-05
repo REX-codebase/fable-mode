@@ -33,6 +33,67 @@ This production manual documents the **AAA Three.js Game Engine Standard** withi
 
 ---
 
+## 0. The 3D Complexity Triage Matrix (When to Use What)
+
+Before writing a single line of Three.js or WebGPU shader code, engineers and AI agents must classify the target workload into one of **Three Architectural Tiers**. Applying AAA game-engine machinery (e.g., fixed 120Hz physics accumulators, multi-pass post-processing composers, instanced mesh fleets) to lightweight micro-interactions introduces hypertrophic complexity, battery drain, and unmaintainable code. Conversely, under-architecting a real-time game leads to stutter, race conditions, and catastrophic VRAM leakage.
+
+### The 4-Dimensional 3D Technique Decision Matrix
+
+| Dimension | Tier 1: Ambient UI & Micro-3D | Tier 2: Spatial Configurator & HUD | Tier 3: Real-Time Game & Physics Sim |
+| :--- | :--- | :--- | :--- |
+| **1. Primary Use Cases** | Landing page heroes, interactive cards, badges, spinning crypto/e-commerce coins, floating background meshes, decorative cursors | E-commerce product customizers, 3D architectural/CAD viewers, spatial data visualizations, interactive telemetry HUDs | First/third-person games (FPS, racers, platformers), planetary simulations, massive particle storms (100k+), complex physics sandboxes |
+| **2. Loop & Physics Strategy** | Simple `requestAnimationFrame` render loop with `delta` smoothing; CSS/pointer hover lerp; **Zero** physics engine or accumulators | Event-driven or damped rAF loop; `OrbitControls` with auto-damping; raycasting on mouse move; optional tweening/springs | **Deterministic 120Hz fixed-timestep accumulator** ($\Delta t = 1/120\,\text{s}$) with state interpolation ($\alpha$), sub-stepping, and rigid-body solvers (Rapier) |
+| **3. Materials & Shading Stack** | `MeshMatCapMaterial` (zero-light budget) or lightweight `MeshStandardMaterial` with 1–2 static lights; **0 post-processing passes** | High-fidelity PBR (`MeshPhysicalMaterial`), HDR environment maps (PMREM), transmission/clearcoat, **selective single-pass Bloom** | Full post-processing stack (ACES/AgX tonemapping, GTAO, selective Bloom, SSR), custom GLSL/TSL node materials, WebGPU compute shaders |
+| **4. Performance & Resource Budget** | • **Draw Calls**: $< 15$<br>• **VRAM**: $< 25\,\text{MB}$<br>• **Triangles**: $< 10\,\text{k}$<br>• **Texture Memory**: Single atlas $< 1024^2$ | • **Draw Calls**: $< 50$<br>• **VRAM**: $< 100\,\text{MB}$<br>• **Triangles**: $10\,\text{k} - 150\,\text{k}$ (with DRACO)<br>• **Textures**: 2K KTX2/Basis Universal | • **Draw Calls**: $< 100$ (via `InstancedMesh`/`BatchedMesh`)<br>• **VRAM**: $100\,\text{MB} - 500\,\text{MB}$<br>• **Triangles**: $100\,\text{k} - 1\,\text{M}+$ (with LOD/BVH)<br>• **Compute**: 100k+ particles |
+
+---
+
+### Detailed Tier Specifications
+
+#### Tier 1: Ambient UI & Micro-3D
+* **Target Scope**: Landing page heroes, cards, badges, spinning coins, interactive buttons, and lightweight decorative DOM 3D elements.
+* **Render Pipeline**: Standard `WebGLRenderer` with alpha transparency enabled (`alpha: true`), clamped DPR (`Math.min(window.devicePixelRatio, 2)`), and antialiasing.
+* **Animation & State**: Single `requestAnimationFrame` loop or R3F `useFrame((_, delta) => { mesh.rotation.y += delta * 0.5; })`. Direct object transform mutation.
+* **Materials & Shading**: Prefer `MeshMatCapMaterial` for zero-light GPU shading. If dynamic lighting is required, use simple PBR (`MeshStandardMaterial`) with at most 1–2 static lights.
+* **Post-Processing**: **0 post-processing passes**. Strictly no `EffectComposer`, bloom, or full-screen render passes.
+* **Resource Ceiling**: $< 15$ draw calls, $< 25\,\text{MB}$ VRAM, $< 10\,\text{k}$ triangles. Instant teardown via recursive buffer disposal on unmount.
+
+#### Tier 2: Spatial Configurator & HUD
+* **Target Scope**: E-commerce product customizers, architectural/CAD viewers, telemetry 3D graphs, spatial HUDs, and interactive model showcases.
+* **Render Pipeline**: `WebGLRenderer` or `WebGPURenderer` with PMREM environment lighting; automatic camera framing (`Box3` framing based on bounding sphere).
+* **Animation & State**: Smooth orbit navigation via `OrbitControls` (`enableDamping = true`, `dampingFactor = 0.05`); throttled raycasting against BVH or low-poly proxies; reactive state bridging (e.g. variant selection) updating mesh materials.
+* **Assets & Materials**: DRACO-compressed GLTF models (`DRACOLoader` with Web Workers) and KTX2 compressed textures (`KTX2Loader`). PBR materials (`MeshStandardMaterial` or `MeshPhysicalMaterial`).
+* **Post-Processing**: Conservative, selective post-processing only. At most 1–2 lightweight passes (e.g., selective Bloom on HUD accents, tone mapping).
+* **Resource Ceiling**: $< 50$ draw calls, $< 100\,\text{MB}$ VRAM, $< 150\,\text{k}$ triangles. Progressive model loading with visual fallback indicator.
+
+#### Tier 3: Real-Time Game & Physics Simulation
+* **Target Scope**: First/third-person games (FPS, racers), massive interactive worlds, dynamic physics sandboxes, and GPU compute particle simulations (100k+ particles).
+* **Render Pipeline**: Dual-engine architecture (WebGL2 or `WebGPURenderer` with TSL node shaders); dynamic shadow cascades (CSM) or directional shadow maps with bias tuning; dynamic LOD hierarchies.
+* **Animation & State**: **120Hz Decoupled Fixed-Timestep Accumulator**. Physics integrations run at fixed intervals ($\Delta t = 1/120\,\text{s}$), with state interpolation ($\alpha$) applied during rendering for zero-jitter 60–120+ FPS.
+* **Post-Processing & Shading Stack**: Full HDR post-processing chain (GTAO/SSAO ambient occlusion, selective Bloom, ACES/AgX tone mapping, SSR reflections); custom WebGPU compute passes and TSL nodes.
+* **Batching & Geometry**: Mandatory `THREE.InstancedMesh` or `THREE.BatchedMesh` for repeating world geometry; BVH spatial acceleration via `three-mesh-bvh` for sub-millisecond raycasts and collisions.
+* **Resource Ceiling**: $< 100$ draw calls (via aggressive GPU batching), $< 500\,\text{MB}$ VRAM, 100k+ particles via GPU compute passes. Zero-leak lifecycle tracking with memory pooling.
+
+---
+
+### Pre-Flight Triage Rules of Engagement
+
+1. **Rule 1: No Nuclear Submarine for a Pond (Hypertrophic Overkill Prohibition)**
+   Never implement a 120Hz physics accumulator, post-processing composer, or instanced mesh fleet for simple ambient UI, hero badges, or decorative 3D cards. Using heavy game-engine loops for micro-interactions wastes CPU cycles, drains mobile battery, and bloats code complexity. Enforce the Tier 1 profile for all decorative widgets.
+
+2. **Rule 2: Ecosystem Inspection (React vs. Vanilla)**
+   Always inspect the host application ecosystem before architecting:
+   * **In React / Next.js environments**: Default to React Three Fiber (`@react-three/fiber`) + `@react-three/drei`. Enforce declarative scene construction, `<Suspense>` boundaries for model loaders, and direct ref mutations inside `useFrame()`. Never call React `useState` or trigger component re-renders inside `useFrame()`.
+   * **In Vanilla / Micro-site environments**: Use pure Three.js classes with Vite and TypeScript. Encapsulate setup into clean, disposable classes (`setupScene()`, `animate()`, `destroy()`) with strict disposal of geometries, materials, and event listeners.
+
+3. **Rule 3: The Zero-Light MatCap Shortcut**
+   For Tier 1 ambient widgets and stylized Tier 2 configurators, evaluate `MeshMatCapMaterial` before configuring complex multi-light setups. A MatCap texture pre-bakes highlights, rim lighting, and diffuse shading in a single $256 \times 256$ texture lookup ($O(1)$ shader ALU cost) without requiring any `DirectionalLight`, `PointLight`, or shadow map calculations.
+
+4. **Rule 4: Scale-Up Gate for Tier 3**
+   Only escalate to Tier 3 when the specification explicitly demands interactive physics collisions, rigid-body kinematics, real-time avatar movement, or $>10,000$ dynamic simulated entities. Escaping to Tier 3 requires unlocking the full deterministic engine: fixed accumulator, memory pooling, and formal buffer teardown protocols.
+
+---
+
 ## 2. Deterministic Fixed-Timestep Game Loop & Physics Accumulator
 
 Variable `requestAnimationFrame` delta times ($dt$) cause non-deterministic physics tunneling, frame stuttering, and simulation desynchronization. The engine enforces a **Fixed-Timestep Accumulator with State Interpolation**:
