@@ -88,7 +88,42 @@ Verified Resilience (🟢 Sealed) ◀── Swarm Re-Attack ◀── Subagent R
 3. **Breakage Report**: The swarm compiles `RedTeamBreakageReport` with reproduction code snippets.
 4. **Subagent Remediation**: If `broken_count > 0`, code changes are **REJECTED**; subagent receives remediation directives.
 5. **Swarm Re-Attack**: Swarm invokes `verify_remediation()` re-running prior breaking scenarios.
-6. **Milestone Sealing**: Only when all prior breakages are verified fixed (`0` breakages) is the milestone sealed.
+6. **Milestone Sealing & Cortical Evolution**: Only when all prior breakages are verified fixed (`0` breakages) is the milestone sealed (`SEALED`), followed by synaptic evolution (`EVOLVED`).
+
+#### The MCP Governor 8-State FSM
+```
+   INIT ──▶ DEEPTHINK_TIMELOCK ──▶ IMPLEMENTATION ──▶ RED_TEAM_GATE ──▶ ARBITRATION
+                                                            ▲                 │
+                                                            │ (Breakages > 0) │
+                                                            │                 ▼
+                                                   REMEDIATION_REQUIRED ◀─────┘
+                                                            │
+                                                            ▼ (0 Breakages Left)
+                                                         SEALED ──▶ EVOLVED
+```
+
+```python
+# Autonomous While-Loop Ping-Pong Hardening
+while True:
+    res = call_mcp_tool("fable-engine", "fable_session", {
+        "action": "verify_red_team_remediation",
+        "session_name": session_id,
+        "remediated_code": subagent_code,
+        "prior_report": breakage_report,
+    })
+    if "TASK COMPLETED: 0 breakages remain. Code sealed." in res:
+        break
+    # Server rejects: "TASK REJECTED: [N] breakages detected. Deploy subagent to fix findings."
+    subagent_code = dispatch_coder_subagent_fix(res)
+
+# Cortical Evolution: ΔW = +0.10 * A_domain * A_node (LTP), ab_<domain>_<scenario_id>
+call_mcp_tool("fable-engine", "fable_session", {
+    "action": "evolve_cortex",
+    "session_name": session_id,
+    "domain": "security",
+    "task_id": "auth_hardening_task"
+})
+```
 
 ```python
 # Direct Python invocation via Coder Fleet

@@ -1,8 +1,38 @@
 {
+  "mutation": {
+    "property_oracle": 0.2229,
+    "red_team_swarm": 0.6171,
+    "security": 0.5765,
+    "test_harness": 0.5938
+  },
+  "property_oracle": {
+    "mutation": 0.2229,
+    "red_team_swarm": 0.218,
+    "security": 0.2648,
+    "test_harness": 0.2205
+  },
   "quorum": {
     "test_distributed_raft": 0.95
   },
+  "red_team_swarm": {
+    "mutation": 0.6171,
+    "property_oracle": 0.218,
+    "security": 0.5822,
+    "test_harness": 0.6011
+  },
+  "security": {
+    "mutation": 0.5765,
+    "property_oracle": 0.2648,
+    "red_team_swarm": 0.5822,
+    "test_harness": 0.5636
+  },
   "test_distributed_raft": {
     "quorum": 0.95
+  },
+  "test_harness": {
+    "mutation": 0.5938,
+    "property_oracle": 0.2205,
+    "red_team_swarm": 0.6011,
+    "security": 0.5636
   }
 }

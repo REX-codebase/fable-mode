@@ -3,7 +3,7 @@ name: research
 description: First-principles epistemology, causal DAG inference, and TRIZ contradiction
   resolution
 domain: research
-activation_count: 13
+activation_count: 16
 synaptic_weights:
   citation_verifier: 0.96
   contradiction_resolver: 0.91
@@ -70,13 +70,13 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 
 > [!NOTE]
 > First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution
-> Activation count: 13.
+> Activation count: 16.
 
 ## Metadata & Telemetry
 - **Name**: `research`
 - **Description**: First-principles epistemology, causal DAG inference, and TRIZ contradiction resolution
 - **Domain**: `research`
-- **Activation Count**: `13`
+- **Activation Count**: `16`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

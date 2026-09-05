@@ -773,6 +773,7 @@ class RedTeamSwarm:
         prior_report: Union[RedTeamBreakageReport, dict[str, Any]],
         additional_scenarios: Optional[list[BreakScenario]] = None,
         auto_consolidate: bool = True,
+        timeout_seconds: float = 3.0,
     ) -> tuple[bool, RedTeamBreakageReport]:
         """Re-runs the scenarios that previously caused breakages against the remediated callable.
 
@@ -835,6 +836,7 @@ class RedTeamSwarm:
         new_report = self.execute_swarm_attack(
             target_callable=callable_fn,
             scenarios=scenarios_to_rerun,
+            timeout_seconds=timeout_seconds,
             target_name=p_rep.target_name,
         )
 

@@ -59,7 +59,8 @@
           "cortical_define_lobe",
           "cortical_list_lobes",
           "check_auto_update",
-          "apply_auto_update"
+          "apply_auto_update",
+          "evolve_cortex"
         ],
         "type": "string"
       },
@@ -140,12 +141,7 @@
         "type": "integer"
       },
       "domain": {
-        "description": "Domain boundary for the invariant.",
-        "enum": [
-          "architecture",
-          "design",
-          "coding"
-        ],
+        "description": "Domain boundary for the invariant or cortical plasticity consolidation.",
         "type": "string"
       },
       "edges": {
@@ -442,6 +438,34 @@
       "preserve_cortex": {
         "description": "Whether to preserve local cortical experience (antibodies, synaptic weights, custom lobes) during auto-update. Defaults to true.",
         "type": "boolean"
+      },
+      "target_name": {
+        "description": "Identifier or name of the target module, class, or function for red-team review.",
+        "type": "string"
+      },
+      "target_code": {
+        "description": "Target source code under test for adversarial red-teaming.",
+        "type": "string"
+      },
+      "custom_hypotheses": {
+        "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
+        "type": ["array", "string"]
+      },
+      "broken_scenarios": {
+        "description": "List or JSON string of broken attack scenarios found during red-team review.",
+        "type": ["array", "string"]
+      },
+      "remediated_code": {
+        "description": "Remediated code submitted to verify against broken scenarios.",
+        "type": "string"
+      },
+      "prior_report": {
+        "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",
+        "type": ["object", "string"]
+      },
+      "task_id": {
+        "description": "Task identifier for cortical plasticity consolidation or session lineage.",
+        "type": "string"
       }
     },
     "required": [

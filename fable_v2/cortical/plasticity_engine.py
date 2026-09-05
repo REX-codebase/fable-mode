@@ -626,13 +626,15 @@ class HebbianPlasticityEngine:
 
     def consolidate_task(
         self,
-        domain: Union[CorticalDomain, str],
-        task_id: str,
+        domain: Union[CorticalDomain, str] = "general",
+        task_id: str = "",
         broken_scenarios: Optional[list[dict[str, Any]]] = None,
         final_passed: bool = True,
         lessons: Optional[list[Union[dict[str, Any], str]]] = None,
         co_activated_nodes: Optional[list[str]] = None,
         activation_metrics: Optional[dict[str, float]] = None,
+        success: Optional[bool] = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Consolidate task outcomes using directional BCM / STDP plasticity.
 
@@ -653,6 +655,8 @@ class HebbianPlasticityEngine:
         Failed pathways actively depress/weaken, while synthesized HeuristicAntibody instances
         preserve the critical scars and lessons.
         """
+        if success is not None:
+            final_passed = bool(success)
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
         lobe.activation_count += 1

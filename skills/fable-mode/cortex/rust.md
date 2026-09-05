@@ -2,7 +2,7 @@
 name: rust
 description: Systems invariants, borrow checker mechanics, and zero-cost abstractions
 domain: rust
-activation_count: 13
+activation_count: 16
 synaptic_weights:
   tokio: 0.92
   pin_project: 0.88
@@ -69,13 +69,13 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 
 > [!NOTE]
 > Systems invariants, borrow checker mechanics, and zero-cost abstractions
-> Activation count: 13.
+> Activation count: 16.
 
 ## Metadata & Telemetry
 - **Name**: `rust`
 - **Description**: Systems invariants, borrow checker mechanics, and zero-cost abstractions
 - **Domain**: `rust`
-- **Activation Count**: `13`
+- **Activation Count**: `16`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

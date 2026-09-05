@@ -2,7 +2,7 @@
 name: concurrency
 description: Lock-free synchronization, atomic memory ordering, and race hardening
 domain: concurrency
-activation_count: 13
+activation_count: 16
 synaptic_weights:
   concurrency_fuzz: 0.96
   atomic_cas_loop: 0.94
@@ -70,13 +70,13 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 
 > [!NOTE]
 > Lock-free synchronization, atomic memory ordering, and race hardening
-> Activation count: 13.
+> Activation count: 16.
 
 ## Metadata & Telemetry
 - **Name**: `concurrency`
 - **Description**: Lock-free synchronization, atomic memory ordering, and race hardening
 - **Domain**: `concurrency`
-- **Activation Count**: `13`
+- **Activation Count**: `16`
 - **Total Antibodies**: `3`
 - **Specialized Heuristics**: `5`
 - **Last Consolidated**: `2026-09-04T12:00:00+00:00`

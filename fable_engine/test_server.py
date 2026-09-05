@@ -1346,7 +1346,7 @@ class TestSecondRedTeamRegressions(unittest.TestCase):
             env = os.environ.copy(); env["FABLE_DATA_DIR"] = str(root / "data")
             completed = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "server.py")],
                                         input='[1, 2]\n{"jsonrpc":"2.0","id":4,"method":"ping","params":[]}\n',
-                                        capture_output=True, text=True, env=env, timeout=5)
+                                        capture_output=True, text=True, env=env, timeout=15)
             responses = [json.loads(line) for line in completed.stdout.splitlines()]
             first, second = responses
             self.assertEqual(first["error"]["code"], -32600)

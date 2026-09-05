@@ -26,6 +26,7 @@ import stat
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union, Iterator
 from contextlib import contextmanager
+from enum import Enum
 
 # Reconfigure UTF-8 for Windows stdio
 if sys.stdout.encoding != 'utf-8':
@@ -1423,6 +1424,29 @@ class DelegationContractCompiler:
         return is_valid, errors, parsed
 
 
+class SessionState(str, Enum):
+    INIT = "INIT"
+    DEEPTHINK_TIMELOCK = "DEEPTHINK_TIMELOCK"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    RED_TEAM_GATE = "RED_TEAM_GATE"
+    ARBITRATION = "ARBITRATION"
+    REMEDIATION_REQUIRED = "REMEDIATION_REQUIRED"
+    SEALED = "SEALED"
+    EVOLVED = "EVOLVED"
+
+
+VALID_TRANSITIONS = {
+    SessionState.INIT: {SessionState.DEEPTHINK_TIMELOCK},
+    SessionState.DEEPTHINK_TIMELOCK: {SessionState.IMPLEMENTATION},
+    SessionState.IMPLEMENTATION: {SessionState.RED_TEAM_GATE},
+    SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION},
+    SessionState.ARBITRATION: {SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
+    SessionState.REMEDIATION_REQUIRED: {SessionState.ARBITRATION, SessionState.SEALED, SessionState.REMEDIATION_REQUIRED},
+    SessionState.SEALED: {SessionState.EVOLVED},
+    SessionState.EVOLVED: {SessionState.EVOLVED},
+}
+
+
 class FableSession:
     """Represents an active Fable reasoning & pacing session."""
 
@@ -1461,6 +1485,12 @@ class FableSession:
         self.active_phase = PHASES[0]
         self.execution_locked = True
         self.can_execute_code = False
+
+        self.current_state = SessionState.INIT
+        self.iteration_count = 0
+        self.active_breakages: List[Dict[str, Any]] = []
+        self.remediation_history: List[Dict[str, Any]] = []
+        self._timer_set = False
         
         self.epistemic_ledger: List[Dict[str, Any]] = []
         self.invariants: List[Dict[str, Any]] = []
@@ -1527,6 +1557,64 @@ class FableSession:
         """Read-only wall-clock representation of the authority deadline."""
         return self._authority_deadline_wall
 
+    def transition_to(self, new_state: Union[SessionState, str], rationale: str = "") -> SessionState:
+        """Transitions the FSM to a new state after validating strict state machine invariants.
+
+        Valid transitions:
+        - INIT -> DEEPTHINK_TIMELOCK (requires set_timer and/or set_goal_rubric)
+        - DEEPTHINK_TIMELOCK -> IMPLEMENTATION (requires execution unlocked)
+        - IMPLEMENTATION -> RED_TEAM_GATE (requires code written / file changes logged)
+        - RED_TEAM_GATE -> ARBITRATION
+        - ARBITRATION -> REMEDIATION_REQUIRED (if broken_count > 0)
+        - ARBITRATION -> SEALED (if broken_count == 0)
+        - REMEDIATION_REQUIRED -> ARBITRATION
+        - REMEDIATION_REQUIRED -> SEALED (when remediation verification succeeds with 0 breakages)
+        - SEALED -> EVOLVED (upon evolve_cortex consolidation)
+
+        Attempting any illegal jump (e.g. INIT directly to SEALED or IMPLEMENTATION) must raise ValueError.
+        """
+        if isinstance(new_state, str):
+            try:
+                target_state = SessionState(new_state)
+            except ValueError:
+                raise ValueError(f"Invalid SessionState: '{new_state}'. Allowed states: {[s.value for s in SessionState]}")
+        else:
+            target_state = new_state
+
+        allowed = VALID_TRANSITIONS.get(self.current_state, set())
+        if target_state not in allowed and target_state != self.current_state:
+            raise ValueError(
+                f"Illegal state transition from {self.current_state.value} to {target_state.value}. "
+                f"Allowed transitions from {self.current_state.value}: {[s.value for s in allowed]}"
+            )
+
+        if self.current_state == SessionState.INIT and target_state == SessionState.DEEPTHINK_TIMELOCK:
+            timer_set = getattr(self, "_timer_set", False) or (self.pacing_budget_minutes != self.time_budget_minutes)
+            rubric_set = len(self.goal_rubrics) > 0
+            rationale_ok = any(k in rationale.lower() for k in ("timer", "rubric", "deepthink", "timelock", "set_timer", "set_goal_rubric"))
+            if not (timer_set or rubric_set or rationale_ok):
+                raise ValueError("Transition from INIT to DEEPTHINK_TIMELOCK requires set_timer and/or set_goal_rubric.")
+
+        elif self.current_state == SessionState.DEEPTHINK_TIMELOCK and target_state == SessionState.IMPLEMENTATION:
+            if self.execution_locked or not self.can_execute_code:
+                raise ValueError("Transition from DEEPTHINK_TIMELOCK to IMPLEMENTATION requires execution unlocked.")
+
+        elif self.current_state == SessionState.IMPLEMENTATION and target_state == SessionState.RED_TEAM_GATE:
+            has_changes = len(self.file_changes) > 0 or any(k in rationale.lower() for k in ("code", "file", "implement", "change", "written", "edit"))
+            if not has_changes:
+                raise ValueError("Transition from IMPLEMENTATION to RED_TEAM_GATE requires code written / file changes logged.")
+
+        elif self.current_state == SessionState.ARBITRATION and target_state == SessionState.SEALED:
+            if len(self.active_breakages) > 0:
+                raise ValueError(f"Transition from ARBITRATION to SEALED rejected: {len(self.active_breakages)} breakages remain unresolved.")
+
+        elif self.current_state == SessionState.REMEDIATION_REQUIRED and target_state == SessionState.SEALED:
+            if len(self.active_breakages) > 0:
+                raise ValueError(f"Transition from REMEDIATION_REQUIRED to SEALED rejected: {len(self.active_breakages)} breakages remain unresolved.")
+
+        self.current_state = target_state
+        return self.current_state
+
     def set_timer(self, time_budget_minutes: float) -> Dict[str, Any]:
         """Set an agent pacing timer without changing the authority deadline.
 
@@ -1549,6 +1637,9 @@ class FableSession:
             self._authority_deadline_monotonic,
             now_monotonic + self.pacing_budget_seconds
         )
+        self._timer_set = True
+        if self.current_state == SessionState.INIT:
+            self.transition_to(SessionState.DEEPTHINK_TIMELOCK, "Pacing timer configured")
         return self.get_telemetry()
 
     def _authority_remaining_seconds(self) -> float:
@@ -1622,6 +1713,11 @@ class FableSession:
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
             "silent_deliberation_active": self.execution_locked,
+            "current_state": self.current_state.value if isinstance(self.current_state, SessionState) else str(self.current_state),
+            "iteration_count": self.iteration_count,
+            "active_breakages_count": len(self.active_breakages),
+            "active_breakages": self.active_breakages,
+            "remediation_history": self.remediation_history,
             "epistemic_counts": {
                 "proven": proven_count,
                 "hypothesis": hypothesis_count,
@@ -1684,6 +1780,11 @@ class FableSession:
 
     def advance_phase(self, next_phase: str, phase_summary: str) -> Dict[str, Any]:
         """Advances the session to the requested phase and records history."""
+        if any(term in next_phase.upper() for term in ("SEALED", "EVOLVED")):
+            raise ValueError(
+                "Invalid phase transition: Cannot advance directly to SEALED or EVOLVED via advance_phase."
+            )
+
         matched_phase = None
         for p in PHASES:
             if next_phase.strip().lower() == p.lower() or next_phase.strip().lower() in p.lower():
@@ -1702,6 +1803,15 @@ class FableSession:
             raise ValueError(
                 f"Invalid phase transition: move one phase at a time from "
                 f"Phase {current_phase_idx} to Phase {current_phase_idx + 1}."
+            )
+
+        if target_phase_idx >= 4 and self.current_state in (SessionState.INIT, SessionState.DEEPTHINK_TIMELOCK):
+            raise ValueError(
+                f"Cannot advance to {matched_phase}: Implementation gate not reached (current state: {self.current_state.value}). Execution must be unlocked."
+            )
+        if target_phase_idx >= 5 and self.current_state == SessionState.IMPLEMENTATION:
+            raise ValueError(
+                f"Cannot advance to {matched_phase}: Red team gate and arbitration have not been completed (current state: {self.current_state.value}). Skipping red team gates is strictly prohibited."
             )
 
         now = self._wall_clock()
@@ -2006,6 +2116,9 @@ class FableSession:
         else:
             self.goal_rubrics.append(rubric_entry)
 
+        if self.current_state == SessionState.INIT:
+            self.transition_to(SessionState.DEEPTHINK_TIMELOCK, "Goal rubric registered")
+
         return rubric_entry
 
     def evaluate_goal_rubric(
@@ -2119,8 +2232,55 @@ class FableSession:
         self,
         report_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Records an adversarial red team breakage report in session history."""
+        """Records an adversarial red team breakage report in session history and updates FSM state."""
         self.breakage_reports.append(report_data)
+        broken_count = int(report_data.get("broken_count", 0))
+        findings = report_data.get("findings", [])
+        if broken_count > 0:
+            self.active_breakages = [
+                {
+                    "scenario_id": f.get("scenario_id") if isinstance(f, dict) else getattr(f, "scenario_id", ""),
+                    "hypothesis": f.get("hypothesis") if isinstance(f, dict) else getattr(f, "hypothesis", ""),
+                    "reproduction_code": f.get("reproduction_code") if isinstance(f, dict) else getattr(f, "reproduction_code", ""),
+                    "severity": f.get("severity", "MEDIUM") if isinstance(f, dict) else getattr(f, "severity", "MEDIUM"),
+                    "error_message": f.get("error_message") if isinstance(f, dict) else getattr(f, "error_message", ""),
+                    "vector": f.get("vector") if isinstance(f, dict) else getattr(f, "vector", ""),
+                }
+                for f in findings
+                if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
+            ]
+            self.remediation_history.append({
+                "iteration": self.iteration_count,
+                "report_id": report_data.get("report_id"),
+                "broken_count": broken_count,
+                "timestamp": self._wall_clock(),
+                "breakages": list(self.active_breakages),
+                "remediation_directives": report_data.get("remediation_directives", []),
+            })
+            try:
+                if self.current_state == SessionState.IMPLEMENTATION:
+                    self.transition_to(SessionState.RED_TEAM_GATE, "Breakage report submitted")
+                if self.current_state == SessionState.RED_TEAM_GATE:
+                    self.transition_to(SessionState.ARBITRATION, "Arbitration of breakages")
+                if self.current_state == SessionState.ARBITRATION:
+                    self.transition_to(SessionState.REMEDIATION_REQUIRED, f"{broken_count} breakages detected")
+                else:
+                    self.current_state = SessionState.REMEDIATION_REQUIRED
+            except Exception:
+                self.current_state = SessionState.REMEDIATION_REQUIRED
+        else:
+            self.active_breakages = []
+            try:
+                if self.current_state == SessionState.IMPLEMENTATION:
+                    self.transition_to(SessionState.RED_TEAM_GATE, "Clean report submitted")
+                if self.current_state == SessionState.RED_TEAM_GATE:
+                    self.transition_to(SessionState.ARBITRATION, "Arbitration of clean report")
+                if self.current_state in (SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED):
+                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
+                else:
+                    self.current_state = SessionState.SEALED
+            except Exception:
+                self.current_state = SessionState.SEALED
         return report_data
 
     def log_refinement_cycle(
@@ -2292,6 +2452,11 @@ class FableSession:
 
         self.execution_locked = False
         self.can_execute_code = True
+        if self.current_state == SessionState.INIT:
+            self.transition_to(SessionState.DEEPTHINK_TIMELOCK, "Pre-unlock transition to DEEPTHINK_TIMELOCK")
+        if self.current_state == SessionState.DEEPTHINK_TIMELOCK:
+            self.transition_to(SessionState.IMPLEMENTATION, rationale)
+
         self.unlock_details = {
             "unlocked_at": now,
             "rationale": rationale.strip(),
@@ -2329,6 +2494,10 @@ class FableSession:
             "active_phase": self.active_phase,
             "execution_locked": self.execution_locked,
             "can_execute_code": self.can_execute_code,
+            "current_state": self.current_state.value if isinstance(self.current_state, SessionState) else str(self.current_state),
+            "iteration_count": self.iteration_count,
+            "active_breakages": self.active_breakages,
+            "remediation_history": self.remediation_history,
             "epistemic_ledger": self.epistemic_ledger,
             "invariants": self.invariants,
             "refinement_cycles": self.refinement_cycles,
@@ -2369,6 +2538,14 @@ class FableSession:
         session = cls(session_name=data["session_name"], objective=data.get("objective", ""),
                       time_budget_minutes=budget, session_id=data.get("session_id"))
         session._restored_untrusted = True
+        state_str = data.get("current_state", SessionState.INIT.value)
+        try:
+            session.current_state = SessionState(state_str)
+        except ValueError:
+            session.current_state = SessionState.INIT
+        session.iteration_count = int(data.get("iteration_count", 0))
+        session.active_breakages = list(data.get("active_breakages", []))
+        session.remediation_history = list(data.get("remediation_history", []))
         session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
         session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
         session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
@@ -4343,34 +4520,86 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
             if not session_name:
                 return "Error: 'session_name' is required for action 'record_breakage_report'."
             report_data = arguments.get("report") or arguments.get("report_data") or {}
-            if not report_data and arguments.get("findings") is not None:
+            if not report_data and (arguments.get("findings") is not None or arguments.get("broken_scenarios") is not None):
+                raw_findings = arguments.get("findings") if arguments.get("findings") is not None else arguments.get("broken_scenarios", [])
+                broken_cnt = arguments.get("broken_count")
+                if broken_cnt is None:
+                    broken_cnt = sum(1 for f in raw_findings if (f.get("broken", True) if isinstance(f, dict) else getattr(f, "broken", True)))
                 report_data = {
                     "report_id": arguments.get("report_id", f"report_{int(time.time())}"),
                     "target_name": arguments.get("target_name", "system"),
-                    "total_probes": arguments.get("total_probes", len(arguments.get("findings", []))),
-                    "broken_count": arguments.get("broken_count", 0),
-                    "passed": arguments.get("passed", arguments.get("broken_count", 0) == 0),
-                    "findings": arguments.get("findings", []),
+                    "total_probes": arguments.get("total_probes", len(raw_findings)),
+                    "broken_count": int(broken_cnt),
+                    "passed": arguments.get("passed", int(broken_cnt) == 0),
+                    "findings": raw_findings,
                     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "remediation_directives": arguments.get("remediation_directives", [])
                 }
             if not report_data:
-                return "Error: 'report' or 'report_data' is required for 'record_breakage_report'."
+                return "Error: 'report', 'report_data', 'findings', or 'broken_scenarios' is required for 'record_breakage_report'."
 
             session = get_or_load_session(session_name)
-            session.record_breakage_report(report_data)
-            session.save()
+            broken_count = int(report_data.get("broken_count", 0))
+            findings = report_data.get("findings", [])
 
-            return (
-                f"### 📋 Adversarial Breakage Report Recorded (`{report_data.get('report_id', 'N/A')}`)\n\n"
-                f"- **Session**: `{session.session_name}`\n"
-                f"- **Target**: `{report_data.get('target_name', 'system')}`\n"
-                f"- **Total Probes**: `{report_data.get('total_probes', 0)}`\n"
-                f"- **Broken Count**: `{report_data.get('broken_count', 0)}`\n"
-                f"- **Passed / Resilient**: `{'🟢 YES' if report_data.get('passed') else '🔴 NO (Breakages Detected)'}`\n"
-                f"- **Lineage Count**: `{len(session.breakage_reports)} reports logged`"
-                f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
-            )
+            if broken_count > 0:
+                session.current_state = SessionState.REMEDIATION_REQUIRED
+                session.iteration_count += 1
+                session.active_breakages = [
+                    {
+                        "scenario_id": f.get("scenario_id") if isinstance(f, dict) else getattr(f, "scenario_id", ""),
+                        "hypothesis": f.get("hypothesis") if isinstance(f, dict) else getattr(f, "hypothesis", ""),
+                        "reproduction_code": f.get("reproduction_code") if isinstance(f, dict) else getattr(f, "reproduction_code", ""),
+                        "severity": f.get("severity", "MEDIUM") if isinstance(f, dict) else getattr(f, "severity", "MEDIUM"),
+                        "error_message": f.get("error_message") if isinstance(f, dict) else getattr(f, "error_message", ""),
+                        "vector": f.get("vector") if isinstance(f, dict) else getattr(f, "vector", ""),
+                    }
+                    for f in findings
+                    if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
+                ]
+                directives = report_data.get("remediation_directives") or [
+                    f"Remediate {b.get('hypothesis', b.get('scenario_id', 'breakage'))}" for b in session.active_breakages
+                ]
+                session.remediation_history.append({
+                    "iteration": session.iteration_count,
+                    "report_id": report_data.get("report_id"),
+                    "broken_count": broken_count,
+                    "timestamp": time.time(),
+                    "breakages": list(session.active_breakages),
+                    "remediation_directives": directives,
+                })
+                session.breakage_reports.append(report_data)
+                session.save()
+
+                directives_list = "\n".join([f"- {d}" for d in directives])
+                order_msg = f"TASK REJECTED: {broken_count} breakages detected. Deploy subagent to fix findings."
+                return (
+                    f"### 🚨 {order_msg}\n\n"
+                    f"> [!CAUTION]\n"
+                    f"> **{order_msg}**\n\n"
+                    f"- **Session**: `{session.session_name}`\n"
+                    f"- **Current State**: `REMEDIATION_REQUIRED` 🔴\n"
+                    f"- **Broken Count**: `{broken_count}`\n"
+                    f"- **Active Breakages Tracked**: `{len(session.active_breakages)}`\n\n"
+                    f"#### 🛠️ Structured Remediation Directives:\n{directives_list}\n"
+                    f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+                )
+            else:
+                session.current_state = SessionState.SEALED
+                session.active_breakages = []
+                session.breakage_reports.append(report_data)
+                session.save()
+
+                completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
+                return (
+                    f"### 🛡️ {completed_msg}\n\n"
+                    f"🟢 **{completed_msg}**\n\n"
+                    f"- **Session**: `{session.session_name}`\n"
+                    f"- **Current State**: `SEALED` 🟢\n"
+                    f"- **Broken Count**: `0`\n"
+                    f"- **Status**: Verified resilient. Ready for `evolve_cortex`.\n"
+                    f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+                )
 
         # 42. VERIFY RED TEAM REMEDIATION
         elif action in ("verify_red_team_remediation", "verify_remediation", "red_team_verify"):
@@ -4391,23 +4620,134 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
 
             remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
+            timeout_sec = float(arguments.get("timeout_seconds", 3.0))
             all_fixed, new_report = GLOBAL_RED_TEAM_SWARM.verify_remediation(
                 target_callable=remediated_code,
-                prior_report=prior_report
+                prior_report=prior_report,
+                timeout_seconds=timeout_sec,
             )
-            session.record_breakage_report(new_report.to_dict())
+            session.breakage_reports.append(new_report.to_dict())
+
+            if not all_fixed or new_report.broken_count > 0:
+                session.current_state = SessionState.REMEDIATION_REQUIRED
+                session.iteration_count += 1
+                session.active_breakages = [
+                    {
+                        "scenario_id": f.scenario_id,
+                        "hypothesis": f.hypothesis,
+                        "reproduction_code": f.reproduction_code,
+                        "severity": f.severity,
+                        "error_message": f.error_message,
+                        "vector": f.vector,
+                    }
+                    for f in new_report.findings
+                    if f.broken
+                ]
+                session.remediation_history.append({
+                    "iteration": session.iteration_count,
+                    "report_id": new_report.report_id,
+                    "broken_count": new_report.broken_count,
+                    "timestamp": time.time(),
+                    "breakages": list(session.active_breakages),
+                    "remediation_directives": new_report.remediation_directives,
+                })
+                session.save()
+
+                directives_list = "\n".join([f"- {d}" for d in new_report.remediation_directives])
+                order_msg = f"TASK REJECTED: {new_report.broken_count} breakages detected. Deploy subagent to fix findings."
+                return (
+                    f"### 🚨 {order_msg}\n\n"
+                    f"> [!CAUTION]\n"
+                    f"> **{order_msg}**\n\n"
+                    f"- **Session**: `{session.session_name}`\n"
+                    f"- **Current State**: `REMEDIATION_REQUIRED` 🔴 (Iteration {session.iteration_count})\n"
+                    f"- **Remaining Breakages**: `{new_report.broken_count}`\n\n"
+                    f"#### 🛠️ Directives for Next Remediation Cycle:\n{directives_list}\n"
+                    f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+                )
+            else:
+                session.current_state = SessionState.SEALED
+                session.active_breakages = []
+                session.remediation_history.append({
+                    "iteration": session.iteration_count,
+                    "report_id": new_report.report_id,
+                    "broken_count": 0,
+                    "timestamp": time.time(),
+                    "status": "ALL_BREAKAGES_FIXED",
+                })
+                session.save()
+
+                completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
+                return (
+                    f"### 🛡️ {completed_msg}\n\n"
+                    f"🟢 **{completed_msg}**\n\n"
+                    f"- **Session**: `{session.session_name}`\n"
+                    f"- **Current State**: `SEALED` 🟢\n"
+                    f"- **Broken Count**: `0`\n"
+                    f"- **Remediation Iterations**: `{session.iteration_count}`\n\n"
+                    f"> [!NOTE]\n"
+                    f"> All prior adversarial breakages resolved with zero regressions. Session is in `SEALED` state. Automatically proceed or advance to `EVOLVED` state via `evolve_cortex`."
+                    f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+                )
+
+        # 43. EVOLVE CORTEX
+        elif action in ("evolve_cortex", "cortical_evolve", "evolve"):
+            if not session_name:
+                return "Error: 'session_name' is required for action 'evolve_cortex'."
+            session = get_or_load_session(session_name)
+
+            if session.current_state not in (SessionState.SEALED, SessionState.EVOLVED):
+                return f"Error: evolve_cortex rejected: Session must be in SEALED or EVOLVED state (current state: {session.current_state.value})."
+
+            domain = arguments.get("domain") or "python"
+            task_id = arguments.get("task_id") or session.session_id
+
+            neutralized_scenarios = arguments.get("broken_scenarios") or []
+            if not neutralized_scenarios:
+                for rep in session.breakage_reports:
+                    for f in rep.get("findings", []):
+                        if isinstance(f, dict) and f.get("broken"):
+                            neutralized_scenarios.append(f)
+                        elif hasattr(f, "broken") and f.broken:
+                            neutralized_scenarios.append(f.to_dict() if hasattr(f, "to_dict") else asdict(f))
+                for hist in session.remediation_history:
+                    for b in hist.get("breakages", []):
+                        if b not in neutralized_scenarios:
+                            neutralized_scenarios.append(b)
+
+            co_activated_nodes = arguments.get("co_activated_nodes") or ["mutation", "test_harness", "red_team_swarm", "property_oracle"]
+
+            evo_receipt = GLOBAL_PLASTICITY_ENGINE.consolidate_task(
+                task_id=task_id,
+                success=True,
+                domain=domain,
+                broken_scenarios=neutralized_scenarios,
+                co_activated_nodes=co_activated_nodes,
+            )
+
+            session.transition_to(SessionState.EVOLVED, "Cortical evolution consolidation completed")
             session.save()
 
-            md_report = new_report.to_markdown()
-            status_badge = "🟢 **ALL PRIOR BREAKAGES VERIFIED FIXED!**" if all_fixed else "🔴 **REMEDIATION INCOMPLETE - BREAKAGES REMAIN**"
+            antibodies_list = "\n".join([f"- `ab_{domain}_{s.get('scenario_id', 'unknown')}`: {s.get('hypothesis', 'Neutralized breakage')}" for s in neutralized_scenarios]) if neutralized_scenarios else "- Antibodies consolidated into cortical lobe."
+            weights_table = "\n".join([f"| `{k}` | `{v:.4f}` | `+0.10 * A_domain * A_node (LTP)` |" for k, v in evo_receipt.get("synaptic_weights", {}).items()])
 
             return (
-                f"### 🛡️ Remediation Verification Attestation\n\n"
-                f"{status_badge}\n\n"
-                f"{md_report}\n\n"
+                f"### 🧬 Cortical Evolution Receipt: EVOLVED\n\n"
                 f"- **Session**: `{session.session_name}`\n"
-                f"- **Prior Report ID**: `{prior_report.get('report_id', 'N/A')}`\n"
-                f"- **Verification Report ID**: `{new_report.report_id}`"
+                f"- **Current State**: `EVOLVED` 🌟\n"
+                f"- **Domain Lobe**: `{domain}` (`skills/fable-mode/cortex/{domain}.md`)\n"
+                f"- **Task ID**: `{task_id}`\n"
+                f"- **Plasticity Mode**: `LTP (Long-Term Potentiation)` (Score: +1.0)\n"
+                f"- **Antibodies Added**: `{evo_receipt.get('antibodies_added', 0)}`\n"
+                f"- **Total Lobe Antibodies**: `{evo_receipt.get('total_antibodies', 0)}`\n"
+                f"- **A_domain**: `{evo_receipt.get('A_domain', 0.80)}`\n\n"
+                f"#### 🛡️ Synthesized Heuristic Antibodies:\n{antibodies_list}\n\n"
+                f"#### ⚡ Potentiated Synaptic Weights:\n"
+                f"| Node | Potentiated Weight | Hebbian Rule |\n"
+                f"| :--- | :---: | :--- |\n"
+                f"{weights_table}\n\n"
+                f"> [!TIP]\n"
+                f"> Cortical lobe `skills/fable-mode/cortex/{domain}.md` successfully evolved and persisted to disk."
                 f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
             )
 
@@ -4525,7 +4865,7 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
                 f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline', "
                 f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation', "
-                f"'cortical_define_lobe', 'cortical_list_lobes', 'check_auto_update', 'apply_auto_update'."
+                f"'cortical_define_lobe', 'cortical_list_lobes', 'check_auto_update', 'apply_auto_update', 'evolve_cortex'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
@@ -4595,7 +4935,8 @@ TOOL_SCHEMA = {
                     "cortical_define_lobe",
                     "cortical_list_lobes",
                     "check_auto_update",
-                    "apply_auto_update"
+                    "apply_auto_update",
+                    "evolve_cortex"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -4647,8 +4988,7 @@ TOOL_SCHEMA = {
             },
             "domain": {
                 "type": "string",
-                "enum": ["architecture", "design", "coding"],
-                "description": "Domain boundary for the invariant."
+                "description": "Domain boundary for the invariant or cortical plasticity consolidation."
             },
             "refinement_type": {
                 "type": "string",
@@ -4987,6 +5327,38 @@ TOOL_SCHEMA = {
             "max_iterations": {
                 "type": "integer",
                 "description": "Maximum closed-loop iterations before halting (default 10)."
+            },
+            "target_name": {
+                "type": "string",
+                "description": "Identifier or name of the target module, class, or function for red-team review."
+            },
+            "target_code": {
+                "type": "string",
+                "description": "Target source code under test for adversarial red-teaming."
+            },
+            "code_snippet": {
+                "type": "string",
+                "description": "Alternative alias or snippet for target source code under review."
+            },
+            "custom_hypotheses": {
+                "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
+                "type": ["array", "string"]
+            },
+            "broken_scenarios": {
+                "description": "List or JSON string of broken attack scenarios found during red-team review.",
+                "type": ["array", "string"]
+            },
+            "remediated_code": {
+                "type": "string",
+                "description": "Remediated code submitted to verify against broken scenarios."
+            },
+            "prior_report": {
+                "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",
+                "type": ["object", "string"]
+            },
+            "task_id": {
+                "type": "string",
+                "description": "Task identifier for cortical plasticity consolidation or session lineage."
             }
         },
         "required": ["action"]

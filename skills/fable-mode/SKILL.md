@@ -259,6 +259,61 @@ PHASE 6: Checkpoint Finalization & Walkthrough Delivery
 
 --------------------------------------------------------------------------------
 
+## The MCP-Governed Closed-Loop Red-Team & Evolution Engine FSM
+
+The `fable-engine` MCP server acts as an **immutable, active governor** enforcing strict state progression through `SessionState`:
+
+```
+   INIT ──▶ DEEPTHINK_TIMELOCK ──▶ IMPLEMENTATION ──▶ RED_TEAM_GATE ──▶ ARBITRATION
+                                                            ▲                 │
+                                                            │ (Breakages > 0) │
+                                                            │                 ▼
+                                                   REMEDIATION_REQUIRED ◀─────┘
+                                                            │
+                                                            ▼ (0 Breakages Left)
+                                                         SEALED ──▶ EVOLVED
+```
+
+### 1. The 8 Governor States
+1. **`INIT`**: Session instantiated; initial objective, rubrics, and authority constraints set.
+2. **`DEEPTHINK_TIMELOCK`**: Monotonic time-lock active; Main Agent performs System 2 reasoning, visual mockups, and invariant proofs. Physical workspace writes locked.
+3. **`IMPLEMENTATION`**: Execution unlocked (`unlock_execution`); subagent fleet dispatches to write code and local tests.
+4. **`RED_TEAM_GATE`**: 5-vector counterfactual attack swarm (`red_team_code_review`) launched against the implemented code.
+5. **`ARBITRATION`**: Swarm findings evaluated; if `broken_count > 0`, transitioned to `REMEDIATION_REQUIRED`; if clean, transitions to `SEALED`.
+6. **`REMEDIATION_REQUIRED`**: Active breakages tracked; code rejected with:
+   `TASK REJECTED: [N] breakages detected. Deploy subagent to fix findings.`
+   Main Agent deploys coder subagent with concrete reproduction snippets and directives.
+7. **`SEALED`**: Verified clean by `verify_red_team_remediation`:
+   `TASK COMPLETED: 0 breakages remain. Code sealed.`
+   Zero breakages remain; milestone changes locked against regression.
+8. **`EVOLVED`**: Triggered by `evolve_cortex`; consolidates task lessons into `skills/fable-mode/cortex/<domain>.md`, potentiates synaptic weights ($\Delta W = +0.10 \cdot A_{\text{domain}} \cdot A_{\text{node}}$), and synthesizes permanent antibodies (`ab_<domain>_<scenario_id>`).
+
+### 2. Closed-Loop Ping-Pong Remediation Protocol
+```python
+# Autonomous While-Loop Ping-Pong Hardening
+while True:
+    res = call_mcp_tool("fable-engine", "fable_session", {
+        "action": "verify_red_team_remediation",
+        "session_name": session_id,
+        "remediated_code": subagent_code,
+        "prior_report": breakage_report,
+    })
+    if "TASK COMPLETED: 0 breakages remain. Code sealed." in res:
+        break
+    # Server returned: "TASK REJECTED: [N] breakages detected. Deploy subagent to fix findings."
+    subagent_code = dispatch_coder_subagent_fix(res)
+
+# Cortical Evolution
+call_mcp_tool("fable-engine", "fable_session", {
+    "action": "evolve_cortex",
+    "session_name": session_id,
+    "domain": domain_slug,
+    "task_id": milestone_task_id
+})
+```
+
+--------------------------------------------------------------------------------
+
 ## Modular Reference Guides
 
 For comprehensive deep-dives, mental models, and production blueprints, refer to:

@@ -290,8 +290,58 @@ report = result["result"]
 print(f"Passed: {report.passed}, Broken: {report.broken_count}")
 ```
 
-### 6.3 Fable-Engine MCP Session Integration
+### 6.3 Fable-Engine MCP Session Governor FSM & Closed-Loop Protocol
 
+The MCP server acts as an **immutable state-machine governor** tracking the session's lifecycle through `SessionState`:
+
+```
+   INIT ──▶ DEEPTHINK_TIMELOCK ──▶ IMPLEMENTATION ──▶ RED_TEAM_GATE ──▶ ARBITRATION
+                                                            ▲                 │
+                                                            │ (Breakages > 0) │
+                                                            │                 ▼
+                                                   REMEDIATION_REQUIRED ◀─────┘
+                                                            │
+                                                            ▼ (0 Breakages Left)
+                                                         SEALED ──▶ EVOLVED
+```
+
+#### The Closed-Loop While-Loop Protocol
+
+The Main Agent and Subagent Fleet execute an ungameable ping-pong loop governed by MCP preconditions:
+
+```python
+# Main Agent & Subagent Ping-Pong Remediation Loop
+while True:
+    verification_response = call_mcp_tool("fable-engine", "fable_session", {
+        "action": "verify_red_team_remediation",
+        "session_name": "release_hardening_v2",
+        "remediated_code": current_remediated_code,
+        "prior_report": breakage_report,
+        "domain": "security"
+    })
+
+    if "TASK COMPLETED: 0 breakages remain. Code sealed." in verification_response:
+        # State transitioned to SEALED
+        break
+
+    # If breakages remain, server outputs:
+    # "TASK REJECTED: [N] breakages detected. Deploy subagent to fix findings."
+    # State transitions to REMEDIATION_REQUIRED. Deploy subagent with reproduction snippets:
+    current_remediated_code = deploy_subagent_fix(verification_response)
+
+# Post-Success Cortical Evolution:
+evolution_receipt = call_mcp_tool("fable-engine", "fable_session", {
+    "action": "evolve_cortex",
+    "session_name": "release_hardening_v2",
+    "domain": "security",
+    "task_id": "task_auth_hardening_01"
+})
+# State transitions to EVOLVED. ΔW = +0.10 * A_domain * A_node (LTP)
+```
+
+#### MCP JSON-RPC Calling Examples
+
+**1. Summon Red Team Swarm Review (`red_team_code_review`):**
 ```json
 {
   "tool": "fable_session",
@@ -301,21 +351,82 @@ print(f"Passed: {report.passed}, Broken: {report.broken_count}")
     "target_name": "AuthService",
     "target_code": "def authenticate(token):\n    if not token:\n        raise ValueError('Empty token')\n    return {'user_id': 1}",
     "custom_hypotheses": [
-        "What will happen if token exceeds 500KB?"
+        "What will happen if token exceeds 500KB?",
+        "What will happen if token contains embedded null bytes (\\x00)?"
     ]
   }
 }
 ```
 
+**2. Record Breakage Report (`record_breakage_report`):**
+```json
+{
+  "tool": "fable_session",
+  "arguments": {
+    "action": "record_breakage_report",
+    "session_name": "release_hardening_v2",
+    "broken_scenarios": [
+      {
+        "scenario_id": "AuthService_byzantine_01",
+        "hypothesis": "Token containing null bytes causes C-string truncation",
+        "error_message": "ValueError: embedded null byte",
+        "severity": "HIGH",
+        "reproduction_code": "authenticate('valid\\x00evil')"
+      }
+    ]
+  }
+}
+```
+*Server Output:*
+`TASK REJECTED: 1 breakages detected. Deploy subagent to fix findings.`
+
+**3. Verify Remediation (`verify_red_team_remediation`):**
+```json
+{
+  "tool": "fable_session",
+  "arguments": {
+    "action": "verify_red_team_remediation",
+    "session_name": "release_hardening_v2",
+    "remediated_code": "def authenticate(token):\n    if not token or '\\x00' in token or len(token) > 65536:\n        raise ValueError('Invalid token')\n    return {'user_id': 1}",
+    "prior_report": {
+      "findings": [
+        {
+          "scenario_id": "AuthService_byzantine_01",
+          "broken": true,
+          "hypothesis": "Token containing null bytes causes C-string truncation"
+        }
+      ]
+    }
+  }
+}
+```
+*Server Output:*
+`TASK COMPLETED: 0 breakages remain. Code sealed.`
+
+**4. Post-Success Cortical Evolution (`evolve_cortex`):**
+```json
+{
+  "tool": "fable_session",
+  "arguments": {
+    "action": "evolve_cortex",
+    "session_name": "release_hardening_v2",
+    "domain": "security",
+    "task_id": "auth_remediation_milestone"
+  }
+}
+```
+*Server Output:*
+Transitions session state from `SEALED` to `EVOLVED`, applies LTP synaptic potentiation ($\Delta W = +0.10 \cdot A_{\text{domain}} \cdot A_{\text{node}}$), synthesizes antibodies `ab_security_AuthService_byzantine_01`, and persists directly to `skills/fable-mode/cortex/security.md`.
+
 ---
 
 ## 7. Operational Summary
 
-| Phase | Responsibility | Tooling |
-|---|---|---|
-| **Authoring** | Subagent Implementers | `AtomicWorkspaceEngine`, `TreeSitterCodemodEngine` |
-| **Swarm Attack** | Main Agent & Swarm | `RedTeamSwarm.run_full_review_cycle` |
-| **Audit Gate** | Main Agent Quality Gatekeeper | `RedTeamBreakageReport.to_markdown()` |
-| **Remediation** | Subagent Implementers | Fix directives, null-byte guards, locks |
-| **Verification** | Main Agent & Swarm | `RedTeamSwarm.verify_remediation` |
-| **Sealing** | Main Agent & Session | `fable_session` action `record_breakage_report` |
+| Phase | State | Responsibility | Tooling |
+|---|---|---|---|
+| **Authoring** | `IMPLEMENTATION` | Subagent Implementers | `AtomicWorkspaceEngine`, `TreeSitterCodemodEngine` |
+| **Swarm Attack** | `RED_TEAM_GATE` | Main Agent & Swarm | `fable_session` action `red_team_code_review` |
+| **Breakage Gating** | `REMEDIATION_REQUIRED` | Server Governor | `fable_session` action `record_breakage_report` |
+| **Remediation Loop** | `ARBITRATION` | Subagent Implementers | Fix directives, null-byte guards, locks |
+| **Verification & Sealing** | `SEALED` | Server Governor & Swarm | `fable_session` action `verify_red_team_remediation` |
+| **Cortical Evolution** | `EVOLVED` | Cortical Plasticity Engine | `fable_session` action `evolve_cortex` |
