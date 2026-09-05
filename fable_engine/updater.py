@@ -392,6 +392,25 @@ class AutoUpdater:
         except Exception as e:
             logger.debug(f"Failed syncing MCP schema: {e}")
 
+        # 4. Sync antigravity server executables and runtime
+        agy_server_dest = Path.home() / ".gemini" / "antigravity" / "fable-engine"
+        try:
+            if agy_server_dest.exists():
+                server_py_src = self.repo_root / "fable_engine" / "server.py"
+                if server_py_src.exists():
+                    shutil.copy2(server_py_src, agy_server_dest / "server.py")
+                if source_mcp_json.exists():
+                    shutil.copy2(source_mcp_json, agy_server_dest / "fable_session.json")
+                fleet_json = self.repo_root / "fable_engine" / "fable_coder_fleet.json"
+                if fleet_json.exists():
+                    shutil.copy2(fleet_json, agy_server_dest / "fable_coder_fleet.json")
+                v2_src = self.repo_root / "fable_v2"
+                if v2_src.exists():
+                    shutil.copytree(v2_src, agy_server_dest / "fable_v2", dirs_exist_ok=True)
+                synced.append(str(agy_server_dest / "server.py"))
+        except Exception as e:
+            logger.debug(f"Failed syncing antigravity server dest: {e}")
+
         return synced
 
     def apply_update(self, preserve_cortex: bool = True) -> dict[str, Any]:

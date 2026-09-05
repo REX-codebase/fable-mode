@@ -344,6 +344,47 @@ class TestHostSync(unittest.TestCase):
         self.assertTrue((self.target_dir / "SKILL.md").exists())
         self.assertEqual((self.target_dir / "SKILL.md").read_text(encoding="utf-8"), "# Fable Skill v2")
 
+    def test_sync_antigravity_server_dest(self) -> None:
+        fake_home = self.root / "fake_home"
+        agy_server_dest = fake_home / ".gemini" / "antigravity" / "fable-engine"
+        agy_server_dest.mkdir(parents=True, exist_ok=True)
+
+        # Setup fable_engine sources
+        fable_engine_src = self.root / "fable_engine"
+        fable_engine_src.mkdir(parents=True, exist_ok=True)
+        (fable_engine_src / "server.py").write_text("# updated server", encoding="utf-8")
+        (fable_engine_src / "fable_session.json").write_text('{"tools": ["fable_session"]}', encoding="utf-8")
+
+        # Setup fable_v2 tree
+        fable_v2_src = self.root / "fable_v2"
+        fable_v2_src.mkdir(parents=True, exist_ok=True)
+        (fable_v2_src / "core.py").write_text("# fable_v2 core module", encoding="utf-8")
+        sub_dir = fable_v2_src / "sub"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "sub_module.py").write_text("# sub module", encoding="utf-8")
+
+        with patch("pathlib.Path.home", return_value=fake_home):
+            synced = self.updater._sync_host_targets()
+
+        self.assertIn(str(agy_server_dest / "server.py"), synced)
+        self.assertTrue((agy_server_dest / "server.py").exists())
+        self.assertEqual((agy_server_dest / "server.py").read_text(encoding="utf-8"), "# updated server")
+        self.assertTrue((agy_server_dest / "fable_session.json").exists())
+        self.assertEqual(
+            (agy_server_dest / "fable_session.json").read_text(encoding="utf-8"),
+            '{"tools": ["fable_session"]}',
+        )
+        self.assertTrue((agy_server_dest / "fable_v2" / "core.py").exists())
+        self.assertEqual(
+            (agy_server_dest / "fable_v2" / "core.py").read_text(encoding="utf-8"),
+            "# fable_v2 core module",
+        )
+        self.assertTrue((agy_server_dest / "fable_v2" / "sub" / "sub_module.py").exists())
+        self.assertEqual(
+            (agy_server_dest / "fable_v2" / "sub" / "sub_module.py").read_text(encoding="utf-8"),
+            "# sub module",
+        )
+
 
 class TestMCPServerAutoUpdateActions(unittest.TestCase):
     """Tests for handle_fable_session auto-update actions."""
