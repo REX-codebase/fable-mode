@@ -18,6 +18,7 @@ from .property_oracle import PropertyOracleEngine
 from .receipt_attestor import ReceiptAttestorEngine
 from .red_team_swarm import RedTeamSwarm
 from .test_harness import TestHarnessEngine
+from .vector_engine import FableVectorCompiler, VLayoutSolver, VNode
 from .visual import VisualGroundingEngine
 from .workspace import AtomicWorkspaceEngine
 
@@ -39,6 +40,8 @@ class CoderFleetDispatcher:
         compute: ComputeOrchestratorEngine | None = None,
         red_team_swarm: RedTeamSwarm | None = None,
         plasticity_engine: HebbianPlasticityEngine | None = None,
+        vector_compiler: FableVectorCompiler | None = None,
+        layout_solver: VLayoutSolver | None = None,
     ) -> None:
         self.visual = visual or VisualGroundingEngine()
         self.diagnostics = diagnostics or DiagnosticsEngine()
@@ -51,6 +54,8 @@ class CoderFleetDispatcher:
         self.receipt_attestor = receipt_attestor or ReceiptAttestorEngine()
         self.compute = compute or ComputeOrchestratorEngine()
         self.plasticity_engine = plasticity_engine or HebbianPlasticityEngine()
+        self.vector_compiler = vector_compiler or FableVectorCompiler()
+        self.layout_solver = layout_solver or VLayoutSolver()
         self.red_team_swarm = red_team_swarm or RedTeamSwarm(
             test_harness=self.test_harness,
             mock_auditor=self.mock_auditor,
@@ -113,6 +118,9 @@ class CoderFleetDispatcher:
             "cortical_recall_context": self.plasticity_engine.recall_cortical_context,
             "cortical_inspect_matrix": self.plasticity_engine.get_synaptic_matrix,
             "evolve_cortex": self.plasticity_engine.consolidate_task,
+            # 13. Fable-Vector Neuro-Symbolic Vector Engine
+            "compile_vector": self.compile_vector,
+            "solve_layout": self.solve_layout,
         }
 
     def list_actions(self) -> list[str]:
@@ -159,3 +167,38 @@ class CoderFleetDispatcher:
                 "action": action,
                 "error": f"Execution error in action '{action}': {exc}",
             }
+
+    def compile_vector(
+        self,
+        node: VNode | dict[str, Any] | None = None,
+        tree: VNode | dict[str, Any] | None = None,
+        root: VNode | dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Compile a VNode tree or dictionary definition into production SVG."""
+        target = node if node is not None else (tree if tree is not None else root)
+        if target is None:
+            raise ValueError("No node, tree, or root provided to compile_vector")
+        svg_code = self.vector_compiler.compile(target, options=options)
+        return {
+            "svg": svg_code,
+            "valid": True,
+        }
+
+    def solve_layout(
+        self,
+        root: VNode | dict[str, Any] | None = None,
+        node: VNode | dict[str, Any] | None = None,
+        tree: VNode | dict[str, Any] | None = None,
+        viewport_width: float = 1920.0,
+        viewport_height: float = 1080.0,
+    ) -> dict[str, Any]:
+        """Solve layout constraints and return computed coordinates and bounding boxes."""
+        target = root if root is not None else (node if node is not None else tree)
+        if target is None:
+            raise ValueError("No root, node, or tree provided to solve_layout")
+        return self.layout_solver.solve_layout(
+            target,
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
+        )

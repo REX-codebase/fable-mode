@@ -31,6 +31,14 @@ from .red_team_swarm import (
     RedTeamSwarm,
 )
 from .test_harness import TestHarnessEngine
+from .vector_engine import (
+    BoundingBox,
+    FableVectorCompiler,
+    OKLCHColor,
+    ParametricGeometry,
+    VLayoutSolver,
+    VNode,
+)
 from .visual import VisualGroundingEngine
 from .workspace import AtomicWorkspaceEngine
 
@@ -51,4 +59,10 @@ __all__ = [
     "BreakFinding",
     "RedTeamBreakageReport",
     "RedTeamSwarm",
+    "OKLCHColor",
+    "ParametricGeometry",
+    "BoundingBox",
+    "VNode",
+    "VLayoutSolver",
+    "FableVectorCompiler",
 ]
