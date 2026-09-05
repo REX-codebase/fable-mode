@@ -6,6 +6,14 @@
 
 *The Deterministic Deliberative Cognitive Architecture for Frontier AI Agents.*
 
+> **Fable Mode is an open-source MCP control plane for AI coding agents.** It makes agents deliberate, verify, and survive adversarial review before they earn permission to modify your workspace.
+>
+> If your agent can edit code faster than it can explain, test, and defend the change, Fable Mode adds the missing control layer: mechanical time-locks, evidence-gated proof receipts, closed-loop red-team remediation, and persistent engineering memory.
+
+**Best for:** AI-agent builders, MCP adopters, and engineers shipping security-sensitive or complex software.
+
+**Start here:** [install the package](#-installation--client-integration) · [read the six-phase lifecycle](#-how-it-works-the-6-phase-state-machine) · [inspect the proof and test suites](#-epistemic-invariant--test-verification)
+
 <br/>
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-090d16?style=flat-square&logo=python&logoColor=fafafa)](https://www.python.org/)
@@ -18,9 +26,9 @@
 
 <br/>
 
-> **🎉 Celebrating 21 ⭐ on GitHub!** Thank you to the community for supporting deterministic cognitive agent architectures.
+> **Project status:** Fable Mode is an actively evolving open-source research-and-engineering project. The stable path is the MCP server, deterministic lifecycle, proof receipts, and red-team verification; the System 3 modules are frontier/experimental work.
 >
-> **"LLMs rush complex engineering within 30 seconds. Fable-Mode locks the workspace, enforces mathematical System 2 deliberation, validates claims with an ungameable proof engine, and scales exploration to model velocity."**
+> **"LLMs rush complex engineering within 30 seconds. Fable-Mode locks the workspace, enforces mathematical System 2 deliberation, validates claims with an evidence-gated proof engine, and scales exploration to model velocity."**
 
 <br/>
 
