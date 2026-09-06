@@ -316,11 +316,19 @@ def main(argv: list[str] | None = None) -> int:
         except InstallError as exc:
             print(f"uninstall: {exc}", file=sys.stderr)
             return 1
-    if not args.dry_run and not (args.yes or args.register_hosts) and not sys.stdin.isatty():
-        print("install requires --yes or --register-hosts in unattended mode", file=sys.stderr)
-        return 2
-    if not args.dry_run and sys.stdin.isatty() and not (args.yes or args.register_hosts):
-        if input(f"Install Fable to {installer.install_dir}? [y/N] ").strip().lower() not in {"y", "yes"}:
+    if not args.dry_run and not (args.yes or args.register_hosts):
+        if not sys.stdin.isatty():
+            print("install requires --yes or --register-hosts in unattended mode", file=sys.stderr)
+            return 2
+        try:
+            confirmed = input(f"Install Fable to {installer.install_dir}? [y/N] ").strip().lower() in {"y", "yes"}
+        except EOFError:
+            print("install requires --yes or --register-hosts in unattended mode", file=sys.stderr)
+            return 2
+        except KeyboardInterrupt:
+            print("\nInstallation cancelled.")
+            return 0
+        if not confirmed:
             print("Installation cancelled.")
             return 0
     registration_workspace: Path | None = None
@@ -337,7 +345,11 @@ def main(argv: list[str] | None = None) -> int:
             if sys.stdin.isatty() and not args.yes:
                 found = ", ".join(sorted(hosts)) or "none"
                 print(f"Detected host commands: {found}")
-                if input("Register Fable with these hosts? [y/N] ").strip().lower() not in {"y", "yes"}:
+                try:
+                    reg_confirmed = input("Register Fable with these hosts? [y/N] ").strip().lower() in {"y", "yes"}
+                except (EOFError, KeyboardInterrupt):
+                    reg_confirmed = False
+                if not reg_confirmed:
                     if result.transaction:
                         result.transaction.rollback()
                     print("Host registration cancelled.")

@@ -395,10 +395,12 @@ class TestMCPServerAutoUpdateActions(unittest.TestCase):
         self.assertIn("Update Available", res)
         self.assertIn("Local Commit", res)
 
-    def test_apply_auto_update_dispatch(self) -> None:
+    @patch.object(AutoUpdater, "apply_update", return_value={"success": True, "updated": False, "message": "Up to date", "preserved_lobes": ["rust"], "synced_targets": []})
+    def test_apply_auto_update_dispatch(self, mock_apply) -> None:
         res = handle_fable_session({"action": "apply_auto_update", "preserve_cortex": True})
         self.assertIn("Fable Autonomous Auto-Updater Applied", res)
         self.assertIn("Success", res)
+        mock_apply.assert_called_once_with(preserve_cortex=True)
 
 
 if __name__ == "__main__":

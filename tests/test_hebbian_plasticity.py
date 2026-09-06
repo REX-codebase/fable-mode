@@ -573,7 +573,8 @@ class TestHebbianCorticalPlasticity(unittest.TestCase):
         """Verify the repository's 5 production baseline lobes in skills/fable-mode/cortex/ are fully valid."""
         repo_engine = HebbianPlasticityEngine()  # Resolves to repo cortex dir
         for domain in CorticalDomain:
-            lobe = repo_engine.activate_lobe(domain)
+            lobe_path = repo_engine._get_lobe_path(domain)
+            lobe = CorticalLobe.load_from_disk(lobe_path)
             self.assertEqual(lobe.domain, domain)
             self.assertGreaterEqual(len(lobe.antibodies), 3, f"Lobe {domain.value} has fewer than 3 antibodies")
             self.assertGreaterEqual(len(lobe.specialized_heuristics), 5, f"Lobe {domain.value} has fewer than 5 heuristics")

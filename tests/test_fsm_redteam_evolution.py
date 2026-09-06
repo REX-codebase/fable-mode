@@ -37,6 +37,16 @@ class TestFSMRedTeamEvolution(unittest.TestCase):
     def setUp(self):
         ACTIVE_SESSIONS.clear()
         self.test_dir = tempfile.mkdtemp(prefix="fable_fsm_test_")
+        self._orig_cortex_dir = GLOBAL_PLASTICITY_ENGINE.cortex_dir
+        self._orig_matrix_path = GLOBAL_PLASTICITY_ENGINE.matrix_path
+        temp_cortex = Path(self.test_dir) / "cortex"
+        temp_cortex.mkdir(parents=True, exist_ok=True)
+        if self._orig_cortex_dir.exists():
+            shutil.copytree(self._orig_cortex_dir, temp_cortex, dirs_exist_ok=True)
+        GLOBAL_PLASTICITY_ENGINE.cortex_dir = temp_cortex
+        GLOBAL_PLASTICITY_ENGINE.matrix_path = temp_cortex / "synaptic_matrix.json"
+        from fable_engine.session import get_red_team_swarm
+        get_red_team_swarm().plasticity_engine = GLOBAL_PLASTICITY_ENGINE
         for name in ("test_illegal_fsm", "test_red_team_gate", "test_ping_pong_loop", "test_cortical_evo"):
             p = SESSIONS_DIR / f"{name}.json"
             if p.exists():
@@ -47,6 +57,10 @@ class TestFSMRedTeamEvolution(unittest.TestCase):
 
     def tearDown(self):
         ACTIVE_SESSIONS.clear()
+        GLOBAL_PLASTICITY_ENGINE.cortex_dir = self._orig_cortex_dir
+        GLOBAL_PLASTICITY_ENGINE.matrix_path = self._orig_matrix_path
+        from fable_engine.session import get_red_team_swarm
+        get_red_team_swarm().plasticity_engine = GLOBAL_PLASTICITY_ENGINE
         for name in ("test_illegal_fsm", "test_red_team_gate", "test_ping_pong_loop", "test_cortical_evo"):
             p = SESSIONS_DIR / f"{name}.json"
             if p.exists():

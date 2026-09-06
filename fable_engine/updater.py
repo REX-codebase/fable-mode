@@ -528,7 +528,7 @@ class AutoUpdater:
         with _BG_LOCK:
             if _BG_RUNNING:
                 # Already running in background
-                dummy = threading.Thread(target=lambda: None)
+                dummy = threading.Thread(target=lambda: None, daemon=True)
                 dummy.start()
                 return dummy
 
