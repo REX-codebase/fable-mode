@@ -80,3 +80,8 @@
       * `Resource Exhaustion`: 150KB+ payloads, rapid churn loops, memory/handle leaks, and 3.0s CPU timeouts.
       * `State Invariant`: Idempotency violations $f(f(x)) \neq f(x)$, out-of-order lifecycle calls, and boundary state corruption.
     - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.
+
+18. **Frontier Anti-Slop Frontend Design & Awwwards Standard (`fable_v2.coder_fleet.design_engine`)**:
+    - For any frontend, UI, or web task, subagents must strictly enforce the Anti-Slop Invariants. Zero purple/violet glowing gradient blobs, zero centered 3-card boilerplates, zero unstyled default font crutches, zero fake div screenshot dots, zero mobile-unstable `h-screen`, and zero LLM buzzwords ('supercharge', 'unleash', 'next-gen AI').
+    - Subagents must structure layouts across the 7-Layer Optical Depth Architecture, apply curated OKLCH palettes (Cold Luxury, Haute Editorial, Swiss Precision, Cyber HUD, Neo-Nordic), use golden-ratio fluid clamp typography, enforce single-line CTAs (`whitespace-nowrap`), and verify compliance via `validate_preflight_design` and `audit_anti_slop`.
+

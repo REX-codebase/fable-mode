@@ -68,7 +68,13 @@ TOOL_SCHEMA = {
                     "cortical_list_lobes",
                     "check_auto_update",
                     "apply_auto_update",
-                    "evolve_cortex"
+                    "evolve_cortex",
+                    "audit_anti_slop",
+                    "infer_design_brief",
+                    "generate_design_tokens",
+                    "generate_awwwards_scaffold",
+                    "validate_preflight_design",
+                    "list_design_archetypes"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -491,6 +497,34 @@ TOOL_SCHEMA = {
             "task_id": {
                 "type": "string",
                 "description": "Task identifier for cortical plasticity consolidation or session lineage."
+            },
+            "code": {
+                "type": "string",
+                "description": "Source code content (HTML, JSX, CSS, or TSX) to audit or validate against anti-slop gates."
+            },
+            "archetype": {
+                "type": "string",
+                "enum": [
+                    "cyber_obsidian_monolith",
+                    "haute_editorial_modernism",
+                    "swiss_precision_vignelli",
+                    "kinetic_spatial_hud",
+                    "neo_nordic_warmth",
+                    "cold_chromatic_luxury"
+                ],
+                "description": "Haute aesthetic archetype identifier for design tokens or scaffolding."
+            },
+            "archetype_override": {
+                "type": "string",
+                "description": "Optional override for Haute aesthetic archetype."
+            },
+            "dials_override": {
+                "type": "object",
+                "description": "Optional discrete dials override: variance (1-10), motion (1-10), density (1-10)."
+            },
+            "user_prompt": {
+                "type": "string",
+                "description": "Alias for prompt: high-level design prompt describing desired web experience."
             }
         },
         "required": ["action"]

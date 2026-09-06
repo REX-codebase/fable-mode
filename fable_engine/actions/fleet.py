@@ -576,3 +576,227 @@ def _handle_apply_auto_update(arguments: Dict[str, Any]) -> str:
     return md_output
 
 
+try:
+    from fable_v2.coder_fleet.design_engine import (
+        AestheticArchetype,
+        DesignDials,
+        DesignEngine,
+        HAUTE_THEMES,
+    )
+except ImportError:
+    DesignEngine = None
+    HAUTE_THEMES = {}
+
+_GLOBAL_DESIGN_ENGINE = None
+
+def _get_design_engine():
+    global _GLOBAL_DESIGN_ENGINE
+    if _GLOBAL_DESIGN_ENGINE is None and DesignEngine is not None:
+        _GLOBAL_DESIGN_ENGINE = DesignEngine()
+    return _GLOBAL_DESIGN_ENGINE
+
+
+def _handle_audit_anti_slop(arguments: Dict[str, Any]) -> str:
+    code = arguments.get("code") or arguments.get("content") or arguments.get("html") or arguments.get("source") or ""
+    file_path = arguments.get("file_path", "")
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    res = engine.audit_anti_slop(code, file_path=file_path)
+    status_badge = "🟢 CLEAN (ZERO AI SLOP)" if res["clean"] else f"🔴 FAILED ({res['total_violations']} VIOLATIONS)"
+    lines = [
+        f"### 🛡️ Anti-Slop Design Audit: {status_badge}",
+        "",
+        f"- **Anti-Slop Score**: `{res['score'] * 100:.1f}%`",
+        f"- **Clean**: `{res['clean']}`",
+        f"- **Fatal Violations**: `{res['fatal_count']}`",
+        f"- **High Violations**: `{res['high_count']}`",
+        f"- **Medium Violations**: `{res['medium_count']}`",
+        "",
+    ]
+    if res["violations"]:
+        lines.append("#### ⚠️ Violations Breakdown:")
+        for v in res["violations"]:
+            lines.append(f"- **[{v['severity']}] `{v['rule_id']}`** (Line {v['line_number'] or 'N/A'}): {v['message']}")
+            lines.append(f"  - *Snippet*: `{v['snippet']}`")
+            lines.append(f"  - *Remedy*: {v['remedy']}")
+    else:
+        lines.append("✅ **All Anti-Slop Gates Passed**: Zero purple blobs, zero centered 3-card boilerplates, zero LLM marketing fluff, zero fake div dots, zero viewport instability.")
+
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+def _handle_infer_design_brief(arguments: Dict[str, Any]) -> str:
+    prompt = arguments.get("prompt") or arguments.get("user_prompt") or arguments.get("brief") or ""
+    dials_override = arguments.get("dials_override") or arguments.get("dials")
+    archetype_override = arguments.get("archetype_override") or arguments.get("archetype")
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    res = engine.infer_design_brief(prompt, dials_override=dials_override, archetype_override=archetype_override)
+    dials = res["dials"]
+    palette = res["palette"]
+    typo = res["typography"]
+    layout = res["layout_blueprint"]
+    lines = [
+        "### 🎨 Fable Brief Inference & Design Read",
+        "",
+        f"> **{res['design_read']}**",
+        "",
+        f"- **Page Kind**: `{res['page_kind']}`",
+        f"- **Target Audience**: {res['target_audience']}",
+        f"- **Optimal Archetype**: `{res['archetype_title']}` (`{res['archetype']}`)",
+        f"- **Aesthetic Vector**: Variance `{dials['variance']}` / Motion `{dials['motion']}` / Density `{dials['density']}`",
+        "",
+        "#### 🎨 Curated OKLCH Palette:",
+        f"- Background Void: `{palette['bg_void']}`",
+        f"- Surface Card: `{palette['surface_card']}`",
+        f"- Hairline Border: `{palette['border_hairline']}`",
+        f"- Primary Accent: `{palette['accent_primary']}`",
+        f"- Primary Text: `{palette['text_primary']}`",
+        "",
+        "#### 🔤 Typographic Pairings:",
+        f"- Display: `{typo['display']}`",
+        f"- Body: `{typo['body']}`",
+        f"- Monospace: `{typo['mono']}`",
+        "",
+        "#### 📐 Layout Architecture:",
+        f"- Hero Stack: Max {layout['hero_stack_max_elements']} text elements, cap at {layout['hero_top_padding_cap']}",
+        f"- Navigation: {layout['navigation_height_cap']}",
+        f"- Grid: {layout['bento_grid_structure']}",
+        f"- CTA Constraint: {layout['desktop_cta_rule']}",
+    ]
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+def _handle_generate_design_tokens(arguments: Dict[str, Any]) -> str:
+    archetype = arguments.get("archetype") or arguments.get("name") or "cyber_obsidian_monolith"
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    data = engine.generate_design_tokens(archetype=archetype)
+    lines = [
+        f"### 🎛️ Haute Design Tokens: `{data['title']}`",
+        "",
+        f"> {data['description']}",
+        "",
+        f"- **Radius Scale**: `{data['border_radius_scale']}`",
+        f"- **Spring Physics**: `{data['spring_physics']['name']}` (Stiffness: {data['spring_physics']['stiffness']}, Damping: {data['spring_physics']['damping']}, Mass: {data['spring_physics']['mass']})",
+        f"- **WCAG Contrast**: `{data['wcag_aa_contrast']['primary_to_bg_ratio']}:1` ({'✅ Meets AA' if data['wcag_aa_contrast']['meets_wcag_aa'] else '⚠️ Below AA'})",
+        "",
+        "```css",
+        data["tailwind_v4_theme"],
+        "```",
+    ]
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+def _handle_generate_awwwards_scaffold(arguments: Dict[str, Any]) -> str:
+    prompt = arguments.get("prompt") or arguments.get("user_prompt") or arguments.get("brief") or "Modern software platform"
+    archetype = arguments.get("archetype") or arguments.get("archetype_override") or arguments.get("name")
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    res = engine.generate_awwwards_scaffold(prompt=prompt, archetype_override=archetype)
+    lines = [
+        f"### 🏆 Awwwards-Caliber Zero-Slop Scaffold Generated",
+        "",
+        f"> **{res['design_read']}**",
+        "",
+        f"- **Aesthetic Archetype**: `{res['theme_title']}` (`{res['archetype']}`)",
+        f"- **Anti-Slop Verified**: `{'✅ 100% CLEAN' if res['anti_slop_verified'] else '⚠️ VIOLATIONS DETECTED'}` (Score: `{res['audit_result']['score'] * 100:.1f}%`)",
+        "",
+        "#### 🎨 Tailwind CSS v4 Theme:",
+        "```css",
+        res["tailwind_v4_theme"],
+        "```",
+        "",
+        "#### 🏗️ Semantic 7-Layer HTML/JSX Layout:",
+        "```html",
+        res["html_layout"][:2000] + "\n... [Full layout available via code export]",
+        "```",
+    ]
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+def _handle_validate_preflight_design(arguments: Dict[str, Any]) -> str:
+    code = arguments.get("code") or arguments.get("content") or arguments.get("html") or arguments.get("source") or ""
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    res = engine.validate_preflight_design(code)
+    status_badge = "🟢 PRE-FLIGHT APPROVED" if res["approved"] else "🔴 PRE-FLIGHT REJECTED"
+    lines = [
+        f"### 🚦 5-Point Pre-Flight Design Gate: {status_badge}",
+        "",
+        f"- **Composite Score**: `{res['composite_score'] * 100:.1f}%`",
+        f"- **Passed Checks**: `{res['passed_checks']}/{res['total_checks']}`",
+        f"- **Approved**: `{res['approved']}`",
+        "",
+        "#### 📋 5-Point Verification Checklist:",
+    ]
+    for chk in res["checklist"]:
+        mark = "✅ PASSED" if chk["passed"] else "❌ FAILED"
+        lines.append(f"- **Point {chk['point']} ({chk['name']})**: {mark} — {chk['details']}")
+
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+def _handle_list_design_archetypes(arguments: Dict[str, Any]) -> str:
+    session_name = arguments.get("session_name", "").strip()
+    session = get_or_load_session(session_name) if session_name else None
+    engine = _get_design_engine()
+    if engine is None:
+        return "Error: DesignEngine module is unavailable."
+
+    archetypes = engine.list_design_archetypes()
+    lines = [
+        "### 🏛️ Haute Aesthetic Archetypes (Anti-Slop Universes)",
+        "",
+        "| Archetype Key | Title | Dials (V/M/D) | Aesthetic Character |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    for arch in archetypes:
+        d = arch["dials"]
+        lines.append(f"| `{arch['archetype']}` | **{arch['title']}** | `{d['variance']}/{d['motion']}/{d['density']}` | {arch['description']} |")
+
+    lines.append("")
+    lines.append("Use `action: 'generate_design_tokens'` with `archetype: '<key>'` or `action: 'generate_awwwards_scaffold'` to scaffold.")
+    md_output = "\n".join(lines)
+    if session and session.execution_locked:
+        md_output += SILENT_DELIBERATION_REMINDER
+    return md_output
+
+
+
+

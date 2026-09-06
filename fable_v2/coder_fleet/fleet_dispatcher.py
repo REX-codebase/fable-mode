@@ -11,6 +11,7 @@ from typing import Any, Callable
 from ..cortical import HebbianPlasticityEngine
 from .ast_tools import TreeSitterCodemodEngine
 from .compute import ComputeOrchestratorEngine
+from .design_engine import DesignEngine
 from .diagnostics import DiagnosticsEngine
 from .mock_auditor import MockAuditorEngine
 from .mutation import MutationVerifierEngine
@@ -24,7 +25,7 @@ from .workspace import AtomicWorkspaceEngine
 
 
 class CoderFleetDispatcher:
-    """Unified dispatcher for the 10-Tool Coder Subagent MCP Fleet and Cortical Engine."""
+    """Unified dispatcher for the 10-Tool Coder Subagent MCP Fleet, Cortical Engine, and Design Engine."""
 
     def __init__(
         self,
@@ -42,6 +43,7 @@ class CoderFleetDispatcher:
         plasticity_engine: HebbianPlasticityEngine | None = None,
         vector_compiler: FableVectorCompiler | None = None,
         layout_solver: VLayoutSolver | None = None,
+        design_engine: DesignEngine | None = None,
     ) -> None:
         self.visual = visual or VisualGroundingEngine()
         self.diagnostics = diagnostics or DiagnosticsEngine()
@@ -56,6 +58,7 @@ class CoderFleetDispatcher:
         self.plasticity_engine = plasticity_engine or HebbianPlasticityEngine()
         self.vector_compiler = vector_compiler or FableVectorCompiler()
         self.layout_solver = layout_solver or VLayoutSolver()
+        self.design_engine = design_engine or DesignEngine()
         self.red_team_swarm = red_team_swarm or RedTeamSwarm(
             test_harness=self.test_harness,
             mock_auditor=self.mock_auditor,
@@ -121,6 +124,13 @@ class CoderFleetDispatcher:
             # 13. Fable-Vector Neuro-Symbolic Vector Engine
             "compile_vector": self.compile_vector,
             "solve_layout": self.solve_layout,
+            # 14. Anti-Slop Frontend & Design Taste Engine
+            "audit_anti_slop": self.design_engine.audit_anti_slop,
+            "infer_design_brief": self.design_engine.infer_design_brief,
+            "generate_design_tokens": self.design_engine.generate_design_tokens,
+            "generate_awwwards_scaffold": self.design_engine.generate_awwwards_scaffold,
+            "validate_preflight_design": self.design_engine.validate_preflight_design,
+            "list_design_archetypes": self.design_engine.list_design_archetypes,
         }
 
     def list_actions(self) -> list[str]:

@@ -17,6 +17,23 @@ from __future__ import annotations
 
 from .ast_tools import TreeSitterCodemodEngine
 from .compute import ComputeOrchestratorEngine
+from .design_engine import (
+    AestheticArchetype,
+    AntiSlopAuditor,
+    AwwwardsScaffoldGenerator,
+    BriefInferenceEngine,
+    DesignDials,
+    DesignEngine,
+    HauteDesignTheme,
+    OKLCHColorToken,
+    PreFlightDesignGate,
+    SlopViolation,
+    SpringPreset,
+    calculate_contrast_ratio,
+    generate_fluid_clamp,
+    HAUTE_THEMES,
+    SPRING_PRESETS,
+)
 from .diagnostics import DiagnosticsEngine
 from .fleet_dispatcher import CoderFleetDispatcher
 from .mock_auditor import MockAuditorEngine
@@ -65,4 +82,19 @@ __all__ = [
     "VNode",
     "VLayoutSolver",
     "FableVectorCompiler",
+    "AestheticArchetype",
+    "AntiSlopAuditor",
+    "AwwwardsScaffoldGenerator",
+    "BriefInferenceEngine",
+    "DesignDials",
+    "DesignEngine",
+    "HauteDesignTheme",
+    "OKLCHColorToken",
+    "PreFlightDesignGate",
+    "SlopViolation",
+    "SpringPreset",
+    "calculate_contrast_ratio",
+    "generate_fluid_clamp",
+    "HAUTE_THEMES",
+    "SPRING_PRESETS",
 ]

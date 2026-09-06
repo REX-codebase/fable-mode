@@ -54,6 +54,7 @@
     "fable_v2/coder_fleet/workspace.py",
     "fable_v2/coder_fleet/red_team_swarm.py",
     "fable_v2/coder_fleet/vector_engine.py",
+    "fable_v2/coder_fleet/design_engine.py",
     "fable_v2/cortical/__init__.py",
     "fable_v2/cortical/plasticity_engine.py",
     "fable_compressor.py",
@@ -74,6 +75,7 @@
     "skills/fable-mode/references/agentic-execution.md",
     "skills/fable-mode/references/architectural-blueprinting.md",
     "skills/fable-mode/references/cinematic-design-engine.md",
+    "skills/fable-mode/references/anti-slop-frontend-architecture.md",
     "skills/fable-mode/references/cognitive-protocol.md",
     "skills/fable-mode/references/deepthink-mode.md",
     "skills/fable-mode/references/design-tokens-and-typographies.md",
@@ -93,6 +95,7 @@
     "skills/fable-mode/cortex/rust.md",
     "skills/fable-mode/cortex/python.md",
     "skills/fable-mode/cortex/design_3d.md",
+    "skills/fable-mode/cortex/frontend_design.md",
     "skills/fable-mode/cortex/research.md",
     "skills/fable-mode/cortex/concurrency.md",
     "LICENSE"

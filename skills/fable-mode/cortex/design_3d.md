@@ -114,6 +114,51 @@ antibodies:
   created_at: '2026-09-05T12:00:00+00:00'
   verified_counterfactual: Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator
     overhead on ambient UI components
+- antibody_id: ab_design_purple_glow_slop
+  domain: design_3d
+  trigger_condition: Using generic purple/violet glowing radial or gradient blobs (bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl)
+  lethal_anti_pattern: '<div class="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl opacity-30"></div>'
+  prescribed_defense: Eliminate generic purple blobs. Use a single curated OKLCH accent colorway anchored on a neutral base with inverse-square volumetric lighting.
+  severity: CRITICAL
+  source_task_id: task_anti_slop_audit_01
+  created_at: '2026-09-06T12:00:00+00:00'
+  verified_counterfactual: Visual difference probe verified zero purple gradient artifacts; clean monochromatic OKLCH substrate confirmed.
+- antibody_id: ab_design_centered_three_card_cliche
+  domain: design_3d
+  trigger_condition: Generating centered hero followed by 3 equal feature cards with icons in colored rounded boxes
+  lethal_anti_pattern: '<div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center"><div class="p-6 rounded-xl shadow"><h3>Feature 1</h3></div>...</div>'
+  prescribed_defense: Enforce dynamic asymmetric Bento Grid layout with mixed cell spans (2x2 hero cell, 2x1 telemetry ribbon, 1x1 sandboxes) and contrasting visual surfaces.
+  severity: HIGH
+  source_task_id: task_bento_layout_audit
+  created_at: '2026-09-06T12:00:00+00:00'
+  verified_counterfactual: Layout inspector confirmed asymmetric 50/50 split and 8/4 bento grid with zero identical centered cards.
+- antibody_id: ab_design_div_screenshot_mockup
+  domain: design_3d
+  trigger_condition: Rendering fake browser or macOS preview windows with 3 colored circle dots in CSS
+  lethal_anti_pattern: '<div class="flex gap-2"><span class="w-3 h-3 rounded-full bg-red-500"></span><span class="w-3 h-3 rounded-full bg-yellow-500"></span><span class="w-3 h-3 rounded-full bg-green-500"></span></div>'
+  prescribed_defense: Prohibit fake div screenshot window bars. Render authentic interactive component sandboxes or real high-resolution imagery.
+  severity: CRITICAL
+  source_task_id: task_materiality_audit
+  created_at: '2026-09-06T12:00:00+00:00'
+  verified_counterfactual: DOM scanner verified complete absence of fake colored window dots; real telemetry widgets rendered.
+- antibody_id: ab_design_llm_marketing_fluff
+  domain: design_3d
+  trigger_condition: Injecting generic LLM buzzwords ('supercharge', 'unleash', 'next-gen AI', 'delve into', 'seamlessly integrate')
+  lethal_anti_pattern: '<h1>Supercharge your workflow with our next-gen AI platform</h1>'
+  prescribed_defense: Replace marketing buzzwords with concrete, functional, measurable engineering copy ('Deterministic execution brokers delivering sub-60ms state transitions').
+  severity: HIGH
+  source_task_id: task_copywriting_audit
+  created_at: '2026-09-06T12:00:00+00:00'
+  verified_counterfactual: AST copy auditor confirmed zero regex matches for banned LLM marketing marker phrases.
+- antibody_id: ab_design_viewport_instability_h_screen
+  domain: design_3d
+  trigger_condition: Using h-screen or height: 100vh causing mobile address-bar resize jumping
+  lethal_anti_pattern: '<section class="h-screen w-full flex items-center justify-center">'
+  prescribed_defense: Strictly use min-h-[100dvh] with desktop top padding capped at pt-24 (6rem) for rock-solid mobile stability.
+  severity: MEDIUM
+  source_task_id: task_viewport_fit_audit
+  created_at: '2026-09-06T12:00:00+00:00'
+  verified_counterfactual: Mobile emulator verified zero Cumulative Layout Shift (CLS = 0.00) during mobile URL bar collapse.
 specialized_heuristics:
 - 'Three.js / WebGPU Standards: Prefer Three Shading Language (TSL) node shaders and
   WebGPURenderer over legacy raw WebGL1 strings; verify hardware fallback.'
@@ -139,7 +184,10 @@ specialized_heuristics:
 - '3D Complexity Triage: Classify task into Tier 1 (Ambient UI), Tier 2 (Configurator/HUD),
   or Tier 3 (Real-Time Game) before coding; never apply Tier 3 game-engine loops to
   Tier 1 decorative widgets.'
-last_consolidated_at: '2026-09-05T12:00:00+00:00'
+- 'Anti-Slop Strict Invariant: Zero purple glowing gradients, zero 3-card centered boilerplates, zero LLM marketing fluff, zero fake macOS window dots.'
+- 'Brief Inference & Dials Calibration: Infer page kind and audience; calibrate Variance, Motion, and Density before layout synthesis.'
+- '7-Layer Optical Depth Staging: Build UI depth via Atmospheric Void, Micro-Grain, Volumetric Lighting, Refractive Substrate, Hairline Rims, Fluid Typography, Micro-Physics.'
+last_consolidated_at: '2026-09-06T12:00:00+00:00'
 ---
 
 # Cortical Lobe: `design_3d`

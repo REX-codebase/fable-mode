@@ -101,10 +101,42 @@
   --border-hairline: oklch(0.85 0.18 195 / 0.25);
   --text-primary: oklch(0.95 0.01 250);
   --text-secondary: oklch(0.70 0.02 250);
-  --accent-primary: oklch(0.92 0.22 130); /* Acid Lime Telemetry */
-  --font-display: 'Geist Mono', 'Iosevka Term', monospace;
-  --font-body: 'Instrument Sans', system-ui, sans-serif;
-  --radius-subtle: 4px;
+  --accent-primary: oklch(0.72 0.22 145); /* Phosphor Emerald Telemetry */
+  --font-display: 'Geist Mono', 'JetBrains Mono', monospace;
+  --font-body: 'Geist', system-ui, sans-serif;
+  --radius-subtle: 6px;
+}
+```
+
+### Archetype 5: Neo-Nordic Tactile Warmth
+```css
+[data-theme="neo-nordic"] {
+  --bg-primary: oklch(0.975 0.008 140); /* Crisp Bone Sand */
+  --bg-surface: oklch(0.94 0.012 140);
+  --border-hairline: oklch(0.35 0.05 150 / 0.12);
+  --text-primary: oklch(0.16 0.03 150); /* Deep Forest Umber */
+  --text-secondary: oklch(0.48 0.04 150);
+  --accent-primary: oklch(0.38 0.09 150); /* Alpine Spruce */
+  --font-display: 'Satoshi', 'Cabinet Grotesk', system-ui, sans-serif;
+  --font-body: 'Satoshi', system-ui, sans-serif;
+  --font-mono: 'Commit Mono', monospace;
+  --radius-subtle: 24px; /* Organic pebble contours */
+}
+```
+
+### Archetype 6: Cold Chromatic Luxury
+```css
+[data-theme="cold-chromatic"] {
+  --bg-primary: oklch(0.985 0.002 240); /* Silver White */
+  --bg-surface: oklch(0.93 0.004 240);
+  --border-hairline: oklch(0.14 0.01 240 / 0.14);
+  --text-primary: oklch(0.12 0.01 240); /* Smoked Charcoal */
+  --text-secondary: oklch(0.46 0.01 240);
+  --accent-primary: oklch(0.52 0.22 255); /* High-Voltage Pure Cobalt */
+  --font-display: 'ABC Diatype', 'Söhne Breit', system-ui, sans-serif;
+  --font-body: 'ABC Diatype', system-ui, sans-serif;
+  --font-mono: 'Commit Mono', monospace;
+  --radius-subtle: 2px;
 }
 ```
 
@@ -120,4 +152,22 @@ H2:        24.0px       31.4px       36.2px       44.0px
 H3:        20.0px       23.7px       26.1px       30.0px
 Body:      15.0px       15.7px       16.2px       17.0px
 Telemetry: 11.0px       11.7px       12.2px       13.0px
+```
+
+---
+
+## 4. Tailwind CSS v4 `@theme` Engine Integration
+
+```css
+@theme {
+  --color-bg-void: var(--bg-primary);
+  --color-surface-card: var(--bg-surface);
+  --color-border-hairline: var(--border-hairline);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+  --color-accent-primary: var(--accent-primary);
+  --font-family-display: var(--font-display);
+  --font-family-body: var(--font-body);
+  --font-family-mono: var(--font-mono);
+}
 ```

@@ -127,10 +127,26 @@ export const springPresets = {
 
 ## 6. The Anti-AI-Slop Strict Elimination Checklist
 
-Before finalizing any UI, verify the code passes the strict anti-slop audit:
+Before finalizing any UI, verify the code passes the strict anti-slop audit via `audit_anti_slop`:
 1. ❌ **No Purple Glow Blobs**: No generic `bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl` ambient radial backgrounds.
 2. ❌ **No Default Inter/Fraunces Crutch**: Default font must match the chosen Haute Archetype.
 3. ❌ **No 3-Card Centered Boilerplates**: Use asymmetric $5/7$ or $8/4$ bento grids or containerless telemetry strips.
-4. ❌ **No Fake Div Screenshots**: Use genuine interactive components or generated photorealistic assets.
+4. ❌ **No Fake Div Screenshots**: Use genuine interactive components or generated photorealistic assets; never render fake macOS 3-dot window bars.
 5. ❌ **No LLM Buzzwords**: Zero instances of *"Supercharge your workflow"*, *"Next-gen AI"*, or *"Delve into seamless ecosystems"*.
-6. ❌ **No Ungrounded Vector Slop**: Zero hand-wavy vector coordinates that clip outside the `viewBox`. Apply the [Haute SVG Craft & Vector Design Engine](./svg-craft-and-vector-design.md) for trigonometric coordinate pre-calculation, hairline strokes (`vector-effect="non-scaling-stroke"`), and OKLCH lighting.
+6. ❌ **No Viewport Instability (`h-screen`)**: Strictly use `min-h-[100dvh]` to eliminate mobile address-bar resize jumping.
+7. ❌ **No Single-Line CTA Wraps**: All button labels must fit on a single line at desktop (`whitespace-nowrap`).
+8. ❌ **No Eyebrow Overload**: Uppercase tracking eyebrows capped at $\le \lceil N_{\text{sections}} / 3 \rceil$.
+9. ❌ **No Ungrounded Vector Slop**: Zero hand-wavy vector coordinates that clip outside the `viewBox`. Apply the [Haute SVG Craft & Vector Design Engine](./svg-craft-and-vector-design.md) for trigonometric coordinate pre-calculation, hairline strokes (`vector-effect="non-scaling-stroke"`), and OKLCH lighting.
+
+---
+
+## 7. Mechanical Pre-Flight Design Quality Gate
+
+Every frontend deliverable must pass mechanical verification via `validate_preflight_design`:
+1. **Viewport Fit & Stability**: Hero section top padding $\le \text{pt-24}$ ($6\text{rem}$), desktop nav $\le 80\text{px}$, and `100dvh` container height.
+2. **Typographic Polish & Descender Clearance**: Headlines with italic words containing descenders (`y, g, j, p, q`) must enforce `leading-[1.1]` and bottom clearance.
+3. **Color & Shape Invariant Locks**: Exactly ONE primary accent locked across the entire page; ONE unified border-radius scale.
+4. **Interactive Contrast (WCAG AA $\ge 4.5:1$)**: All text and button labels verified against relative luminance formulas.
+5. **Eyebrow Restraint & Copy Audit**: Zero LLM marker phrases; canonical action verb locked across all CTAs.
+
+For complete implementation blueprints and tokens, consult the [Anti-Slop Frontend Architecture Reference](./anti-slop-frontend-architecture.md).

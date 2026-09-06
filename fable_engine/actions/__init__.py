@@ -63,6 +63,12 @@ from fable_engine.actions.fleet import (
     _handle_cortical_list_lobes,
     _handle_check_auto_update,
     _handle_apply_auto_update,
+    _handle_audit_anti_slop,
+    _handle_infer_design_brief,
+    _handle_generate_design_tokens,
+    _handle_generate_awwwards_scaffold,
+    _handle_validate_preflight_design,
+    _handle_list_design_archetypes,
 )
 
 ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
@@ -216,6 +222,20 @@ ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "auto_update_check": _handle_check_auto_update,
     "apply_auto_update": _handle_apply_auto_update,
     "auto_update_apply": _handle_apply_auto_update,
+    "audit_anti_slop": _handle_audit_anti_slop,
+    "anti_slop_audit": _handle_audit_anti_slop,
+    "infer_design_brief": _handle_infer_design_brief,
+    "design_brief": _handle_infer_design_brief,
+    "generate_design_tokens": _handle_generate_design_tokens,
+    "design_tokens": _handle_generate_design_tokens,
+    "generate_awwwards_scaffold": _handle_generate_awwwards_scaffold,
+    "awwwards_scaffold": _handle_generate_awwwards_scaffold,
+    "validate_preflight_design": _handle_validate_preflight_design,
+    "preflight_design": _handle_validate_preflight_design,
+    "list_design_archetypes": _handle_list_design_archetypes,
+    "design_archetypes": _handle_list_design_archetypes,
+    "list_archetypes": _handle_list_design_archetypes,
+    "archetypes": _handle_list_design_archetypes,
 }
 
 
@@ -242,7 +262,8 @@ def handle_fable_session(arguments: Dict[str, Any]) -> str:
                 f"'track_file_change', 'get_session_lineage', 'inspect_plan', 'verify_proof', 'record_visual_mockups', 'validate_event_history', "
                 f"'set_goal_rubric', 'evaluate_goal_rubric', 'get_goal_rubric', 'register_automation_pipeline', "
                 f"'red_team_code_review', 'record_breakage_report', 'verify_red_team_remediation', "
-                f"'cortical_define_lobe', 'cortical_list_lobes', 'check_auto_update', 'apply_auto_update', 'evolve_cortex'."
+                f"'cortical_define_lobe', 'cortical_list_lobes', 'check_auto_update', 'apply_auto_update', 'evolve_cortex', "
+                f"'audit_anti_slop', 'infer_design_brief', 'generate_design_tokens', 'generate_awwwards_scaffold', 'validate_preflight_design', 'list_design_archetypes'."
             )
     except Exception as ex:
         return f"Error: {str(ex)}"
