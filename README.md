@@ -257,6 +257,12 @@ The `fable-engine` server exposes the unified `fable_session` tool adhering to J
 | `unlock_execution` | Gatekeeper | `session_name`, `rationale` | Evaluates time-lock clock and refinement criteria to unlock workspace modifications. |
 | `check_auto_update` | Sync | `session_name?` | Probes upstream repository for updates without blocking execution. |
 | `apply_auto_update` | Sync | `preserve_cortex?` | Updates skills and configuration while preserving local cortical learning. |
+| `scrape_web` | Research | `target`, `auto_log_epistemic?` | Scrapes web URL or performs free DuckDuckGo search returning Markdown. |
+| `scrape_youtube` | Research | `target`, `auto_log_epistemic?` | Scrapes YouTube video metadata, captions, and transcripts returning Markdown. |
+| `scrape_reddit` | Research | `target`, `auto_log_epistemic?` | Scrapes Reddit threads, comments, or subreddits via free JSON returning Markdown. |
+| `scrape_x` | Research | `target`, `auto_log_epistemic?` | Scrapes X (Twitter) tweets, handles, or oembeds returning Markdown. |
+| `scrape_github` | Research | `target`, `auto_log_epistemic?` | Scrapes GitHub repositories, READMEs, or code search returning Markdown. |
+| `scrape_arxiv` | Research | `target`, `auto_log_epistemic?` | Scrapes arXiv academic papers, abstracts, and PDF links returning Markdown. |
 
 ---
 

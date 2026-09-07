@@ -70,6 +70,14 @@ from fable_engine.actions.fleet import (
     _handle_validate_preflight_design,
     _handle_list_design_archetypes,
 )
+from fable_engine.actions.scrapers import (
+    _handle_scrape_web,
+    _handle_scrape_youtube,
+    _handle_scrape_reddit,
+    _handle_scrape_x,
+    _handle_scrape_github,
+    _handle_scrape_arxiv,
+)
 
 ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "create_session": _handle_create_session,
@@ -236,6 +244,19 @@ ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "design_archetypes": _handle_list_design_archetypes,
     "list_archetypes": _handle_list_design_archetypes,
     "archetypes": _handle_list_design_archetypes,
+    "scrape_web": _handle_scrape_web,
+    "web_scrape": _handle_scrape_web,
+    "scrape_youtube": _handle_scrape_youtube,
+    "youtube_scrape": _handle_scrape_youtube,
+    "scrape_reddit": _handle_scrape_reddit,
+    "reddit_scrape": _handle_scrape_reddit,
+    "scrape_x": _handle_scrape_x,
+    "x_scrape": _handle_scrape_x,
+    "twitter_scrape": _handle_scrape_x,
+    "scrape_github": _handle_scrape_github,
+    "github_scrape": _handle_scrape_github,
+    "scrape_arxiv": _handle_scrape_arxiv,
+    "arxiv_scrape": _handle_scrape_arxiv,
 }
 
 
