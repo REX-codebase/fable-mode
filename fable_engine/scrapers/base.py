@@ -1,12 +1,13 @@
 """
 Base research scraper interfaces, structured result objects, and HTTP transport utilities.
-Enforces standard TLS certificate verification, strict SSRF protection, host rate limiting,
-retry/backoff, and response size bounds.
+Enforces standard TLS certificate verification, strict SSRF protection with IP pinning
+(preventing DNS rebinding TOCTOU window), host rate limiting, retry/backoff, and response bounds.
 """
 
 from __future__ import annotations
 
 import datetime
+import http.client
 import ipaddress
 import json
 import logging
@@ -17,7 +18,6 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,7 +26,6 @@ logger = logging.getLogger("fable-engine.scrapers.base")
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FableResearch/1.3.0"
 
-# Standard TLS context enforcing certificate verification
 _SSL_CONTEXT = ssl.create_default_context()
 
 
@@ -51,33 +50,34 @@ def is_safe_ip(ip_str: str) -> bool:
         return False
 
 
-def validate_safe_url(url: str) -> Tuple[bool, str]:
+def validate_safe_url(url: str) -> Tuple[bool, str, Optional[str]]:
     """
     Validates that a URL uses http/https scheme and its hostname resolves
     exclusively to safe, public IP addresses (SSRF prevention).
+    Returns (is_safe, reason, first_resolved_safe_ip).
     """
     try:
         parsed = urllib.parse.urlparse(url)
         scheme = parsed.scheme.lower()
         if scheme not in ("http", "https"):
-            return False, f"Invalid URL scheme '{parsed.scheme}'. Strictly http and https are permitted."
+            return False, f"Invalid URL scheme '{parsed.scheme}'. Strictly http and https are permitted.", None
 
         hostname = parsed.hostname
         if not hostname:
-            return False, "URL missing valid hostname."
+            return False, "URL missing valid hostname.", None
 
         hostname_clean = hostname.strip().lower()
 
         # Reject explicit local hostnames
         if hostname_clean in ("localhost", "localhost.localdomain") or hostname_clean.endswith(".local"):
-            return False, f"SSRF blocked: local hostname '{hostname_clean}' is not permitted."
+            return False, f"SSRF blocked: local hostname '{hostname_clean}' is not permitted.", None
 
         # Check if hostname is an explicit IP string
         try:
             ip_obj = ipaddress.ip_address(hostname_clean)
             if not is_safe_ip(str(ip_obj)):
-                return False, f"SSRF blocked: target IP '{hostname_clean}' is private, loopback, or reserved."
-            return True, "ok"
+                return False, f"SSRF blocked: target IP '{hostname_clean}' is private, loopback, or reserved.", None
+            return True, "ok", str(ip_obj)
         except ValueError:
             pass  # Not an IP string, proceed to DNS resolution
 
@@ -86,31 +86,44 @@ def validate_safe_url(url: str) -> Tuple[bool, str]:
         try:
             addr_info = socket.getaddrinfo(hostname_clean, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except socket.gaierror as e:
-            return False, f"DNS resolution failed for host '{hostname_clean}': {e}"
+            return False, f"DNS resolution failed for host '{hostname_clean}': {e}", None
 
         if not addr_info:
-            return False, f"Could not resolve IP addresses for host '{hostname_clean}'."
+            return False, f"Could not resolve IP addresses for host '{hostname_clean}'.", None
 
+        safe_ips = []
         for family, _, _, _, sockaddr in addr_info:
             ip_str = sockaddr[0]
             if not is_safe_ip(ip_str):
-                return False, f"SSRF blocked: host '{hostname_clean}' resolved to restricted IP '{ip_str}'."
+                return False, f"SSRF blocked: host '{hostname_clean}' resolved to restricted IP '{ip_str}'.", None
+            safe_ips.append(ip_str)
 
-        return True, "ok"
+        return True, "ok", safe_ips[0]
     except Exception as e:
-        return False, f"URL validation error: {e}"
+        return False, f"URL validation error: {e}", None
 
 
-class SSRFSafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Custom HTTP redirect handler enforcing SSRF security on every redirect target."""
+class PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection connecting directly to a pre-validated safe IP address."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        safe, reason = validate_safe_url(newurl)
-        if not safe:
-            raise urllib.error.HTTPError(
-                newurl, code, f"SSRF redirect blocked: {reason}", headers, fp
-            )
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+    def __init__(self, host: str, resolved_ip: str, port: int = 80, **kwargs):
+        super().__init__(host, port=port, **kwargs)
+        self.resolved_ip = resolved_ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self.resolved_ip, self.port), self.timeout)
+
+
+class PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection connecting directly to a pre-validated safe IP address with TLS SNI."""
+
+    def __init__(self, host: str, resolved_ip: str, port: int = 443, **kwargs):
+        super().__init__(host, port=port, **kwargs)
+        self.resolved_ip = resolved_ip
+
+    def connect(self):
+        sock = socket.create_connection((self.resolved_ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
 class DomainRateLimiter:
@@ -188,54 +201,97 @@ def fetch_url(
     backoff_factor: float = 0.5,
 ) -> str:
     """
-    Fetches raw string content from URL using urllib with:
-    1. Strict SSRF host/IP validation on initial URL & redirects
-    2. Standard TLS certificate verification
-    3. Per-domain rate limiting
-    4. Exponential backoff retries on 429/5xx status codes
-    5. Upper bound payload size capping
+    Fetches raw string content from URL using pinned IP transport:
+    1. Validates host & DNS records for SSRF safety
+    2. Pins connection directly to validated IP (immune to DNS rebinding)
+    3. Handles HTTP 301/302/303/307/308 redirects with re-validation on every redirect
+    4. Applies domain rate limiting
+    5. Standard TLS certificate verification & retries on 429/5xx status
     """
-    safe, reason = validate_safe_url(url)
-    if not safe:
-        raise ValueError(f"SSRF validation failed for '{url}': {reason}")
+    current_url = url
+    max_redirects = 5
 
-    GLOBAL_RATE_LIMITER.wait_if_needed(url)
+    for redirect_count in range(max_redirects + 1):
+        safe, reason, resolved_ip = validate_safe_url(current_url)
+        if not safe or not resolved_ip:
+            raise ValueError(f"SSRF validation failed for '{current_url}': {reason}")
 
-    req_headers = {"User-Agent": USER_AGENT}
-    if headers:
-        req_headers.update(headers)
+        GLOBAL_RATE_LIMITER.wait_if_needed(current_url)
 
-    req = urllib.request.Request(url, headers=req_headers)
-    opener = urllib.request.build_opener(SSRFSafeRedirectHandler(), urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+        parsed = urllib.parse.urlparse(current_url)
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname
+        port = parsed.port or (443 if scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path += f"?{parsed.query}"
 
-    last_exc: Optional[Exception] = None
+        req_headers = {"User-Agent": USER_AGENT, "Host": host}
+        if headers:
+            req_headers.update(headers)
 
-    for attempt in range(max_retries + 1):
-        try:
-            with opener.open(req, timeout=timeout) as resp:
-                charset = resp.headers.get_content_charset() or "utf-8"
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                if scheme == "https":
+                    conn = PinnedHTTPSConnection(host, resolved_ip, port=port, context=_SSL_CONTEXT, timeout=timeout)
+                else:
+                    conn = PinnedHTTPConnection(host, resolved_ip, port=port, timeout=timeout)
+
+                conn.request("GET", path, headers=req_headers)
+                resp = conn.getresponse()
+
+                # Handle HTTP redirects safely
+                if resp.status in (301, 302, 303, 307, 308):
+                    location = resp.getheader("Location")
+                    conn.close()
+                    if not location:
+                        raise urllib.error.HTTPError(current_url, resp.status, "Redirect missing Location header", resp.headers, None)
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    break  # Break retry loop and execute next redirect iteration
+
+                if resp.status in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    retry_after = resp.getheader("Retry-After")
+                    conn.close()
+                    sleep_time = float(retry_after) if retry_after and retry_after.isdigit() else (backoff_factor * (2 ** attempt))
+                    time.sleep(sleep_time)
+                    continue
+
+                if resp.status >= 400:
+                    conn.close()
+                    raise urllib.error.HTTPError(current_url, resp.status, f"HTTP Error {resp.status}", resp.headers, None)
+
                 raw_bytes = resp.read(max_bytes + 1)
+                conn.close()
                 if len(raw_bytes) > max_bytes:
                     raw_bytes = raw_bytes[:max_bytes]
+                charset = resp.headers.get_param("charset") or "utf-8"
                 return raw_bytes.decode(charset, errors="replace")
-        except urllib.error.HTTPError as exc:
-            last_exc = exc
-            if exc.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                retry_after = exc.headers.get("Retry-After")
-                sleep_time = float(retry_after) if retry_after and retry_after.isdigit() else (backoff_factor * (2 ** attempt))
-                time.sleep(sleep_time)
-                continue
-            raise exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            last_exc = exc
-            if attempt < max_retries:
-                time.sleep(backoff_factor * (2 ** attempt))
-                continue
-            raise exc
 
-    if last_exc:
-        raise last_exc
-    raise RuntimeError(f"Failed to fetch {url}")
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                if exc.code in (301, 302, 303, 307, 308):
+                    raise exc
+                if exc.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    time.sleep(backoff_factor * (2 ** attempt))
+                    continue
+                raise exc
+            except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
+                last_exc = exc
+                if attempt < max_retries:
+                    time.sleep(backoff_factor * (2 ** attempt))
+                    continue
+                raise exc
+
+        # If loop exited due to redirect, continue outer redirect_count loop
+        if 'resp' in locals() and resp.status in (301, 302, 303, 307, 308):
+            continue
+
+        if last_exc:
+            raise last_exc
+
+    raise RuntimeError(f"Maximum redirects ({max_redirects}) exceeded for {url}")
 
 
 class SimpleHTMLTextExtractor(HTMLParser):

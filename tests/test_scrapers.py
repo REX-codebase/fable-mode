@@ -1,6 +1,6 @@
 """
 Unit tests for Fable Engine Zero-Cost Research Scrapers, SSRF protection,
-error handling, and MCP Action Handlers.
+redirect validation, IP pinning, error handling, and MCP Action Handlers.
 """
 
 import json
@@ -25,7 +25,7 @@ from fable_engine.scrapers import (
     scrape_x,
     scrape_youtube,
 )
-from fable_engine.scrapers.base import validate_safe_url
+from fable_engine.scrapers.base import PinnedHTTPSConnection, validate_safe_url
 from fable_engine.session import get_or_load_session
 
 
@@ -45,7 +45,7 @@ class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
             "ftp://ftp.local/data",
         ]
         for url in unsafe_urls:
-            safe, reason = validate_safe_url(url)
+            safe, reason, resolved_ip = validate_safe_url(url)
             self.assertFalse(safe, f"Expected '{url}' to be blocked by SSRF validation, but it passed.")
 
     def test_ssrf_validation_allows_public_urls(self):
@@ -55,13 +55,35 @@ class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
             "https://www.reddit.com/r/Python/hot.json",
         ]
         for url in safe_urls:
-            safe, reason = validate_safe_url(url)
+            safe, reason, resolved_ip = validate_safe_url(url)
             self.assertTrue(safe, f"Expected public URL '{url}' to pass SSRF validation, failed: {reason}")
+            self.assertTrue(resolved_ip is not None)
 
     def test_fetch_url_raises_value_error_on_ssrf_target(self):
         with self.assertRaises(ValueError) as ctx:
             fetch_url("http://127.0.0.1:8000/keys")
         self.assertIn("SSRF validation failed", str(ctx.exception))
+
+    @patch("fable_engine.scrapers.base.validate_safe_url")
+    def test_ssrf_redirect_to_private_ip_is_blocked(self, mock_validate):
+        # Initial URL is safe, redirect location is blocked
+        mock_validate.side_effect = [
+            (True, "ok", "93.184.216.34"),  # example.com (public)
+            (False, "SSRF blocked: target IP '127.0.0.1' is private, loopback, or reserved.", None)
+        ]
+
+        with patch("fable_engine.scrapers.base.PinnedHTTPSConnection") as mock_conn_cls:
+            mock_conn = MagicMock()
+            mock_resp_redirect = MagicMock()
+            mock_resp_redirect.status = 302
+            mock_resp_redirect.getheader.side_effect = lambda h: "http://127.0.0.1/secret" if h == "Location" else None
+            mock_conn.getresponse.return_value = mock_resp_redirect
+            mock_conn_cls.return_value = mock_conn
+
+            with self.assertRaises(ValueError) as ctx:
+                fetch_url("https://example.com/redirect-me")
+            self.assertIn("SSRF validation failed", str(ctx.exception))
+            self.assertIn("127.0.0.1", str(ctx.exception))
 
 
 class TestResearchScrapers(unittest.TestCase):
@@ -134,7 +156,7 @@ class TestResearchScrapers(unittest.TestCase):
         """
         res = scrape_youtube("dQw4w9WgXcQ")
         self.assertTrue(res.ok)
-        self.assertIn("Automated transcript track was unavailable", res.content)
+        self.assertIn("Best-effort automated transcript track status", res.content)
 
     @patch("fable_engine.scrapers.reddit.fetch_url")
     def test_scrape_reddit_thread_success(self, mock_fetch):

@@ -1,5 +1,6 @@
 """
-YouTube metadata, search, and caption track scraper implementation.
+Best-effort YouTube metadata, search, and caption track scraper implementation.
+Uses heuristic page-structure parsing for public watch page metadata and automated caption tracks.
 """
 
 from __future__ import annotations
@@ -14,6 +15,10 @@ from fable_engine.scrapers.base import ResearchResult, ResearchSource, fetch_url
 
 
 class YouTubeScraper(ResearchSource):
+    """
+    Best-effort scraper for YouTube public metadata and caption tracks.
+    Heuristic page parsing is subject to upstream YouTube markup variations.
+    """
     source_type = "youtube"
 
     def fetch(self, target: str, timeout: int = 15, max_content_length: int = 8000) -> ResearchResult:
@@ -31,7 +36,7 @@ class YouTubeScraper(ResearchSource):
             video_id = target
 
         if not video_id:
-            # YouTube search resolution
+            # Best-effort search resolution
             try:
                 query_enc = urllib.parse.quote(target)
                 search_url = f"https://www.youtube.com/results?search_query={query_enc}"
@@ -44,14 +49,14 @@ class YouTubeScraper(ResearchSource):
                         ok=False,
                         source_type=self.source_type,
                         canonical_url=search_url,
-                        error=f"No video ID could be resolved for query '{target}'."
+                        error=f"Best-effort YouTube search could not resolve video ID for '{target}'."
                     )
             except Exception as e:
                 return ResearchResult(
                     ok=False,
                     source_type=self.source_type,
                     canonical_url=f"https://www.youtube.com/results?search_query={urllib.parse.quote(target)}",
-                    error=f"YouTube search resolution failed: {str(e)}"
+                    error=f"Best-effort YouTube search resolution failed: {str(e)}"
                 )
 
         canonical_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -69,6 +74,7 @@ class YouTubeScraper(ResearchSource):
             description = desc_match.group(1) if desc_match else ""
 
             transcript_text = ""
+            transcript_status = "not_found"
             captions_match = re.search(r'"captionTracks":\[(.*?)\]', html)
             if captions_match:
                 try:
@@ -86,8 +92,9 @@ class YouTubeScraper(ResearchSource):
                             if txt_clean.strip():
                                 lines.append(txt_clean.strip())
                         transcript_text = " ".join(lines)
-                except Exception:
-                    pass
+                        transcript_status = "retrieved" if transcript_text else "empty"
+                except Exception as exc:
+                    transcript_status = f"parse_error: {exc}"
 
             content_blocks = [f"**Channel**: {channel}\n"]
             if description:
@@ -97,7 +104,7 @@ class YouTubeScraper(ResearchSource):
                     transcript_text = transcript_text[:max_content_length] + "...\n*(Transcript truncated)*"
                 content_blocks.append(f"## Transcript / Captions\n{transcript_text}")
             else:
-                content_blocks.append("*(Note: Automated transcript track was unavailable or missing for this video)*")
+                content_blocks.append(f"*(Note: Best-effort automated transcript track status: {transcript_status})*")
 
             return ResearchResult(
                 ok=True,
@@ -106,14 +113,18 @@ class YouTubeScraper(ResearchSource):
                 title=title,
                 author=channel,
                 content="\n".join(content_blocks),
-                metadata={"video_id": video_id, "has_transcript": bool(transcript_text)}
+                metadata={
+                    "video_id": video_id,
+                    "extraction_mode": "best_effort_heuristic",
+                    "transcript_status": transcript_status,
+                }
             )
         except Exception as e:
             return ResearchResult(
                 ok=False,
                 source_type=self.source_type,
                 canonical_url=canonical_url,
-                error=f"YouTube video scrape failed: {str(e)}"
+                error=f"Best-effort YouTube video scrape failed: {str(e)}"
             )
 
 
