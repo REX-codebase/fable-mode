@@ -538,7 +538,7 @@ TOOL_SCHEMA = {
             },
             "auto_log_epistemic": {
                 "type": "boolean",
-                "description": "Whether to automatically log scraped research findings as a [PROVEN] epistemic item in Fable Session."
+                "description": "Whether to automatically record retrieved research findings as a [HYPOTHESIS] candidate item in Fable Session's epistemic ledger for subsequent cross-verification."
             }
         },
         "required": ["action"]

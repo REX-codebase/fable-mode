@@ -11,7 +11,7 @@ synaptic_weights:
   epistemic_grounding: 0.95
   latex_derivation: 0.87
   triz_dialectic: 0.89
-  zero_cost_scrapers: 0.98
+  zero_cost_scrapers: 0.70
 antibodies:
 - antibody_id: ab_research_hallucinated_citation
   domain: research
@@ -64,9 +64,9 @@ specialized_heuristics:
   backed), [HYPOTHESIS] (untested inference), or [UNKNOWN] (unmeasured parameter).'
 - 'Causal vs Correlative Discipline: Construct a Pearlian Directed Acyclic Graph (DAG)
   before claiming intervention efficacy; rule out confounding and collider bias.'
-- 'Zero-Cost Multi-Source Research Scraping: Continuously query scrape_web, scrape_youtube,
+- 'Zero-Cost Multi-Source Research Scraping: Query scrape_web, scrape_youtube,
   scrape_reddit, scrape_x, scrape_github, and scrape_arxiv with auto_log_epistemic: true
-  to ground all research hypotheses in empirical Markdown evidence without incurring API costs.'
+  to retrieve candidate research evidence [HYPOTHESIS] and execute systematic cross-source verification before promoting to [PROVEN].'
 last_consolidated_at: '2026-09-04T12:00:00+00:00'
 ---
 
@@ -99,7 +99,7 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 | `epistemic_grounding` | `0.9500` | 🟢 Strong |
 | `first_principles_synthesis` | `0.9400` | 🟢 Strong |
 | `contradiction_resolver` | `0.9100` | 🟢 Strong |
-| `zero_cost_scrapers` | `0.9800` | 🟢 Strong |
+| `zero_cost_scrapers` | `0.7000` | 🟡 Moderate |
 | `triz_dialectic` | `0.8900` | 🟢 Strong |
 | `latex_derivation` | `0.8700` | 🟢 Strong |
 
