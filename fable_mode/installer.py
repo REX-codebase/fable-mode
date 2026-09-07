@@ -89,7 +89,7 @@ def _matches_capability(path: Path, expected: tuple[int, ...], *, directory: boo
 # executable runtime resources and the license are mandatory in source-mode installs.
 _OPTIONAL_SOURCE_FILES = {
     rel for rel in ALLOWED_FILES
-    if rel.startswith("rules/") or rel.startswith("docs/") or rel.startswith("skills/")
+    if rel.startswith("rules/") or rel.startswith("docs/") or rel.startswith("skills/") or rel == "run_tests.py"
 }
 _REQUIRED_SOURCE_FILES = tuple(rel for rel in ALLOWED_FILES if rel not in _OPTIONAL_SOURCE_FILES)
 
