@@ -31,13 +31,20 @@ def _get_target_from_args(args: Dict[str, Any]) -> str:
 
 def _auto_log_epistemic_if_requested(args: Dict[str, Any], action_name: str, target: str, res: ResearchResult):
     """
-    Optionally logs scraped result as a [HYPOTHESIS] epistemic item if requested.
-    Scraped raw web data MUST be tagged as [HYPOTHESIS] so agents are required to
+    Optionally logs successful scraped result as a [HYPOTHESIS] epistemic item if requested.
+    Failed retrievals (res.ok == False) are strictly excluded from epistemic logging.
+    Scraped raw web data is tagged as [HYPOTHESIS] so agents are required to
     cross-check and verify evidence before promoting claims to [PROVEN].
     """
     auto_log = args.get("auto_log_epistemic") or args.get("auto_log")
     if not auto_log:
         return
+
+    # Do not auto-log failed retrievals
+    if not res.ok:
+        logger.debug(f"Skipping auto_log_epistemic for {action_name}: retrieval failed.")
+        return
+
     session_name = args.get("session_name", "").strip()
     if not session_name:
         if ACTIVE_SESSIONS:

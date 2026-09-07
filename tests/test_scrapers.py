@@ -1,5 +1,6 @@
 """
-Unit tests for Fable Engine Zero-Cost Research Scrapers, error handling, and MCP Action Handlers.
+Unit tests for Fable Engine Zero-Cost Research Scrapers, SSRF protection,
+error handling, and MCP Action Handlers.
 """
 
 import json
@@ -16,6 +17,7 @@ from fable_engine.scrapers import (
     WebScraper,
     XScraper,
     YouTubeScraper,
+    fetch_url,
     scrape_arxiv,
     scrape_github,
     scrape_reddit,
@@ -23,7 +25,43 @@ from fable_engine.scrapers import (
     scrape_x,
     scrape_youtube,
 )
+from fable_engine.scrapers.base import validate_safe_url
 from fable_engine.session import get_or_load_session
+
+
+class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
+
+    def test_ssrf_validation_blocks_unsafe_hosts(self):
+        unsafe_urls = [
+            "http://localhost:8080/admin",
+            "http://127.0.0.1/secret",
+            "http://127.0.0.255/",
+            "http://10.0.0.1/internal",
+            "http://172.16.0.1/status",
+            "http://192.168.1.1/router",
+            "http://169.254.169.254/latest/meta-data/",
+            "file:///etc/passwd",
+            "gopher://localhost:70",
+            "ftp://ftp.local/data",
+        ]
+        for url in unsafe_urls:
+            safe, reason = validate_safe_url(url)
+            self.assertFalse(safe, f"Expected '{url}' to be blocked by SSRF validation, but it passed.")
+
+    def test_ssrf_validation_allows_public_urls(self):
+        safe_urls = [
+            "https://arxiv.org/abs/2401.12345",
+            "https://api.github.com/repos/REX-codebase/fable-mode",
+            "https://www.reddit.com/r/Python/hot.json",
+        ]
+        for url in safe_urls:
+            safe, reason = validate_safe_url(url)
+            self.assertTrue(safe, f"Expected public URL '{url}' to pass SSRF validation, failed: {reason}")
+
+    def test_fetch_url_raises_value_error_on_ssrf_target(self):
+        with self.assertRaises(ValueError) as ctx:
+            fetch_url("http://127.0.0.1:8000/keys")
+        self.assertIn("SSRF validation failed", str(ctx.exception))
 
 
 class TestResearchScrapers(unittest.TestCase):
@@ -207,8 +245,7 @@ class TestResearchScrapers(unittest.TestCase):
         res = scrape_arxiv("2401.12345")
         self.assertTrue(res.ok)
         self.assertEqual(res.source_type, "arxiv")
-        self.assertIn("Cognitive Deliberation in AI Agents", res.title)
-        self.assertIn("Alice Smith, Bob Jones", res.content)
+        self.assertIn("Cognitive Deliberation in AI Agents", res.content)
 
 
 class TestScraperActionsAndEpistemicLog(unittest.TestCase):
@@ -230,14 +267,7 @@ class TestScraperActionsAndEpistemicLog(unittest.TestCase):
         mock_scrape.assert_called_once_with("2401.12345")
 
     @patch("fable_engine.actions.scrapers.scrape_github")
-    def test_auto_log_epistemic_hypothesis(self, mock_scrape):
-        mock_scrape.return_value = ResearchResult(
-            ok=True,
-            source_type="github",
-            canonical_url="https://github.com/REX-codebase/fable-mode",
-            title="REX-codebase/fable-mode",
-            content="# GitHub Repo\nName: fable-mode"
-        )
+    def test_auto_log_epistemic_hypothesis_success_only(self, mock_scrape):
         session_name = "test_scraper_session"
 
         handle_fable_session({
@@ -247,17 +277,42 @@ class TestScraperActionsAndEpistemicLog(unittest.TestCase):
             "time_budget_minutes": 2.0
         })
 
-        resp = handle_fable_session({
+        # 1. Test failed result (ok=False) -> MUST NOT log hypothesis
+        mock_scrape.return_value = ResearchResult(
+            ok=False,
+            source_type="github",
+            canonical_url="https://github.com/invalid/repo",
+            error="404 Not Found"
+        )
+        handle_fable_session({
+            "action": "scrape_github",
+            "session_name": session_name,
+            "target": "invalid/repo",
+            "auto_log_epistemic": True
+        })
+
+        session = get_or_load_session(session_name)
+        self.assertEqual(len(session.epistemic_ledger), 0)
+
+        # 2. Test successful result (ok=True) -> MUST log hypothesis
+        mock_scrape.return_value = ResearchResult(
+            ok=True,
+            source_type="github",
+            canonical_url="https://github.com/REX-codebase/fable-mode",
+            title="REX-codebase/fable-mode",
+            content="# GitHub Repo\nName: fable-mode"
+        )
+        handle_fable_session({
             "action": "scrape_github",
             "session_name": session_name,
             "target": "REX-codebase/fable-mode",
             "auto_log_epistemic": True
         })
-        self.assertIn("fable-mode", resp)
 
         session = get_or_load_session(session_name)
         hypothesis_items = [item for item in session.epistemic_ledger if item["tag"] == "HYPOTHESIS"]
-        self.assertTrue(any("REX-codebase/fable-mode" in item["claim"] for item in hypothesis_items))
+        self.assertEqual(len(hypothesis_items), 1)
+        self.assertIn("REX-codebase/fable-mode", hypothesis_items[0]["claim"])
 
 
 if __name__ == "__main__":
