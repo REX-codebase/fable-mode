@@ -24,9 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install setuptools==75.8.0 wheel==0.45.1
           python -m pip install -e .
-      - name: Run Bytecode & AST Compilation Probes
+      - name: Run Static AST & Bytecode Policy Checks
         run: |
-          python -m compileall -q fable_mode fable_engine fable_v2 tests
+          python run_tests.py --policy-only
       - name: Shell script validation
         shell: bash
         run: |
@@ -52,9 +52,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install setuptools==75.8.0 wheel==0.45.1
           python -m pip install -e .
-      - name: Run Unified Test Runner
+      - name: Run Test Suites
         run: |
-          python run_tests.py
+          python run_tests.py --suite-only
       - name: Validate shell wrapper and dry-run
         if: "${{ runner.os != 'Windows' }}"
         shell: bash
