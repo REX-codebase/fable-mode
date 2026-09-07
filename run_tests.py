@@ -86,7 +86,7 @@ def main():
         ("V1 Canonical MCP Server Suite",
          f"{sys.executable} fable_engine/test_server.py"),
         ("V2 Comprehensive Unit Test Suite",
-         f"{sys.executable} -m unittest discover -s tests -p 'test_*.py'"),
+         f"{sys.executable} -m unittest discover -s tests -p \"test_*.py\""),
     ]
 
     if sys.platform != "win32":
