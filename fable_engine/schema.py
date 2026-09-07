@@ -74,7 +74,13 @@ TOOL_SCHEMA = {
                     "generate_design_tokens",
                     "generate_awwwards_scaffold",
                     "validate_preflight_design",
-                    "list_design_archetypes"
+                    "list_design_archetypes",
+                    "scrape_web",
+                    "scrape_youtube",
+                    "scrape_reddit",
+                    "scrape_x",
+                    "scrape_github",
+                    "scrape_arxiv"
                 ],
                 "description": "The Fable session action to perform."
             },
@@ -525,6 +531,14 @@ TOOL_SCHEMA = {
             "user_prompt": {
                 "type": "string",
                 "description": "Alias for prompt: high-level design prompt describing desired web experience."
+            },
+            "target": {
+                "type": "string",
+                "description": "Target URL, ID, subreddit, repo, paper ID, handle, or search query string for research scraping actions."
+            },
+            "auto_log_epistemic": {
+                "type": "boolean",
+                "description": "Whether to automatically record retrieved research findings as a [HYPOTHESIS] candidate item in Fable Session's epistemic ledger for subsequent cross-verification."
             }
         },
         "required": ["action"]
