@@ -1,7 +1,8 @@
 """
 Base research scraper interfaces, structured result objects, and HTTP transport utilities.
-Enforces standard TLS certificate verification, strict SSRF protection with IP pinning
-(preventing DNS rebinding TOCTOU window), host rate limiting, retry/backoff, and response bounds.
+Enforces standard TLS certificate verification, strict SSRF protection with alternate IP
+canonicalization & IP pinning (preventing DNS rebinding TOCTOU window), host rate limiting,
+clamped retry/backoff, response bounds, and explicit untrusted external content boundaries.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ logger = logging.getLogger("fable-engine.scrapers.base")
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FableResearch/1.3.0"
 
+MAX_RETRY_DELAY_SECONDS = 10.0
+
+# Standard TLS context enforcing certificate verification
 _SSL_CONTEXT = ssl.create_default_context()
 
 
@@ -50,11 +54,24 @@ def is_safe_ip(ip_str: str) -> bool:
         return False
 
 
+def parse_canonical_ip(hostname_str: str) -> Optional[str]:
+    """Attempts to parse hostname as standard or alternate IPv4/IPv6 address (hex, octal, short IPv4)."""
+    try:
+        return str(ipaddress.ip_address(hostname_str))
+    except ValueError:
+        pass
+    try:
+        raw_bytes = socket.inet_aton(hostname_str)
+        return str(ipaddress.ip_address(raw_bytes))
+    except (socket.error, ValueError, OverflowError):
+        return None
+
+
 def validate_safe_url(url: str) -> Tuple[bool, str, Optional[str]]:
     """
     Validates that a URL uses http/https scheme and its hostname resolves
     exclusively to safe, public IP addresses (SSRF prevention).
-    Returns (is_safe, reason, first_resolved_safe_ip).
+    Returns (is_safe, reason, canonical_resolved_ip).
     """
     try:
         parsed = urllib.parse.urlparse(url)
@@ -72,14 +89,12 @@ def validate_safe_url(url: str) -> Tuple[bool, str, Optional[str]]:
         if hostname_clean in ("localhost", "localhost.localdomain") or hostname_clean.endswith(".local"):
             return False, f"SSRF blocked: local hostname '{hostname_clean}' is not permitted.", None
 
-        # Check if hostname is an explicit IP string
-        try:
-            ip_obj = ipaddress.ip_address(hostname_clean)
-            if not is_safe_ip(str(ip_obj)):
-                return False, f"SSRF blocked: target IP '{hostname_clean}' is private, loopback, or reserved.", None
-            return True, "ok", str(ip_obj)
-        except ValueError:
-            pass  # Not an IP string, proceed to DNS resolution
+        # Check if hostname is a standard or alternate numeric IP string (octal, hex, decimal)
+        canonical_ip = parse_canonical_ip(hostname_clean)
+        if canonical_ip is not None:
+            if not is_safe_ip(canonical_ip):
+                return False, f"SSRF blocked: target IP '{hostname_clean}' ({canonical_ip}) is private, loopback, or reserved.", None
+            return True, "ok", canonical_ip
 
         # Resolve hostname DNS records
         port = parsed.port or (443 if scheme == "https" else 80)
@@ -171,8 +186,12 @@ class ResearchResult:
     retrieved_at: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if "trust_level" not in self.metadata:
+            self.metadata["trust_level"] = "untrusted_external_content"
+
     def to_markdown(self) -> str:
-        """Formats the structured research result as readable Markdown."""
+        """Formats the structured research result as readable Markdown with explicit untrusted content boundaries."""
         if not self.ok:
             return (
                 f"# Research Retrieval Failed: {self.source_type.title()}\n"
@@ -188,7 +207,9 @@ class ResearchResult:
             md.append(f"**Author**: {self.author}")
         md.append(f"**Retrieved At**: {self.retrieved_at}\n")
         if self.content:
+            md.append("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]")
             md.append(self.content)
+            md.append("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]")
         return "\n".join(md)
 
 
@@ -202,11 +223,12 @@ def fetch_url(
 ) -> str:
     """
     Fetches raw string content from URL using pinned IP transport:
-    1. Validates host & DNS records for SSRF safety
+    1. Validates host & DNS records (including alternate numeric IPs) for SSRF safety
     2. Pins connection directly to validated IP (immune to DNS rebinding)
     3. Handles HTTP 301/302/303/307/308 redirects with re-validation on every redirect
     4. Applies domain rate limiting
-    5. Standard TLS certificate verification & retries on 429/5xx status
+    5. Clamps server Retry-After delays to a hard maximum ceiling (10s)
+    6. Standard TLS certificate verification & retries on 429/5xx status
     """
     current_url = url
     max_redirects = 5
@@ -254,7 +276,8 @@ def fetch_url(
                 if resp.status in (429, 500, 502, 503, 504) and attempt < max_retries:
                     retry_after = resp.getheader("Retry-After")
                     conn.close()
-                    sleep_time = float(retry_after) if retry_after and retry_after.isdigit() else (backoff_factor * (2 ** attempt))
+                    raw_delay = float(retry_after) if retry_after and retry_after.isdigit() else (backoff_factor * (2 ** attempt))
+                    sleep_time = min(max(0.0, raw_delay), MAX_RETRY_DELAY_SECONDS)
                     time.sleep(sleep_time)
                     continue
 

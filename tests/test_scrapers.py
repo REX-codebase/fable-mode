@@ -1,6 +1,7 @@
 """
 Unit tests for Fable Engine Zero-Cost Research Scrapers, SSRF protection,
-redirect validation, IP pinning, error handling, and MCP Action Handlers.
+alternate numeric IP canonicalization, redirect validation, IP pinning,
+clamped retry delays, content boundaries, error handling, and MCP Action Handlers.
 """
 
 import json
@@ -25,17 +26,29 @@ from fable_engine.scrapers import (
     scrape_x,
     scrape_youtube,
 )
-from fable_engine.scrapers.base import PinnedHTTPSConnection, validate_safe_url
+from fable_engine.scrapers.base import PinnedHTTPSConnection, parse_canonical_ip, validate_safe_url
 from fable_engine.session import get_or_load_session
 
 
 class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
 
-    def test_ssrf_validation_blocks_unsafe_hosts(self):
+    def test_alternate_numeric_ip_canonicalization(self):
+        self.assertEqual(parse_canonical_ip("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(parse_canonical_ip("2130706433"), "127.0.0.1")
+        self.assertEqual(parse_canonical_ip("127.1"), "127.0.0.1")
+        self.assertEqual(parse_canonical_ip("0x7f000001"), "127.0.0.1")
+        self.assertEqual(parse_canonical_ip("0177.0.0.1"), "127.0.0.1")
+        self.assertIsNone(parse_canonical_ip("arxiv.org"))
+
+    def test_ssrf_validation_blocks_unsafe_hosts_and_alternate_ips(self):
         unsafe_urls = [
             "http://localhost:8080/admin",
             "http://127.0.0.1/secret",
             "http://127.0.0.255/",
+            "http://2130706433/secret",
+            "http://127.1/admin",
+            "http://0x7f000001/status",
+            "http://0177.0.0.1/keys",
             "http://10.0.0.1/internal",
             "http://172.16.0.1/status",
             "http://192.168.1.1/router",
@@ -66,7 +79,6 @@ class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
 
     @patch("fable_engine.scrapers.base.validate_safe_url")
     def test_ssrf_redirect_to_private_ip_is_blocked(self, mock_validate):
-        # Initial URL is safe, redirect location is blocked
         mock_validate.side_effect = [
             (True, "ok", "93.184.216.34"),  # example.com (public)
             (False, "SSRF blocked: target IP '127.0.0.1' is private, loopback, or reserved.", None)
@@ -84,6 +96,23 @@ class TestSSRFProtectionAndRateLimiting(unittest.TestCase):
                 fetch_url("https://example.com/redirect-me")
             self.assertIn("SSRF validation failed", str(ctx.exception))
             self.assertIn("127.0.0.1", str(ctx.exception))
+
+
+class TestResearchResultAndContentBoundaries(unittest.TestCase):
+
+    def test_untrusted_content_boundary_formatting(self):
+        res = ResearchResult(
+            ok=True,
+            source_type="web",
+            canonical_url="https://example.com",
+            title="Sample Page",
+            content="Sample webpage text."
+        )
+        self.assertEqual(res.metadata.get("trust_level"), "untrusted_external_content")
+        md = res.to_markdown()
+        self.assertIn("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", md)
+        self.assertIn("Sample webpage text.", md)
+        self.assertIn("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", md)
 
 
 class TestResearchScrapers(unittest.TestCase):
