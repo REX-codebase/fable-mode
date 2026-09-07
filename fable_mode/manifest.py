@@ -65,6 +65,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_v2/cortical/__init__.py",
     "fable_v2/cortical/plasticity_engine.py",
     "fable_compressor.py",
+    "run_tests.py",
     "rules/AGENTS.md",
     "rules/GEMINI.md",
     "rules/fable-mode.md",

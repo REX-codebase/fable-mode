@@ -89,7 +89,7 @@ def _matches_capability(path: Path, expected: tuple[int, ...], *, directory: boo
 # executable runtime resources and the license are mandatory in source-mode installs.
 _OPTIONAL_SOURCE_FILES = {
     rel for rel in ALLOWED_FILES
-    if rel.startswith("rules/") or rel.startswith("docs/") or rel.startswith("skills/")
+    if rel.startswith("rules/") or rel.startswith("docs/") or rel.startswith("skills/") or rel == "run_tests.py"
 }
 _REQUIRED_SOURCE_FILES = tuple(rel for rel in ALLOWED_FILES if rel not in _OPTIONAL_SOURCE_FILES)
 
@@ -272,7 +272,10 @@ class Installer:
             # Keep every installer-created subdirectory private even when the
             # process umask is permissive (notably for wheel/frozen installs).
             if os.name != "nt":
-                os.chmod(dst.parent, 0o700)
+                p = dst.parent
+                while p != stage and p != p.parent:
+                    os.chmod(p, 0o700)
+                    p = p.parent
             shutil.copyfile(src, dst, follow_symlinks=False)
             os.chmod(dst, 0o700 if rel == "fable_mode_entry.py" else 0o600)
             files[rel] = _hash(dst)

@@ -10,8 +10,31 @@ permissions:
   contents: read
 
 jobs:
-  source:
-    name: "source-${{ matrix.os }}-py${{ matrix.python }}"
+  lint-and-syntax:
+    name: "Code Quality & Security Probes"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install build tooling & static security tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install setuptools==75.8.0 wheel==0.45.1
+          python -m pip install -e .
+      - name: Run Static AST & Bytecode Policy Checks
+        run: |
+          python run_tests.py --policy-only
+      - name: Shell script validation
+        shell: bash
+        run: |
+          sh -n install.sh
+
+  test-matrix:
+    name: "test-${{ matrix.os }}-py${{ matrix.python }}"
+    needs: [lint-and-syntax]
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
@@ -23,24 +46,21 @@ jobs:
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: '${{ matrix.python }}'
-      - name: Install and import check
+          cache: 'pip'
+      - name: Install dependencies and editable package
         run: |
           python -m pip install --upgrade pip
           python -m pip install setuptools==75.8.0 wheel==0.45.1
           python -m pip install -e .
-          python -m compileall -q fable_mode fable_engine fable_v2
-          python -c "import fable_mode, fable_v2; from fable_engine import server; print(fable_mode.__version__)"
-      - name: Canonical V1 suite
-        run: python fable_engine/test_server.py
-      - name: Canonical V2 and packaging/security suites
-        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run Test Suites
+        run: |
+          python run_tests.py --suite-only
       - name: Validate shell wrapper and dry-run
         if: "${{ runner.os != 'Windows' }}"
         shell: bash
         run: |
-          sh -n install.sh
           ./install.sh --dry-run --yes
-      - name: Validate PowerShell syntax
+      - name: Validate PowerShell syntax & dry-run
         if: "${{ runner.os == 'Windows' }}"
         shell: pwsh
         run: |
