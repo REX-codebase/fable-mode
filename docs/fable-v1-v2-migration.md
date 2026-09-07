@@ -1,56 +1,44 @@
-# Fable V1 to V2 entry points
+# Fable V1 to V2 Migration & Integration Guide
 
-## Current entry points
+## Overview of Entry Points
 
-| Entry point | Version | Purpose |
+| Entry Point | Version | Purpose |
 |---|---|---|
-| `fable-engine` | V1 (legacy) | Existing `fable_session` MCP server from `fable_engine.server` |
-| `fable-v1` | V1 (legacy alias) | Explicit alias for `fable-engine` |
-| `fable-v2-broker` | V2 | Process execution broker from `fable_v2.execution_broker` |
+| `fable-engine` | V1 | Main `fable_session` MCP server from `fable_engine.server` |
+| `fable-v1` | V1 | Explicit alias for `fable-engine` |
+| `fable-v2-broker` | V2 | Out-of-process workspace execution broker from `fable_v2.execution_broker` |
 
-The existing `install.sh` and `install.ps1` scripts intentionally install and
-register the V1 MCP server for backward compatibility. They now print that
-fact explicitly. Installing the V2 Python package adds the `fable-v2-broker`
-entry point; it does not silently replace the old MCP server.
+The `install.sh` and `install.ps1` scripts register the V1 `fable-engine` MCP server by default for backward compatibility with existing MCP clients. Installing the Python package (`pip install -e .`) registers the `fable-v2-broker` executable without replacing the V1 MCP server.
 
-## V2 execution boundary
+---
 
-Start the broker with a workspace it owns:
+## V2 Execution Broker Setup
+
+Start the V2 execution broker specifying its managed workspace:
 
 ```bash
 fable-v2-broker --workspace /path/to/workspace
 ```
 
-The CLI loads write authorization from an administrator-controlled
-`FABLE_BROKER_WRITE_TOKEN_DIGEST` environment variable or
-`FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE` protected file. The value is a SHA-256
-hex digest of the administrative token; it is never returned by the broker's
-probe response and must not be added to a model-facing tool schema.
+### Authorization & Control Pipe
+- The broker loads write authorization digest from the `FABLE_BROKER_WRITE_TOKEN_DIGEST` environment variable or `FABLE_BROKER_WRITE_TOKEN_DIGEST_FILE` file. This value is a SHA-256 digest of an administrative token.
+- Unlocking write permissions requires communicating over a dedicated administrative control descriptor (`--admin-fd` on POSIX). The model-facing JSON-lines channel cannot issue unlock commands directly.
+- Host integration adapters should keep administrative file descriptors isolated from model tool definitions.
 
-Unlocking is performed over a separate inherited POSIX admin file descriptor,
-passed with `--admin-fd`; the model-facing JSON-lines stdin channel has no
-unlock action and no token field. A host adapter must keep the admin pipe and
-token outside the model's tool surface. Windows adapters should use an
-equivalent protected named-pipe/control-handle implementation.
+### Process & Path Restrictions
+- The broker allowlists permitted executables and runs commands without shell invocation (`shell=False`).
+- Working directories and file writes are constrained to the designated workspace.
+- Interpreter execution is restricted while writes are locked to prevent inline write bypasses.
 
-Hosts should communicate with the broker over its JSON-lines stdin/stdout
-protocol and route command execution and file writes through it. The broker
-allowlists executables, constrains paths to the workspace, keeps writes locked
-until administrative authorization, blocks general interpreters while writes
-are locked, and runs commands without a shell. This prevents the common
-`python -c "open(...)"` bypass at the broker policy layer.
+> **Security Note:** The broker operates as a process and policy boundary. For untrusted code execution, run the broker inside a container or sandboxed OS environment with restricted permissions.
 
-This is a process/policy boundary, not a complete operating-system sandbox.
-For hostile workloads, run the broker inside a container or equivalent OS
-sandbox with least-privilege filesystem and network permissions.
+---
 
-## Migration order
+## Migration Sequence for Hosts & Adapters
 
-1. Keep the V1 MCP server enabled while the host adapter is being tested.
-2. Install the package and start `fable-v2-broker` in a dedicated workspace.
-3. Probe the host and broker capabilities; treat expected profiles as
-   non-authoritative until attested.
-4. Route V2 tool calls through the broker and create candidate-scoped receipts.
-5. Enable V2 finalization only after verifier and broker conformance tests pass.
-6. Remove or disable the V1 MCP registration only after the host adapter has
-   been validated on the target environment.
+1. **Keep V1 MCP Enabled:** Maintain the `fable-engine` MCP server active during initial adapter testing.
+2. **Launch V2 Broker:** Start `fable-v2-broker` with its dedicated workspace directory.
+3. **Probe Host Capabilities:** Query host capabilities at runtime and verify attested features.
+4. **Issue Tool Receipts:** Route V2 command executions and file operations through the broker to generate `ToolReceipt` objects.
+5. **Enforce Verification Policies:** Enable candidate finalization once verifier checks pass.
+6. **Final Transition:** Disable legacy V1 tools only after validating V2 execution broker flows in your environment.
