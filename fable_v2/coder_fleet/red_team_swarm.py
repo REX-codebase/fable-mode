@@ -244,36 +244,10 @@ class RedTeamSwarm:
                 except Exception:
                     self.plasticity_engine = None
 
-    @staticmethod
-    def _compile_code_to_callable(code: str) -> Callable[..., Any]:
-        """Safely compiles a python code string into an executable callable."""
-        scope: dict[str, Any] = {}
-        exec(code, scope, scope)
-
-        # Look for functions defined in scope
-        functions = [v for v in scope.values() if callable(v) and not isinstance(v, type)]
-        if functions:
-            return functions[-1]
-
-        # Look for classes
-        classes = [v for v in scope.values() if isinstance(v, type)]
-        if classes:
-            return classes[-1]
-
-        def _fallback_callable(*args: Any, **kwargs: Any) -> Any:
-            return scope.get("result", None)
-
-        return _fallback_callable
-
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
-        """Resolves target callable from function, class, or code string."""
+        """Resolves target callable from function or class object. String targets are returned as None."""
         if callable(target):
             return target
-        if isinstance(target, str) and target.strip():
-            try:
-                return self._compile_code_to_callable(target)
-            except Exception:
-                return None
         return None
 
     def generate_break_scenarios(
