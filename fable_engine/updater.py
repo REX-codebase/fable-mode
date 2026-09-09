@@ -18,7 +18,7 @@ from typing import Any, Optional
 logger = logging.getLogger("fable-engine.updater")
 
 BASELINE_LOBES: frozenset[str] = frozenset(
-    {"rust", "python", "design_3d", "research", "concurrency"}
+    {"rust", "python", "design_3d", "research", "concurrency", "frontend_design", "process", "security"}
 )
 
 _BG_LOCK = threading.Lock()
