@@ -136,6 +136,19 @@ class TestRedTeamSwarmSecurityBoundary(unittest.TestCase):
         self.assertTrue(report.passed)
         self.assertEqual(report.broken_count, 0)
 
+    def test_false_bool_callable_object_succeeds(self) -> None:
+        class FalseCallable:
+            def __bool__(self) -> bool:
+                return False
+
+            def __call__(self, x: Any = None) -> str:
+                return "ok"
+
+        false_callable = FalseCallable()
+        report = self.swarm.execute_swarm_attack(false_callable)
+        self.assertTrue(report.passed)
+        self.assertEqual(report.broken_count, 0)
+
 
 class TestReportFormattingAndSerialization(unittest.TestCase):
     def setUp(self) -> None:

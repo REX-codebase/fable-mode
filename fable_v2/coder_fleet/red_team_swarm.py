@@ -277,7 +277,7 @@ class RedTeamSwarm:
 
         # Vector 1: CHAOS_ENVIRONMENT
         def _chaos_missing_path(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Probe with non-existent / unlinked file path
             return fn("/nonexistent/fable_chaos_probe_file.tmp")
@@ -294,7 +294,7 @@ class RedTeamSwarm:
         )
 
         def _chaos_corrupt_env(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn("")
 
@@ -311,7 +311,7 @@ class RedTeamSwarm:
 
         # Vector 2: BYZANTINE_PAYLOAD
         def _byzantine_null_bytes(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             payload = "probe\x00hostile\x00injection\r\n\t"
             return fn(payload)
@@ -328,7 +328,7 @@ class RedTeamSwarm:
         )
 
         def _byzantine_deep_nesting(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # 60 levels of nested dictionaries
             nested: dict[str, Any] = {"leaf": 42}
@@ -348,7 +348,7 @@ class RedTeamSwarm:
         )
 
         def _byzantine_type_confusion(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn(None)
 
@@ -364,7 +364,7 @@ class RedTeamSwarm:
         )
 
         def _byzantine_extreme_numbers(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Nan, Inf, negative zero, huge int
             return fn(float("nan"))
@@ -382,7 +382,7 @@ class RedTeamSwarm:
 
         # Vector 3: CONCURRENCY_RACE
         def _concurrency_multithreaded_burst(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             errors: list[str] = []
             threads: list[threading.Thread] = []
@@ -428,7 +428,7 @@ class RedTeamSwarm:
 
         # Vector 4: RESOURCE_EXHAUSTION
         def _resource_massive_payload(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             massive_str = "A" * 150_000
             return fn(massive_str)
@@ -445,7 +445,7 @@ class RedTeamSwarm:
         )
 
         def _resource_rapid_churn(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             for _ in range(100):
@@ -468,7 +468,7 @@ class RedTeamSwarm:
 
         # Vector 5: STATE_INVARIANT
         def _state_invariant_idempotency(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
+            if fn is None:
                 raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             if len(sig.parameters) == 0:
@@ -510,7 +510,7 @@ class RedTeamSwarm:
                     v = AttackVector.CHAOS_ENVIRONMENT
 
                 def _custom_attack_fn(fn: Optional[Callable[..., Any]] = None, h_text: str = hyp_clean) -> Any:
-                    if not fn:
+                    if fn is None:
                         raise TypeError("RedTeamSwarm target callable is missing or not executable")
                     sig = inspect.signature(fn)
                     if len(sig.parameters) == 0:
@@ -817,8 +817,8 @@ class RedTeamSwarm:
                     vec = AttackVector.CHAOS_ENVIRONMENT
 
                 def _repro_probe(fn: Optional[Callable[..., Any]] = None, finding: BreakFinding = f) -> Any:
-                    if not fn:
-                        return True
+                    if fn is None:
+                        raise TypeError("RedTeamSwarm target callable is missing or not executable")
                     sig = inspect.signature(fn)
                     if len(sig.parameters) == 0:
                         return fn()
