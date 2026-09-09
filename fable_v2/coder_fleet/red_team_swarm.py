@@ -222,7 +222,12 @@ class RedTeamBreakageReport:
 
 
 class RedTeamSwarm:
-    """Adversarial Red Team Swarm executing counterfactual stress probes across 5 vectors."""
+    """Adversarial Red Team Swarm executing counterfactual stress probes across 5 vectors.
+
+    RedTeamSwarm never executes source-code strings in-process. Source-code strings and
+    unexecutable targets are rejected as non-executable targets (passed=False). Dynamic source
+    execution, if required, must be provided through a separately sandboxed execution layer.
+    """
 
     def __init__(
         self,
@@ -250,8 +255,9 @@ class RedTeamSwarm:
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
         """Resolves target callable from function or class object.
 
-        RedTeamSwarm never executes source-code strings in-process. Source-code
-        strings and non-callable targets are fail-closed as non-executable (passed=False).
+        RedTeamSwarm never executes source-code strings in-process. Source-code strings
+        are rejected as non-executable targets. Dynamic source execution, if required,
+        must be provided through a separately sandboxed execution layer.
         """
         if callable(target):
             return target
