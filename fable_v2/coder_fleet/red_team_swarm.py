@@ -8,11 +8,14 @@ Production-grade Red Team Swarm engine providing:
 """
 from __future__ import annotations
 
+import atexit
 import datetime
 import inspect
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -244,10 +247,174 @@ class RedTeamSwarm:
                 except Exception:
                     self.plasticity_engine = None
 
+    def _create_isolated_subprocess_callable(self, code: str) -> Callable[..., Any]:
+        """Wraps Python code string in an isolated subprocess executor (no in-process exec)."""
+        proc_lock = threading.Lock()
+        proc_container: dict[str, Any] = {"proc": None, "target_name": "target"}
+
+        def _start_proc() -> None:
+            driver = f"""import json
+import sys
+import inspect
+import traceback
+
+code_str = {repr(code)}
+
+scope = {{}}
+try:
+    exec(code_str, scope, scope)
+except Exception as e:
+    sys.stderr.write(f"CompilationError: {{type(e).__name__}}: {{e}}\\n{{traceback.format_exc()}}\\n")
+    sys.exit(1)
+
+funcs = [v for k, v in scope.items() if callable(v) and not k.startswith("_") and not isinstance(v, type)]
+classes = [v for k, v in scope.items() if isinstance(v, type) and not k.startswith("_")]
+target = funcs[-1] if funcs else (classes[-1] if classes else None)
+
+if target is None:
+    sys.stderr.write("TypeError: No top-level function or class found in code snippet\\n")
+    sys.exit(1)
+
+print("__TARGET_NAME__:" + getattr(target, "__name__", "target"))
+sys.stdout.flush()
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    try:
+        req = json.loads(line)
+        payload = req.get("payload")
+
+        try:
+            sig = inspect.signature(target)
+            has_params = len(sig.parameters) > 0
+        except Exception:
+            has_params = True
+
+        if has_params:
+            res = target(payload)
+        else:
+            res = target()
+        print(json.dumps({{"success": True, "result": str(res)}}))
+        sys.stdout.flush()
+    except Exception as e:
+        err_msg = f"{{type(e).__name__}}: {{e}}"
+        print(json.dumps({{"success": False, "error": err_msg, "traceback": traceback.format_exc()}}))
+        sys.stdout.flush()
+"""
+            temp_fd, temp_path = tempfile.mkstemp(suffix=".py", text=True)
+            try:
+                with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+                    f.write(driver)
+
+                proc = subprocess.Popen(
+                    [sys.executable, temp_path],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                line = proc.stdout.readline() if proc.stdout else ""
+                if line.startswith("__TARGET_NAME__:"):
+                    proc_container["target_name"] = line.split(":", 1)[1].strip()
+                    proc_container["proc"] = proc
+                    atexit.register(lambda p=proc: p.poll() is None and p.terminate())
+                else:
+                    stderr = proc.stderr.read() if proc.stderr else ""
+                    proc.terminate()
+                    proc_container["proc"] = None
+                    raise RuntimeError(f"Subprocess initialization failed: {stderr or line}")
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+
+        def _isolated_runner(payload: Any = None) -> Any:
+            with proc_lock:
+                proc = proc_container.get("proc")
+                if not proc or proc.poll() is not None:
+                    _start_proc()
+                    proc = proc_container.get("proc")
+
+                try:
+                    try:
+                        payload_json = json.dumps(payload)
+                    except Exception:
+                        payload_json = json.dumps(str(payload))
+
+                    req_str = json.dumps({"payload_raw": payload_json, "payload": payload}) + "\n"
+                    assert proc and proc.stdin and proc.stdout
+                    proc.stdin.write(req_str)
+                    proc.stdin.flush()
+
+                    resp_line = proc.stdout.readline()
+                    if not resp_line:
+                        stderr = proc.stderr.read() if proc.stderr else ""
+                        proc_container["proc"] = None
+                        if "MemoryError" in stderr:
+                            raise MemoryError(stderr)
+                        if "AttributeError" in stderr:
+                            raise AttributeError(stderr)
+                        if "KeyError" in stderr:
+                            raise KeyError(stderr)
+                        if "ValueError" in stderr:
+                            raise ValueError(stderr)
+                        if "TypeError" in stderr:
+                            raise TypeError(stderr)
+                        if "RecursionError" in stderr:
+                            raise RecursionError(stderr)
+                        if "ZeroDivisionError" in stderr:
+                            raise ZeroDivisionError(stderr)
+                        if "AssertionError" in stderr:
+                            raise AssertionError(stderr)
+                        raise RuntimeError(stderr or "Subprocess exited unexpectedly")
+
+                    data = json.loads(resp_line)
+                    if data.get("success"):
+                        return data.get("result")
+
+                    err_msg = data.get("error", "Error in subprocess")
+                    if err_msg.startswith("MemoryError"):
+                        raise MemoryError(err_msg)
+                    if err_msg.startswith("AttributeError"):
+                        raise AttributeError(err_msg)
+                    if err_msg.startswith("KeyError"):
+                        raise KeyError(err_msg)
+                    if err_msg.startswith("ValueError"):
+                        raise ValueError(err_msg)
+                    if err_msg.startswith("TypeError"):
+                        raise TypeError(err_msg)
+                    if err_msg.startswith("RecursionError"):
+                        raise RecursionError(err_msg)
+                    if err_msg.startswith("ZeroDivisionError"):
+                        raise ZeroDivisionError(err_msg)
+                    if err_msg.startswith("AssertionError"):
+                        raise AssertionError(err_msg)
+                    raise RuntimeError(err_msg)
+
+                except Exception:
+                    p = proc_container.get("proc")
+                    if p:
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
+                        proc_container["proc"] = None
+                    raise
+
+        _isolated_runner.__name__ = proc_container.get("target_name", "target")
+        return _isolated_runner
+
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
-        """Resolves target callable from function or class object. String targets are returned as None."""
+        """Resolves target callable from function/class object or wraps source string in isolated subprocess runner."""
         if callable(target):
             return target
+        if isinstance(target, str) and target.strip():
+            return self._create_isolated_subprocess_callable(target)
         return None
 
     def generate_break_scenarios(
@@ -265,7 +432,7 @@ class RedTeamSwarm:
         # Vector 1: CHAOS_ENVIRONMENT
         def _chaos_missing_path(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Probe with non-existent / unlinked file path
             return fn("/nonexistent/fable_chaos_probe_file.tmp")
 
@@ -282,7 +449,7 @@ class RedTeamSwarm:
 
         def _chaos_corrupt_env(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn("")
 
         scenarios.append(
@@ -299,7 +466,7 @@ class RedTeamSwarm:
         # Vector 2: BYZANTINE_PAYLOAD
         def _byzantine_null_bytes(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             payload = "probe\x00hostile\x00injection\r\n\t"
             return fn(payload)
 
@@ -316,7 +483,7 @@ class RedTeamSwarm:
 
         def _byzantine_deep_nesting(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # 60 levels of nested dictionaries
             nested: dict[str, Any] = {"leaf": 42}
             for _ in range(60):
@@ -336,7 +503,7 @@ class RedTeamSwarm:
 
         def _byzantine_type_confusion(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn(None)
 
         scenarios.append(
@@ -352,7 +519,7 @@ class RedTeamSwarm:
 
         def _byzantine_extreme_numbers(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Nan, Inf, negative zero, huge int
             return fn(float("nan"))
 
@@ -370,7 +537,7 @@ class RedTeamSwarm:
         # Vector 3: CONCURRENCY_RACE
         def _concurrency_multithreaded_burst(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             errors: list[str] = []
             threads: list[threading.Thread] = []
             try:
@@ -416,7 +583,7 @@ class RedTeamSwarm:
         # Vector 4: RESOURCE_EXHAUSTION
         def _resource_massive_payload(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             massive_str = "A" * 150_000
             return fn(massive_str)
 
@@ -433,7 +600,7 @@ class RedTeamSwarm:
 
         def _resource_rapid_churn(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             for _ in range(100):
                 if len(sig.parameters) == 0:
@@ -456,7 +623,7 @@ class RedTeamSwarm:
         # Vector 5: STATE_INVARIANT
         def _state_invariant_idempotency(fn: Optional[Callable[..., Any]] = None) -> Any:
             if not fn:
-                return True
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             if len(sig.parameters) == 0:
                 res1 = fn()
@@ -498,7 +665,7 @@ class RedTeamSwarm:
 
                 def _custom_attack_fn(fn: Optional[Callable[..., Any]] = None, h_text: str = hyp_clean) -> Any:
                     if not fn:
-                        return True
+                        raise TypeError("RedTeamSwarm target callable is missing or not executable")
                     sig = inspect.signature(fn)
                     if len(sig.parameters) == 0:
                         return fn()
@@ -569,6 +736,28 @@ class RedTeamSwarm:
         """
         callable_fn = self._resolve_callable(target_callable)
         actual_name = target_name or getattr(callable_fn, "__name__", "target")
+
+        if callable_fn is None:
+            report_id = f"redteam_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+            finding = BreakFinding(
+                scenario_id="target_not_executable",
+                vector=AttackVector.CHAOS_ENVIRONMENT.value,
+                hypothesis="Target must be an executable callable object or valid source code string",
+                broken=True,
+                error_message="TypeError: RedTeamSwarm target is not executable (no valid callable or source code provided)",
+                severity="CRITICAL",
+                details={"target_executable": False},
+            )
+            return RedTeamBreakageReport(
+                report_id=report_id,
+                target_name=actual_name,
+                total_probes=1,
+                broken_count=1,
+                passed=False,
+                findings=[finding],
+                created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                remediation_directives=["Provide an executable Python callable or valid source code string."],
+            )
 
         if not scenarios:
             scenarios = self.generate_break_scenarios(target_name=actual_name)

@@ -109,6 +109,46 @@ class TestRedTeamSwarmExecution(unittest.TestCase):
         self.assertEqual(len([f for f in report.findings if f.broken]), 0)
 
 
+class TestRedTeamSwarmSecurityBoundary(unittest.TestCase):
+    def setUp(self) -> None:
+        self.swarm = RedTeamSwarm()
+
+    def test_none_or_unexecutable_target_fails_closed(self) -> None:
+        report = self.swarm.execute_swarm_attack(None)
+        self.assertFalse(report.passed)
+        self.assertEqual(report.broken_count, 1)
+        self.assertEqual(report.findings[0].scenario_id, "target_not_executable")
+        self.assertIn("TypeError", report.findings[0].error_message or "")
+
+    def test_source_string_with_flaw_fails_closed(self) -> None:
+        code_snippet = (
+            "def fragile_fn(x=None):\n"
+            "    if x is None:\n"
+            "        raise AttributeError('NoneType object has no attribute')\n"
+            "    return 'ok'\n"
+        )
+        report = self.swarm.execute_swarm_attack(code_snippet)
+        self.assertFalse(report.passed)
+        self.assertGreater(report.broken_count, 0)
+
+    def test_source_string_safe_passes(self) -> None:
+        code_snippet = (
+            "def safe_fn(x=None):\n"
+            "    if x is None:\n"
+            "        return 'ok'\n"
+            "    return 'ok'\n"
+        )
+        report = self.swarm.execute_swarm_attack(code_snippet)
+        self.assertTrue(report.passed)
+        self.assertEqual(report.broken_count, 0)
+
+    def test_source_string_syntax_error_fails_closed(self) -> None:
+        code_snippet = "def bad_syntax(%%%"
+        report = self.swarm.execute_swarm_attack(code_snippet)
+        self.assertFalse(report.passed)
+        self.assertGreater(report.broken_count, 0)
+
+
 class TestReportFormattingAndSerialization(unittest.TestCase):
     def setUp(self) -> None:
         self.swarm = RedTeamSwarm()
