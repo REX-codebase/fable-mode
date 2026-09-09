@@ -248,7 +248,11 @@ class RedTeamSwarm:
                     self.plasticity_engine = None
 
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
-        """Resolves target callable from function or class object. Source strings and non-callables return None."""
+        """Resolves target callable from function or class object.
+
+        RedTeamSwarm never executes source-code strings in-process. Source-code
+        strings and non-callable targets are fail-closed as non-executable (passed=False).
+        """
         if callable(target):
             return target
         return None
