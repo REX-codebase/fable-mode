@@ -118,35 +118,23 @@ class TestRedTeamSwarmSecurityBoundary(unittest.TestCase):
         self.assertFalse(report.passed)
         self.assertEqual(report.broken_count, 1)
         self.assertEqual(report.findings[0].scenario_id, "target_not_executable")
+        self.assertFalse(report.findings[0].details.get("target_executable", True))
         self.assertIn("TypeError", report.findings[0].error_message or "")
 
-    def test_source_string_with_flaw_fails_closed(self) -> None:
-        code_snippet = (
-            "def fragile_fn(x=None):\n"
-            "    if x is None:\n"
-            "        raise AttributeError('NoneType object has no attribute')\n"
-            "    return 'ok'\n"
-        )
+    def test_source_string_target_fails_closed(self) -> None:
+        code_snippet = "def safe_fn(x=None):\n    return 'ok'\n"
         report = self.swarm.execute_swarm_attack(code_snippet)
         self.assertFalse(report.passed)
-        self.assertGreater(report.broken_count, 0)
+        self.assertEqual(report.broken_count, 1)
+        self.assertFalse(report.findings[0].details.get("target_executable", True))
 
-    def test_source_string_safe_passes(self) -> None:
-        code_snippet = (
-            "def safe_fn(x=None):\n"
-            "    if x is None:\n"
-            "        return 'ok'\n"
-            "    return 'ok'\n"
-        )
-        report = self.swarm.execute_swarm_attack(code_snippet)
+    def test_callable_object_succeeds(self) -> None:
+        def safe_fn(x=None):
+            return "ok"
+
+        report = self.swarm.execute_swarm_attack(safe_fn)
         self.assertTrue(report.passed)
         self.assertEqual(report.broken_count, 0)
-
-    def test_source_string_syntax_error_fails_closed(self) -> None:
-        code_snippet = "def bad_syntax(%%%"
-        report = self.swarm.execute_swarm_attack(code_snippet)
-        self.assertFalse(report.passed)
-        self.assertGreater(report.broken_count, 0)
 
 
 class TestReportFormattingAndSerialization(unittest.TestCase):
@@ -354,15 +342,27 @@ class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
         self.assertGreater(len(scenarios), 0)
 
     def test_dispatch_red_team_full_review_cycle(self) -> None:
-        code_snippet = "def safe_fn(x=None):\n    return 'safe'\n"
+        def safe_fn(x=None):
+            return "safe"
+
         res = self.dispatcher.dispatch(
             "red_team_full_review_cycle",
-            {"target_callable": code_snippet, "target_name": "safe_fn"},
+            {"target_callable": safe_fn, "target_name": "safe_fn"},
         )
         self.assertTrue(res["success"])
         report = res["result"]
         self.assertTrue(isinstance(report, RedTeamBreakageReport))
         self.assertTrue(report.passed)
+
+        # Source code strings produce fail-closed breakage reports
+        res_str = self.dispatcher.dispatch(
+            "red_team_full_review_cycle",
+            {"target_callable": "def safe_fn(x=None):\n    return 'safe'\n", "target_name": "safe_fn"},
+        )
+        self.assertTrue(res_str["success"])
+        report_str = res_str["result"]
+        self.assertFalse(report_str.passed)
+        self.assertEqual(report_str.broken_count, 1)
 
 
 if __name__ == "__main__":

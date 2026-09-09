@@ -247,174 +247,10 @@ class RedTeamSwarm:
                 except Exception:
                     self.plasticity_engine = None
 
-    def _create_isolated_subprocess_callable(self, code: str) -> Callable[..., Any]:
-        """Wraps Python code string in an isolated subprocess executor (no in-process exec)."""
-        proc_lock = threading.Lock()
-        proc_container: dict[str, Any] = {"proc": None, "target_name": "target"}
-
-        def _start_proc() -> None:
-            driver = f"""import json
-import sys
-import inspect
-import traceback
-
-code_str = {repr(code)}
-
-scope = {{}}
-try:
-    exec(code_str, scope, scope)
-except Exception as e:
-    sys.stderr.write(f"CompilationError: {{type(e).__name__}}: {{e}}\\n{{traceback.format_exc()}}\\n")
-    sys.exit(1)
-
-funcs = [v for k, v in scope.items() if callable(v) and not k.startswith("_") and not isinstance(v, type)]
-classes = [v for k, v in scope.items() if isinstance(v, type) and not k.startswith("_")]
-target = funcs[-1] if funcs else (classes[-1] if classes else None)
-
-if target is None:
-    sys.stderr.write("TypeError: No top-level function or class found in code snippet\\n")
-    sys.exit(1)
-
-print("__TARGET_NAME__:" + getattr(target, "__name__", "target"))
-sys.stdout.flush()
-
-while True:
-    line = sys.stdin.readline()
-    if not line:
-        break
-    try:
-        req = json.loads(line)
-        payload = req.get("payload")
-
-        try:
-            sig = inspect.signature(target)
-            has_params = len(sig.parameters) > 0
-        except Exception:
-            has_params = True
-
-        if has_params:
-            res = target(payload)
-        else:
-            res = target()
-        print(json.dumps({{"success": True, "result": str(res)}}))
-        sys.stdout.flush()
-    except Exception as e:
-        err_msg = f"{{type(e).__name__}}: {{e}}"
-        print(json.dumps({{"success": False, "error": err_msg, "traceback": traceback.format_exc()}}))
-        sys.stdout.flush()
-"""
-            temp_fd, temp_path = tempfile.mkstemp(suffix=".py", text=True)
-            try:
-                with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
-                    f.write(driver)
-
-                proc = subprocess.Popen(
-                    [sys.executable, temp_path],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                )
-                line = proc.stdout.readline() if proc.stdout else ""
-                if line.startswith("__TARGET_NAME__:"):
-                    proc_container["target_name"] = line.split(":", 1)[1].strip()
-                    proc_container["proc"] = proc
-                    atexit.register(lambda p=proc: p.poll() is None and p.terminate())
-                else:
-                    stderr = proc.stderr.read() if proc.stderr else ""
-                    proc.terminate()
-                    proc_container["proc"] = None
-                    raise RuntimeError(f"Subprocess initialization failed: {stderr or line}")
-            finally:
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except OSError:
-                        pass
-
-        def _isolated_runner(payload: Any = None) -> Any:
-            with proc_lock:
-                proc = proc_container.get("proc")
-                if not proc or proc.poll() is not None:
-                    _start_proc()
-                    proc = proc_container.get("proc")
-
-                try:
-                    try:
-                        payload_json = json.dumps(payload)
-                    except Exception:
-                        payload_json = json.dumps(str(payload))
-
-                    req_str = json.dumps({"payload_raw": payload_json, "payload": payload}) + "\n"
-                    assert proc and proc.stdin and proc.stdout
-                    proc.stdin.write(req_str)
-                    proc.stdin.flush()
-
-                    resp_line = proc.stdout.readline()
-                    if not resp_line:
-                        stderr = proc.stderr.read() if proc.stderr else ""
-                        proc_container["proc"] = None
-                        if "MemoryError" in stderr:
-                            raise MemoryError(stderr)
-                        if "AttributeError" in stderr:
-                            raise AttributeError(stderr)
-                        if "KeyError" in stderr:
-                            raise KeyError(stderr)
-                        if "ValueError" in stderr:
-                            raise ValueError(stderr)
-                        if "TypeError" in stderr:
-                            raise TypeError(stderr)
-                        if "RecursionError" in stderr:
-                            raise RecursionError(stderr)
-                        if "ZeroDivisionError" in stderr:
-                            raise ZeroDivisionError(stderr)
-                        if "AssertionError" in stderr:
-                            raise AssertionError(stderr)
-                        raise RuntimeError(stderr or "Subprocess exited unexpectedly")
-
-                    data = json.loads(resp_line)
-                    if data.get("success"):
-                        return data.get("result")
-
-                    err_msg = data.get("error", "Error in subprocess")
-                    if err_msg.startswith("MemoryError"):
-                        raise MemoryError(err_msg)
-                    if err_msg.startswith("AttributeError"):
-                        raise AttributeError(err_msg)
-                    if err_msg.startswith("KeyError"):
-                        raise KeyError(err_msg)
-                    if err_msg.startswith("ValueError"):
-                        raise ValueError(err_msg)
-                    if err_msg.startswith("TypeError"):
-                        raise TypeError(err_msg)
-                    if err_msg.startswith("RecursionError"):
-                        raise RecursionError(err_msg)
-                    if err_msg.startswith("ZeroDivisionError"):
-                        raise ZeroDivisionError(err_msg)
-                    if err_msg.startswith("AssertionError"):
-                        raise AssertionError(err_msg)
-                    raise RuntimeError(err_msg)
-
-                except Exception:
-                    p = proc_container.get("proc")
-                    if p:
-                        try:
-                            p.terminate()
-                        except Exception:
-                            pass
-                        proc_container["proc"] = None
-                    raise
-
-        _isolated_runner.__name__ = proc_container.get("target_name", "target")
-        return _isolated_runner
-
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
-        """Resolves target callable from function/class object or wraps source string in isolated subprocess runner."""
+        """Resolves target callable from function or class object. Source strings and non-callables return None."""
         if callable(target):
             return target
-        if isinstance(target, str) and target.strip():
-            return self._create_isolated_subprocess_callable(target)
         return None
 
     def generate_break_scenarios(
@@ -742,9 +578,9 @@ while True:
             finding = BreakFinding(
                 scenario_id="target_not_executable",
                 vector=AttackVector.CHAOS_ENVIRONMENT.value,
-                hypothesis="Target must be an executable callable object or valid source code string",
+                hypothesis="Target must be an executable Python Callable object",
                 broken=True,
-                error_message="TypeError: RedTeamSwarm target is not executable (no valid callable or source code provided)",
+                error_message="TypeError: Source-code strings cannot be evaluated in-process for security reasons. Provide an executable Python Callable or use an isolated sandbox executor.",
                 severity="CRITICAL",
                 details={"target_executable": False},
             )
@@ -756,7 +592,7 @@ while True:
                 passed=False,
                 findings=[finding],
                 created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                remediation_directives=["Provide an executable Python callable or valid source code string."],
+                remediation_directives=["Provide an executable Python callable or use an isolated sandbox executor."],
             )
 
         if not scenarios:
