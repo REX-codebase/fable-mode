@@ -203,8 +203,7 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
     if code_snippet is not None and not callable(code_snippet):
         return (
             "Error: Source-code strings cannot be evaluated in-process for security reasons. "
-            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
-            "Provide an executable Python Callable object in-process."
+            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
         )
 
     custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
@@ -333,8 +332,7 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
     if remediated_code is not None and not callable(remediated_code):
         return (
             "Error: Source-code strings cannot be evaluated in-process for security reasons. "
-            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
-            "Provide an executable Python Callable object in-process."
+            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
         )
 
     session = get_or_load_session(session_name)

@@ -8,14 +8,10 @@ Production-grade Red Team Swarm engine providing:
 """
 from __future__ import annotations
 
-import atexit
 import datetime
 import inspect
 import json
 import os
-import subprocess
-import sys
-import tempfile
 import threading
 import time
 import traceback

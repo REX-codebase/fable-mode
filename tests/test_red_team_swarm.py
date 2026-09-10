@@ -10,11 +10,13 @@ Tests:
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 import tempfile
 import threading
 import unittest
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -328,7 +330,7 @@ class TestPublicActionHandlers(unittest.TestCase):
         from fable_engine.session import FableSession, ACTIVE_SESSIONS
         session = FableSession(session_name="test_no_mutate_01", objective="Test no mutation", time_budget_minutes=5.0)
         ACTIVE_SESSIONS["test_no_mutate_01"] = session
-        snapshot = session.to_dict()
+        snapshot = copy.deepcopy(session.to_dict())
 
         resp = _handle_red_team_code_review({
             "action": "red_team_code_review",
@@ -343,7 +345,7 @@ class TestPublicActionHandlers(unittest.TestCase):
         from fable_engine.session import FableSession, ACTIVE_SESSIONS
         session = FableSession(session_name="test_no_mutate_02", objective="Test no mutation", time_budget_minutes=5.0)
         ACTIVE_SESSIONS["test_no_mutate_02"] = session
-        snapshot = session.to_dict()
+        snapshot = copy.deepcopy(session.to_dict())
 
         resp = _handle_verify_red_team_remediation({
             "action": "verify_red_team_remediation",
@@ -357,26 +359,37 @@ class TestPublicActionHandlers(unittest.TestCase):
         from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
         from fable_engine.session import ACTIVE_SESSIONS, SESSIONS_DIR
 
-        nonexistent_name = "nonexistent_session_999"
-        self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+        nonexistent_name = f"nonexistent_session_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{nonexistent_name}.json"
 
-        resp1 = _handle_red_team_code_review({
-            "action": "red_team_code_review",
-            "session_name": nonexistent_name,
-            "target_code": "def process(): pass",
-        })
-        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp1)
-        self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
-        self.assertFalse((SESSIONS_DIR / f"{nonexistent_name}.json").exists())
+        ACTIVE_SESSIONS.pop(nonexistent_name, None)
+        if session_file.exists():
+            session_file.unlink()
 
-        resp2 = _handle_verify_red_team_remediation({
-            "action": "verify_red_team_remediation",
-            "session_name": nonexistent_name,
-            "remediated_code": "def process(): pass",
-        })
-        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp2)
-        self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
-        self.assertFalse((SESSIONS_DIR / f"{nonexistent_name}.json").exists())
+        try:
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+
+            resp1 = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": nonexistent_name,
+                "target_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp1)
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+            self.assertFalse(session_file.exists())
+
+            resp2 = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": nonexistent_name,
+                "remediated_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp2)
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+            self.assertFalse(session_file.exists())
+        finally:
+            ACTIVE_SESSIONS.pop(nonexistent_name, None)
+            if session_file.exists():
+                session_file.unlink()
 
     def test_missing_session_name_does_not_create_session_or_file(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
@@ -420,6 +433,49 @@ class TestPublicActionHandlers(unittest.TestCase):
         })
         self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
         self.assertIn("Adversarial Red Team Resilient Attestation", resp)
+
+    def test_falsey_callable_object_accepted_in_verify_red_team_remediation(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SessionState
+
+        class FalseCallable:
+            def __bool__(self) -> bool:
+                return False
+
+            def __call__(self, x: Any = None) -> str:
+                return "ok"
+
+        session = FableSession(session_name="test_falsey_remediation_01", objective="Test falsey remediation", time_budget_minutes=5.0)
+        session.set_timer(5.0)
+        session.execution_locked = False
+        session.can_execute_code = True
+        session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "created", "Added initial implementation")
+        session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
+        ACTIVE_SESSIONS["test_falsey_remediation_01"] = session
+
+        prior_report = {
+            "report_id": "rep_prior_falsey",
+            "target_name": "target",
+            "broken_count": 1,
+            "findings": [
+                {
+                    "scenario_id": "target_chaos_01_missing_path",
+                    "vector": "chaos_environment",
+                    "hypothesis": "Hypothesis",
+                    "broken": True,
+                }
+            ],
+        }
+
+        resp = _handle_verify_red_team_remediation({
+            "action": "verify_red_team_remediation",
+            "session_name": "test_falsey_remediation_01",
+            "remediated_code": FalseCallable(),
+            "prior_report": prior_report,
+        })
+        self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
+        self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
 
 
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
