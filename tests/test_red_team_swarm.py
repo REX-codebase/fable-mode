@@ -327,33 +327,47 @@ class TestPingPongRemediationCycle(unittest.TestCase):
 class TestPublicActionHandlers(unittest.TestCase):
     def test_handle_red_team_code_review_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review
-        from fable_engine.session import FableSession, ACTIVE_SESSIONS
-        session = FableSession(session_name="test_no_mutate_01", objective="Test no mutation", time_budget_minutes=5.0)
-        ACTIVE_SESSIONS["test_no_mutate_01"] = session
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
+        session_name = f"test_no_mutate_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name=session_name, objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS[session_name] = session
         snapshot = copy.deepcopy(session.to_dict())
 
-        resp = _handle_red_team_code_review({
-            "action": "red_team_code_review",
-            "session_name": "test_no_mutate_01",
-            "target_code": "def process(): pass",
-        })
-        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
-        self.assertEqual(session.to_dict(), snapshot)
+        try:
+            resp = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": session_name,
+                "target_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            self.assertEqual(session.to_dict(), snapshot)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
 
     def test_handle_verify_red_team_remediation_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_verify_red_team_remediation
-        from fable_engine.session import FableSession, ACTIVE_SESSIONS
-        session = FableSession(session_name="test_no_mutate_02", objective="Test no mutation", time_budget_minutes=5.0)
-        ACTIVE_SESSIONS["test_no_mutate_02"] = session
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
+        session_name = f"test_no_mutate_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name=session_name, objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS[session_name] = session
         snapshot = copy.deepcopy(session.to_dict())
 
-        resp = _handle_verify_red_team_remediation({
-            "action": "verify_red_team_remediation",
-            "session_name": "test_no_mutate_02",
-            "remediated_code": "def process(): pass",
-        })
-        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
-        self.assertEqual(session.to_dict(), snapshot)
+        try:
+            resp = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": session_name,
+                "remediated_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            self.assertEqual(session.to_dict(), snapshot)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
 
     def test_rejected_source_string_with_nonexistent_session_name(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
@@ -407,8 +421,8 @@ class TestPublicActionHandlers(unittest.TestCase):
         self.assertFalse((SESSIONS_DIR / ".json").exists())
 
     def test_falsey_callable_object_accepted_in_public_action_handlers(self) -> None:
-        from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
-        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SessionState
+        from fable_engine.actions.fleet import _handle_red_team_code_review
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
 
         class FalseCallable:
             def __bool__(self) -> bool:
@@ -417,26 +431,34 @@ class TestPublicActionHandlers(unittest.TestCase):
             def __call__(self, x: Any = None) -> str:
                 return "ok"
 
-        session = FableSession(session_name="test_falsey_callable_01", objective="Test falsey callable", time_budget_minutes=5.0)
+        session_name = f"test_falsey_callable_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+
+        session = FableSession(session_name=session_name, objective="Test falsey callable", time_budget_minutes=5.0)
         session.set_timer(5.0)
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
         session.track_file_change("sample.py", "created", "Added initial implementation")
         session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
-        ACTIVE_SESSIONS["test_falsey_callable_01"] = session
+        ACTIVE_SESSIONS[session_name] = session
 
-        resp = _handle_red_team_code_review({
-            "action": "red_team_code_review",
-            "session_name": "test_falsey_callable_01",
-            "target_code": FalseCallable(),
-        })
-        self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
-        self.assertIn("Adversarial Red Team Resilient Attestation", resp)
+        try:
+            resp = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": session_name,
+                "target_code": FalseCallable(),
+            })
+            self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
+            self.assertIn("Adversarial Red Team Resilient Attestation", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
 
     def test_falsey_callable_object_accepted_in_verify_red_team_remediation(self) -> None:
         from fable_engine.actions.fleet import _handle_verify_red_team_remediation
-        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SessionState
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
 
         class FalseCallable:
             def __bool__(self) -> bool:
@@ -445,14 +467,17 @@ class TestPublicActionHandlers(unittest.TestCase):
             def __call__(self, x: Any = None) -> str:
                 return "ok"
 
-        session = FableSession(session_name="test_falsey_remediation_01", objective="Test falsey remediation", time_budget_minutes=5.0)
+        session_name = f"test_falsey_remediation_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+
+        session = FableSession(session_name=session_name, objective="Test falsey remediation", time_budget_minutes=5.0)
         session.set_timer(5.0)
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
         session.track_file_change("sample.py", "created", "Added initial implementation")
         session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
-        ACTIVE_SESSIONS["test_falsey_remediation_01"] = session
+        ACTIVE_SESSIONS[session_name] = session
 
         prior_report = {
             "report_id": "rep_prior_falsey",
@@ -468,14 +493,19 @@ class TestPublicActionHandlers(unittest.TestCase):
             ],
         }
 
-        resp = _handle_verify_red_team_remediation({
-            "action": "verify_red_team_remediation",
-            "session_name": "test_falsey_remediation_01",
-            "remediated_code": FalseCallable(),
-            "prior_report": prior_report,
-        })
-        self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
-        self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
+        try:
+            resp = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": session_name,
+                "remediated_code": FalseCallable(),
+                "prior_report": prior_report,
+            })
+            self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
+            self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
 
 
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
