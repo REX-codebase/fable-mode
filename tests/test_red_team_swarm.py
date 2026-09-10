@@ -330,6 +330,9 @@ class TestPublicActionHandlers(unittest.TestCase):
         ACTIVE_SESSIONS["test_no_mutate_01"] = session
         initial_reports_len = len(session.breakage_reports)
         initial_state = session.current_state
+        initial_iteration_count = session.iteration_count
+        initial_active_breakages = list(session.active_breakages)
+        initial_remediation_history = list(session.remediation_history)
 
         resp = _handle_red_team_code_review({
             "action": "red_team_code_review",
@@ -339,6 +342,9 @@ class TestPublicActionHandlers(unittest.TestCase):
         self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
         self.assertEqual(len(session.breakage_reports), initial_reports_len)
         self.assertEqual(session.current_state, initial_state)
+        self.assertEqual(session.iteration_count, initial_iteration_count)
+        self.assertEqual(session.active_breakages, initial_active_breakages)
+        self.assertEqual(session.remediation_history, initial_remediation_history)
 
     def test_handle_verify_red_team_remediation_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_verify_red_team_remediation
@@ -347,6 +353,9 @@ class TestPublicActionHandlers(unittest.TestCase):
         ACTIVE_SESSIONS["test_no_mutate_02"] = session
         initial_reports_len = len(session.breakage_reports)
         initial_state = session.current_state
+        initial_iteration_count = session.iteration_count
+        initial_active_breakages = list(session.active_breakages)
+        initial_remediation_history = list(session.remediation_history)
 
         resp = _handle_verify_red_team_remediation({
             "action": "verify_red_team_remediation",
@@ -356,6 +365,24 @@ class TestPublicActionHandlers(unittest.TestCase):
         self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
         self.assertEqual(len(session.breakage_reports), initial_reports_len)
         self.assertEqual(session.current_state, initial_state)
+        self.assertEqual(session.iteration_count, initial_iteration_count)
+        self.assertEqual(session.active_breakages, initial_active_breakages)
+        self.assertEqual(session.remediation_history, initial_remediation_history)
+
+    def test_missing_session_name_does_not_create_session_or_file(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
+        from fable_engine.session import ACTIVE_SESSIONS, SESSIONS_DIR
+
+        initial_active_keys = set(ACTIVE_SESSIONS.keys())
+
+        resp1 = _handle_red_team_code_review({"action": "red_team_code_review"})
+        self.assertIn("Error: 'session_name' is required", resp1)
+
+        resp2 = _handle_verify_red_team_remediation({"action": "verify_red_team_remediation"})
+        self.assertIn("Error: 'session_name' is required", resp2)
+
+        self.assertEqual(set(ACTIVE_SESSIONS.keys()), initial_active_keys)
+        self.assertFalse((SESSIONS_DIR / ".json").exists())
 
 
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):

@@ -576,9 +576,11 @@ class RedTeamSwarm:
         timeout_seconds: float = 3.0,
         target_name: Optional[str] = None,
     ) -> RedTeamBreakageReport:
-        """Executes the break scenarios against target_callable with sandboxed execution.
+        """Executes the break scenarios against target_callable in-process.
 
-        Detects unhandled crashes, memory/resource leaks, invariant violations, and timeouts.
+        Executes trusted callable objects in the current process. Source-code strings are rejected
+        and require a separate sandboxed executor for dynamic execution. Detects unhandled crashes,
+        memory/resource leaks, invariant violations, and timeouts.
         """
         callable_fn = self._resolve_callable(target_callable)
         actual_name = target_name or getattr(callable_fn, "__name__", "target")
