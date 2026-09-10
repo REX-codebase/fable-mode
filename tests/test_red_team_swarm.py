@@ -323,23 +323,39 @@ class TestPingPongRemediationCycle(unittest.TestCase):
 
 
 class TestPublicActionHandlers(unittest.TestCase):
-    def test_handle_red_team_code_review_rejects_source_string(self) -> None:
+    def test_handle_red_team_code_review_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS
+        session = FableSession(session_name="test_no_mutate_01", objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS["test_no_mutate_01"] = session
+        initial_reports_len = len(session.breakage_reports)
+        initial_state = session.current_state
+
         resp = _handle_red_team_code_review({
             "action": "red_team_code_review",
-            "session_name": "test_handler_session",
+            "session_name": "test_no_mutate_01",
             "target_code": "def process(): pass",
         })
         self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+        self.assertEqual(len(session.breakage_reports), initial_reports_len)
+        self.assertEqual(session.current_state, initial_state)
 
-    def test_handle_verify_red_team_remediation_rejects_source_string(self) -> None:
+    def test_handle_verify_red_team_remediation_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS
+        session = FableSession(session_name="test_no_mutate_02", objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS["test_no_mutate_02"] = session
+        initial_reports_len = len(session.breakage_reports)
+        initial_state = session.current_state
+
         resp = _handle_verify_red_team_remediation({
             "action": "verify_red_team_remediation",
-            "session_name": "test_handler_session",
+            "session_name": "test_no_mutate_02",
             "remediated_code": "def process(): pass",
         })
         self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+        self.assertEqual(len(session.breakage_reports), initial_reports_len)
+        self.assertEqual(session.current_state, initial_state)
 
 
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
