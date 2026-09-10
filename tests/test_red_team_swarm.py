@@ -322,6 +322,26 @@ class TestPingPongRemediationCycle(unittest.TestCase):
         self.assertGreater(len(lobe_reloaded.specialized_heuristics), 0)
 
 
+class TestPublicActionHandlers(unittest.TestCase):
+    def test_handle_red_team_code_review_rejects_source_string(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review
+        resp = _handle_red_team_code_review({
+            "action": "red_team_code_review",
+            "session_name": "test_handler_session",
+            "target_code": "def process(): pass",
+        })
+        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+
+    def test_handle_verify_red_team_remediation_rejects_source_string(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        resp = _handle_verify_red_team_remediation({
+            "action": "verify_red_team_remediation",
+            "session_name": "test_handler_session",
+            "remediated_code": "def process(): pass",
+        })
+        self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+
+
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()

@@ -314,9 +314,17 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
 def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
     action = arguments.get("action", "").strip().lower()
     session_name = arguments.get("session_name", "").strip()
-    session: Optional[FableSession] = None
     if not session_name:
         return "Error: 'session_name' is required for action 'verify_red_team_remediation'."
+
+    remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
+    if not callable(remediated_code):
+        return (
+            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
+            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
+            "Provide an executable Python Callable object in-process."
+        )
+
     session = get_or_load_session(session_name)
 
     report_id = arguments.get("report_id")
@@ -330,14 +338,6 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
 
     if not prior_report:
         return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
-
-    remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
-    if not callable(remediated_code):
-        return (
-            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
-            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
-            "Provide an executable Python Callable object in-process."
-        )
     timeout_sec = float(arguments.get("timeout_seconds", 3.0))
     all_fixed, new_report = _get_swarm().verify_remediation(
         target_callable=remediated_code,
