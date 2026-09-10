@@ -478,11 +478,11 @@ TOOL_SCHEMA = {
             },
             "target_code": {
                 "type": "string",
-                "description": "Target module or function identifier under test. Note: dynamic in-process source-code string execution is disabled for security reasons."
+                "description": "Target module or function identifier under test. Source-code strings are unsupported in-process for security reasons."
             },
             "code_snippet": {
                 "type": "string",
-                "description": "Alternative alias or snippet for target module or function under review. Note: dynamic in-process source-code string execution is disabled for security reasons."
+                "description": "Alternative alias for target module or function under review. Source-code strings are unsupported in-process for security reasons."
             },
             "custom_hypotheses": {
                 "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
@@ -494,7 +494,7 @@ TOOL_SCHEMA = {
             },
             "remediated_code": {
                 "type": "string",
-                "description": "Remediated target callable or function identifier submitted to verify against broken scenarios. Note: dynamic in-process source-code string execution is disabled for security reasons."
+                "description": "Remediated target callable or function identifier submitted to verify against broken scenarios. Source-code strings are unsupported in-process for security reasons."
             },
             "prior_report": {
                 "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",
