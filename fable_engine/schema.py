@@ -478,11 +478,11 @@ TOOL_SCHEMA = {
             },
             "target_code": {
                 "type": "string",
-                "description": "Target source code under test for adversarial red-teaming."
+                "description": "Source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
             },
             "code_snippet": {
                 "type": "string",
-                "description": "Alternative alias or snippet for target source code under review."
+                "description": "Alternative alias for source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
             },
             "custom_hypotheses": {
                 "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
@@ -494,7 +494,7 @@ TOOL_SCHEMA = {
             },
             "remediated_code": {
                 "type": "string",
-                "description": "Remediated code submitted to verify against broken scenarios."
+                "description": "Remediated source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
             },
             "prior_report": {
                 "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",

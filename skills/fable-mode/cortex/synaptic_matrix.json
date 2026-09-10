@@ -1,24 +1,34 @@
 {
+  "diagnostics": {
+    "red_team_swarm": 0.3693,
+    "system": 0.3764,
+    "test_harness": 0.3768
+  },
   "mutation": {
-    "property_oracle": 0.2229,
-    "red_team_swarm": 0.7737,
+    "property_oracle": 0.3687,
+    "red_team_swarm": 0.9249,
     "security": 0.6983,
-    "test_harness": 0.74
+    "target": 0.344,
+    "test_harness": 0.8966
   },
   "property_oracle": {
-    "mutation": 0.2229,
-    "red_team_swarm": 0.218,
+    "mutation": 0.3687,
+    "red_team_swarm": 0.354,
     "security": 0.2648,
-    "test_harness": 0.2205
+    "target": 0.3296,
+    "test_harness": 0.3615
   },
   "quorum": {
     "test_distributed_raft": 0.95
   },
   "red_team_swarm": {
-    "mutation": 0.7737,
-    "property_oracle": 0.218,
+    "diagnostics": 0.3693,
+    "mutation": 0.9249,
+    "property_oracle": 0.354,
     "security": 0.7082,
-    "test_harness": 0.7523
+    "system": 0.3827,
+    "target": 0.3344,
+    "test_harness": 1.0
   },
   "security": {
     "mutation": 0.6983,
@@ -26,13 +36,27 @@
     "red_team_swarm": 0.7082,
     "test_harness": 0.6812
   },
+  "system": {
+    "diagnostics": 0.3764,
+    "red_team_swarm": 0.3827,
+    "test_harness": 0.389
+  },
+  "target": {
+    "mutation": 0.344,
+    "property_oracle": 0.3296,
+    "red_team_swarm": 0.3344,
+    "test_harness": 0.3392
+  },
   "test_distributed_raft": {
     "quorum": 0.95
   },
   "test_harness": {
-    "mutation": 0.74,
-    "property_oracle": 0.2205,
-    "red_team_swarm": 0.7523,
-    "security": 0.6812
+    "diagnostics": 0.3768,
+    "mutation": 0.8966,
+    "property_oracle": 0.3615,
+    "red_team_swarm": 1.0,
+    "security": 0.6812,
+    "system": 0.389,
+    "target": 0.3392
   }
 }

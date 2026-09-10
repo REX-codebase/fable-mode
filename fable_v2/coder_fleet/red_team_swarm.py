@@ -12,7 +12,6 @@ import datetime
 import inspect
 import json
 import os
-import sys
 import threading
 import time
 import traceback
@@ -219,7 +218,12 @@ class RedTeamBreakageReport:
 
 
 class RedTeamSwarm:
-    """Adversarial Red Team Swarm executing counterfactual stress probes across 5 vectors."""
+    """Adversarial Red Team Swarm executing counterfactual stress probes across 5 vectors.
+
+    RedTeamSwarm never executes source-code strings in-process. Source-code strings and
+    unexecutable targets are rejected as non-executable targets (passed=False). Dynamic source
+    execution, if required, must be provided through a separately sandboxed execution layer.
+    """
 
     def __init__(
         self,
@@ -244,36 +248,15 @@ class RedTeamSwarm:
                 except Exception:
                     self.plasticity_engine = None
 
-    @staticmethod
-    def _compile_code_to_callable(code: str) -> Callable[..., Any]:
-        """Safely compiles a python code string into an executable callable."""
-        scope: dict[str, Any] = {}
-        exec(code, scope, scope)
-
-        # Look for functions defined in scope
-        functions = [v for v in scope.values() if callable(v) and not isinstance(v, type)]
-        if functions:
-            return functions[-1]
-
-        # Look for classes
-        classes = [v for v in scope.values() if isinstance(v, type)]
-        if classes:
-            return classes[-1]
-
-        def _fallback_callable(*args: Any, **kwargs: Any) -> Any:
-            return scope.get("result", None)
-
-        return _fallback_callable
-
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
-        """Resolves target callable from function, class, or code string."""
+        """Resolves target callable from function or class object.
+
+        RedTeamSwarm never executes source-code strings in-process. Source-code strings
+        are rejected as non-executable targets. Dynamic source execution, if required,
+        must be provided through a separately sandboxed execution layer.
+        """
         if callable(target):
             return target
-        if isinstance(target, str) and target.strip():
-            try:
-                return self._compile_code_to_callable(target)
-            except Exception:
-                return None
         return None
 
     def generate_break_scenarios(
@@ -290,8 +273,8 @@ class RedTeamSwarm:
 
         # Vector 1: CHAOS_ENVIRONMENT
         def _chaos_missing_path(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Probe with non-existent / unlinked file path
             return fn("/nonexistent/fable_chaos_probe_file.tmp")
 
@@ -307,8 +290,8 @@ class RedTeamSwarm:
         )
 
         def _chaos_corrupt_env(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn("")
 
         scenarios.append(
@@ -324,8 +307,8 @@ class RedTeamSwarm:
 
         # Vector 2: BYZANTINE_PAYLOAD
         def _byzantine_null_bytes(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             payload = "probe\x00hostile\x00injection\r\n\t"
             return fn(payload)
 
@@ -341,8 +324,8 @@ class RedTeamSwarm:
         )
 
         def _byzantine_deep_nesting(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # 60 levels of nested dictionaries
             nested: dict[str, Any] = {"leaf": 42}
             for _ in range(60):
@@ -361,8 +344,8 @@ class RedTeamSwarm:
         )
 
         def _byzantine_type_confusion(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             return fn(None)
 
         scenarios.append(
@@ -377,8 +360,8 @@ class RedTeamSwarm:
         )
 
         def _byzantine_extreme_numbers(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             # Nan, Inf, negative zero, huge int
             return fn(float("nan"))
 
@@ -395,8 +378,8 @@ class RedTeamSwarm:
 
         # Vector 3: CONCURRENCY_RACE
         def _concurrency_multithreaded_burst(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             errors: list[str] = []
             threads: list[threading.Thread] = []
             try:
@@ -441,8 +424,8 @@ class RedTeamSwarm:
 
         # Vector 4: RESOURCE_EXHAUSTION
         def _resource_massive_payload(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             massive_str = "A" * 150_000
             return fn(massive_str)
 
@@ -458,8 +441,8 @@ class RedTeamSwarm:
         )
 
         def _resource_rapid_churn(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             for _ in range(100):
                 if len(sig.parameters) == 0:
@@ -481,8 +464,8 @@ class RedTeamSwarm:
 
         # Vector 5: STATE_INVARIANT
         def _state_invariant_idempotency(fn: Optional[Callable[..., Any]] = None) -> Any:
-            if not fn:
-                return True
+            if fn is None:
+                raise TypeError("RedTeamSwarm target callable is missing or not executable")
             sig = inspect.signature(fn)
             if len(sig.parameters) == 0:
                 res1 = fn()
@@ -523,8 +506,8 @@ class RedTeamSwarm:
                     v = AttackVector.CHAOS_ENVIRONMENT
 
                 def _custom_attack_fn(fn: Optional[Callable[..., Any]] = None, h_text: str = hyp_clean) -> Any:
-                    if not fn:
-                        return True
+                    if fn is None:
+                        raise TypeError("RedTeamSwarm target callable is missing or not executable")
                     sig = inspect.signature(fn)
                     if len(sig.parameters) == 0:
                         return fn()
@@ -589,12 +572,36 @@ class RedTeamSwarm:
         timeout_seconds: float = 3.0,
         target_name: Optional[str] = None,
     ) -> RedTeamBreakageReport:
-        """Executes the break scenarios against target_callable with sandboxed execution.
+        """Executes the break scenarios against target_callable in-process.
 
-        Detects unhandled crashes, memory/resource leaks, invariant violations, and timeouts.
+        Executes trusted callable objects in the current process. Source-code strings are rejected
+        and require a separate sandboxed executor for dynamic execution. Detects unhandled crashes,
+        memory/resource leaks, invariant violations, and timeouts.
         """
         callable_fn = self._resolve_callable(target_callable)
         actual_name = target_name or getattr(callable_fn, "__name__", "target")
+
+        if callable_fn is None:
+            report_id = f"redteam_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+            finding = BreakFinding(
+                scenario_id="target_not_executable",
+                vector=AttackVector.CHAOS_ENVIRONMENT.value,
+                hypothesis="Target must be an executable Python Callable object",
+                broken=True,
+                error_message="TypeError: Source-code strings cannot be evaluated in-process for security reasons. Provide an executable Python Callable or use an isolated sandbox executor.",
+                severity="CRITICAL",
+                details={"target_executable": False},
+            )
+            return RedTeamBreakageReport(
+                report_id=report_id,
+                target_name=actual_name,
+                total_probes=1,
+                broken_count=1,
+                passed=False,
+                findings=[finding],
+                created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                remediation_directives=["Provide an executable Python callable or use an isolated sandbox executor."],
+            )
 
         if not scenarios:
             scenarios = self.generate_break_scenarios(target_name=actual_name)
@@ -808,8 +815,8 @@ class RedTeamSwarm:
                     vec = AttackVector.CHAOS_ENVIRONMENT
 
                 def _repro_probe(fn: Optional[Callable[..., Any]] = None, finding: BreakFinding = f) -> Any:
-                    if not fn:
-                        return True
+                    if fn is None:
+                        raise TypeError("RedTeamSwarm target callable is missing or not executable")
                     sig = inspect.signature(fn)
                     if len(sig.parameters) == 0:
                         return fn()

@@ -10,11 +10,13 @@ Tests:
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 import tempfile
 import threading
 import unittest
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +109,47 @@ class TestRedTeamSwarmExecution(unittest.TestCase):
         self.assertTrue(report.passed)
         self.assertEqual(report.broken_count, 0)
         self.assertEqual(len([f for f in report.findings if f.broken]), 0)
+
+
+class TestRedTeamSwarmSecurityBoundary(unittest.TestCase):
+    def setUp(self) -> None:
+        self.swarm = RedTeamSwarm()
+
+    def test_none_or_unexecutable_target_fails_closed(self) -> None:
+        report = self.swarm.execute_swarm_attack(None)
+        self.assertFalse(report.passed)
+        self.assertEqual(report.broken_count, 1)
+        self.assertEqual(report.findings[0].scenario_id, "target_not_executable")
+        self.assertFalse(report.findings[0].details.get("target_executable", True))
+        self.assertIn("TypeError", report.findings[0].error_message or "")
+
+    def test_source_string_target_fails_closed(self) -> None:
+        code_snippet = "def safe_fn(x=None):\n    return 'ok'\n"
+        report = self.swarm.execute_swarm_attack(code_snippet)
+        self.assertFalse(report.passed)
+        self.assertEqual(report.broken_count, 1)
+        self.assertFalse(report.findings[0].details.get("target_executable", True))
+
+    def test_callable_object_succeeds(self) -> None:
+        def safe_fn(x=None):
+            return "ok"
+
+        report = self.swarm.execute_swarm_attack(safe_fn)
+        self.assertTrue(report.passed)
+        self.assertEqual(report.broken_count, 0)
+
+    def test_false_bool_callable_object_succeeds(self) -> None:
+        class FalseCallable:
+            def __bool__(self) -> bool:
+                return False
+
+            def __call__(self, x: Any = None) -> str:
+                return "ok"
+
+        false_callable = FalseCallable()
+        report = self.swarm.execute_swarm_attack(false_callable)
+        self.assertTrue(report.passed)
+        self.assertEqual(report.broken_count, 0)
 
 
 class TestReportFormattingAndSerialization(unittest.TestCase):
@@ -281,6 +324,190 @@ class TestPingPongRemediationCycle(unittest.TestCase):
         self.assertGreater(len(lobe_reloaded.specialized_heuristics), 0)
 
 
+class TestPublicActionHandlers(unittest.TestCase):
+    def test_handle_red_team_code_review_rejects_source_string_without_mutation(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
+        session_name = f"test_no_mutate_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name=session_name, objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS[session_name] = session
+        snapshot = copy.deepcopy(session.to_dict())
+
+        try:
+            resp = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": session_name,
+                "target_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            self.assertEqual(session.to_dict(), snapshot)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_handle_verify_red_team_remediation_rejects_source_string_without_mutation(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
+        session_name = f"test_no_mutate_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name=session_name, objective="Test no mutation", time_budget_minutes=5.0)
+        ACTIVE_SESSIONS[session_name] = session
+        snapshot = copy.deepcopy(session.to_dict())
+
+        try:
+            resp = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": session_name,
+                "remediated_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            self.assertEqual(session.to_dict(), snapshot)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_rejected_source_string_with_nonexistent_session_name(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
+        from fable_engine.session import ACTIVE_SESSIONS, SESSIONS_DIR
+
+        nonexistent_name = f"nonexistent_session_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{nonexistent_name}.json"
+
+        ACTIVE_SESSIONS.pop(nonexistent_name, None)
+        if session_file.exists():
+            session_file.unlink()
+
+        try:
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+
+            resp1 = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": nonexistent_name,
+                "target_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp1)
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+            self.assertFalse(session_file.exists())
+
+            resp2 = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": nonexistent_name,
+                "remediated_code": "def process(): pass",
+            })
+            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp2)
+            self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
+            self.assertFalse(session_file.exists())
+        finally:
+            ACTIVE_SESSIONS.pop(nonexistent_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_missing_session_name_does_not_create_session_or_file(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review, _handle_verify_red_team_remediation
+        from fable_engine.session import ACTIVE_SESSIONS, SESSIONS_DIR
+
+        initial_active_keys = set(ACTIVE_SESSIONS.keys())
+
+        resp1 = _handle_red_team_code_review({"action": "red_team_code_review"})
+        self.assertIn("Error: 'session_name' is required", resp1)
+
+        resp2 = _handle_verify_red_team_remediation({"action": "verify_red_team_remediation"})
+        self.assertIn("Error: 'session_name' is required", resp2)
+
+        self.assertEqual(set(ACTIVE_SESSIONS.keys()), initial_active_keys)
+        self.assertFalse((SESSIONS_DIR / ".json").exists())
+
+    def test_falsey_callable_object_accepted_in_public_action_handlers(self) -> None:
+        from fable_engine.actions.fleet import _handle_red_team_code_review
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
+
+        class FalseCallable:
+            def __bool__(self) -> bool:
+                return False
+
+            def __call__(self, x: Any = None) -> str:
+                return "ok"
+
+        session_name = f"test_falsey_callable_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+
+        session = FableSession(session_name=session_name, objective="Test falsey callable", time_budget_minutes=5.0)
+        session.set_timer(5.0)
+        session.execution_locked = False
+        session.can_execute_code = True
+        session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "created", "Added initial implementation")
+        session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
+        ACTIVE_SESSIONS[session_name] = session
+
+        try:
+            resp = _handle_red_team_code_review({
+                "action": "red_team_code_review",
+                "session_name": session_name,
+                "target_code": FalseCallable(),
+            })
+            self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
+            self.assertIn("Adversarial Red Team Resilient Attestation", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_falsey_callable_object_accepted_in_verify_red_team_remediation(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
+
+        class FalseCallable:
+            def __bool__(self) -> bool:
+                return False
+
+            def __call__(self, x: Any = None) -> str:
+                return "ok"
+
+        session_name = f"test_falsey_remediation_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+
+        session = FableSession(session_name=session_name, objective="Test falsey remediation", time_budget_minutes=5.0)
+        session.set_timer(5.0)
+        session.execution_locked = False
+        session.can_execute_code = True
+        session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "created", "Added initial implementation")
+        session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
+        ACTIVE_SESSIONS[session_name] = session
+
+        prior_report = {
+            "report_id": "rep_prior_falsey",
+            "target_name": "target",
+            "broken_count": 1,
+            "findings": [
+                {
+                    "scenario_id": "target_chaos_01_missing_path",
+                    "vector": "chaos_environment",
+                    "hypothesis": "Hypothesis",
+                    "broken": True,
+                }
+            ],
+        }
+
+        try:
+            resp = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": session_name,
+                "remediated_code": FalseCallable(),
+                "prior_report": prior_report,
+            })
+            self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
+            self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+
 class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -314,15 +541,27 @@ class TestCoderFleetDispatcherRedTeamActions(unittest.TestCase):
         self.assertGreater(len(scenarios), 0)
 
     def test_dispatch_red_team_full_review_cycle(self) -> None:
-        code_snippet = "def safe_fn(x=None):\n    return 'safe'\n"
+        def safe_fn(x=None):
+            return "safe"
+
         res = self.dispatcher.dispatch(
             "red_team_full_review_cycle",
-            {"target_callable": code_snippet, "target_name": "safe_fn"},
+            {"target_callable": safe_fn, "target_name": "safe_fn"},
         )
         self.assertTrue(res["success"])
         report = res["result"]
         self.assertTrue(isinstance(report, RedTeamBreakageReport))
         self.assertTrue(report.passed)
+
+        # Source code strings produce fail-closed breakage reports
+        res_str = self.dispatcher.dispatch(
+            "red_team_full_review_cycle",
+            {"target_callable": "def safe_fn(x=None):\n    return 'safe'\n", "target_name": "safe_fn"},
+        )
+        self.assertTrue(res_str["success"])
+        report_str = res_str["result"]
+        self.assertFalse(report_str.passed)
+        self.assertEqual(report_str.broken_count, 1)
 
 
 if __name__ == "__main__":

@@ -257,7 +257,9 @@ class TestFSMRedTeamEvolution(unittest.TestCase):
                 }
             ]
         }
-        flawed_code = "def process(x):\n    raise MemoryError('Still leaking')"
+        def flawed_code(x=None):
+            raise MemoryError('Still leaking')
+
         resp_flawed = handle_fable_session({
             "action": "verify_red_team_remediation",
             "session_name": session_name,
@@ -269,7 +271,9 @@ class TestFSMRedTeamEvolution(unittest.TestCase):
         self.assertEqual(session.current_state, SessionState.REMEDIATION_REQUIRED)
 
         # 3. Subagent submits fully fixed code that survives the prior breaking probe
-        fixed_code = "def process(x):\n    return 'clean'"
+        def fixed_code(x=None):
+            return 'clean'
+
         resp_fixed = handle_fable_session({
             "action": "verify_red_team_remediation",
             "session_name": session_name,

@@ -190,17 +190,28 @@ def _handle_register_automation_pipeline(arguments: Dict[str, Any]) -> str:
 def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
     action = arguments.get("action", "").strip().lower()
     session_name = arguments.get("session_name", "").strip()
-    session: Optional[FableSession] = None
     if not session_name:
         return "Error: 'session_name' is required for action 'red_team_code_review'."
+
     target_name = arguments.get("target_name", "system")
-    code_snippet = arguments.get("target_code") or arguments.get("code_snippet") or arguments.get("code") or ""
+    code_snippet = None
+    for k in ("target_code", "code_snippet", "code", "target_callable"):
+        if k in arguments and arguments[k] is not None:
+            code_snippet = arguments[k]
+            break
+
+    if code_snippet is not None and not callable(code_snippet):
+        return (
+            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
+            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
+        )
+
     custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
     output_path = arguments.get("output_path")
 
     session = get_or_load_session(session_name)
     report = _get_swarm().run_full_review_cycle(
-        target_callable=code_snippet if code_snippet else None,
+        target_callable=code_snippet,
         target_name=target_name,
         custom_hypotheses=custom_hypotheses,
     )
@@ -309,9 +320,21 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
 def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
     action = arguments.get("action", "").strip().lower()
     session_name = arguments.get("session_name", "").strip()
-    session: Optional[FableSession] = None
     if not session_name:
         return "Error: 'session_name' is required for action 'verify_red_team_remediation'."
+
+    remediated_code = None
+    for k in ("remediated_code", "target_code", "code_snippet", "code", "target_callable"):
+        if k in arguments and arguments[k] is not None:
+            remediated_code = arguments[k]
+            break
+
+    if remediated_code is not None and not callable(remediated_code):
+        return (
+            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
+            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
+        )
+
     session = get_or_load_session(session_name)
 
     report_id = arguments.get("report_id")
@@ -325,8 +348,6 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
 
     if not prior_report:
         return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
-
-    remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
     timeout_sec = float(arguments.get("timeout_seconds", 3.0))
     all_fixed, new_report = _get_swarm().verify_remediation(
         target_callable=remediated_code,
