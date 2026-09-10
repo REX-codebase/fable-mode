@@ -1,4 +1,9 @@
 {
+  "diagnostics": {
+    "red_team_swarm": 0.2231,
+    "system": 0.2588,
+    "test_harness": 0.2256
+  },
   "mutation": {
     "property_oracle": 0.2229,
     "red_team_swarm": 0.7737,
@@ -15,10 +20,12 @@
     "test_distributed_raft": 0.95
   },
   "red_team_swarm": {
+    "diagnostics": 0.2231,
     "mutation": 0.7737,
     "property_oracle": 0.218,
     "security": 0.7082,
-    "test_harness": 0.7523
+    "system": 0.2609,
+    "test_harness": 0.8306
   },
   "security": {
     "mutation": 0.6983,
@@ -26,13 +33,20 @@
     "red_team_swarm": 0.7082,
     "test_harness": 0.6812
   },
+  "system": {
+    "diagnostics": 0.2588,
+    "red_team_swarm": 0.2609,
+    "test_harness": 0.263
+  },
   "test_distributed_raft": {
     "quorum": 0.95
   },
   "test_harness": {
+    "diagnostics": 0.2256,
     "mutation": 0.74,
     "property_oracle": 0.2205,
-    "red_team_swarm": 0.7523,
-    "security": 0.6812
+    "red_team_swarm": 0.8306,
+    "security": 0.6812,
+    "system": 0.263
   }
 }

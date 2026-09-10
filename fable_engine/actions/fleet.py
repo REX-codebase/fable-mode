@@ -192,14 +192,21 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
     session_name = arguments.get("session_name", "").strip()
     if not session_name:
         return "Error: 'session_name' is required for action 'red_team_code_review'."
+
     target_name = arguments.get("target_name", "system")
-    code_snippet = arguments.get("target_code") or arguments.get("code_snippet") or arguments.get("code") or ""
-    if not callable(code_snippet):
+    code_snippet = None
+    for k in ("target_code", "code_snippet", "code", "target_callable"):
+        if k in arguments and arguments[k] is not None:
+            code_snippet = arguments[k]
+            break
+
+    if code_snippet is not None and not callable(code_snippet):
         return (
             "Error: Source-code strings cannot be evaluated in-process for security reasons. "
             "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
             "Provide an executable Python Callable object in-process."
         )
+
     custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
     output_path = arguments.get("output_path")
 
@@ -317,8 +324,13 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
     if not session_name:
         return "Error: 'session_name' is required for action 'verify_red_team_remediation'."
 
-    remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
-    if not callable(remediated_code):
+    remediated_code = None
+    for k in ("remediated_code", "target_code", "code_snippet", "code", "target_callable"):
+        if k in arguments and arguments[k] is not None:
+            remediated_code = arguments[k]
+            break
+
+    if remediated_code is not None and not callable(remediated_code):
         return (
             "Error: Source-code strings cannot be evaluated in-process for security reasons. "
             "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
