@@ -195,12 +195,18 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
         return "Error: 'session_name' is required for action 'red_team_code_review'."
     target_name = arguments.get("target_name", "system")
     code_snippet = arguments.get("target_code") or arguments.get("code_snippet") or arguments.get("code") or ""
+    if isinstance(code_snippet, str) and code_snippet.strip():
+        return (
+            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
+            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
+            "Provide an executable Python Callable object in-process."
+        )
     custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
     output_path = arguments.get("output_path")
 
     session = get_or_load_session(session_name)
     report = _get_swarm().run_full_review_cycle(
-        target_callable=code_snippet if code_snippet else None,
+        target_callable=code_snippet if callable(code_snippet) else None,
         target_name=target_name,
         custom_hypotheses=custom_hypotheses,
     )
@@ -327,6 +333,12 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
         return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
 
     remediated_code = arguments.get("remediated_code") or arguments.get("target_code") or arguments.get("code") or ""
+    if isinstance(remediated_code, str) and remediated_code.strip():
+        return (
+            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
+            "Dynamic source-code execution is disabled until an isolated sandbox executor is configured. "
+            "Provide an executable Python Callable object in-process."
+        )
     timeout_sec = float(arguments.get("timeout_seconds", 3.0))
     all_fixed, new_report = _get_swarm().verify_remediation(
         target_callable=remediated_code,
