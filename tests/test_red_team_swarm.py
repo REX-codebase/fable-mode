@@ -436,6 +436,10 @@ class TestPublicActionHandlers(unittest.TestCase):
 
         session = FableSession(session_name=session_name, objective="Test falsey callable", time_budget_minutes=5.0)
         session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1"}])
+        session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
@@ -472,6 +476,10 @@ class TestPublicActionHandlers(unittest.TestCase):
 
         session = FableSession(session_name=session_name, objective="Test falsey remediation", time_budget_minutes=5.0)
         session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1"}])
+        session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
