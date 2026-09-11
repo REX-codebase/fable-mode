@@ -144,7 +144,7 @@ VALID_TRANSITIONS = {
     SessionState.INIT: {SessionState.DEEPTHINK_TIMELOCK},
     SessionState.DEEPTHINK_TIMELOCK: {SessionState.IMPLEMENTATION},
     SessionState.IMPLEMENTATION: {SessionState.RED_TEAM_GATE},
-    SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION},
+    SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
     SessionState.ARBITRATION: {SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
     SessionState.REMEDIATION_REQUIRED: {SessionState.ARBITRATION, SessionState.SEALED, SessionState.REMEDIATION_REQUIRED},
     SessionState.SEALED: {SessionState.EVOLVED},

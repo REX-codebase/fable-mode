@@ -379,8 +379,6 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
     session.breakage_reports.append(new_report.to_dict())
 
     if not all_fixed or new_report.broken_count > 0:
-        session.transition_to(SessionState.REMEDIATION_REQUIRED, f"Remaining breakages detected: {new_report.broken_count}")
-        session.iteration_count += 1
         session.active_breakages = [
             {
                 "scenario_id": f.scenario_id,
@@ -393,6 +391,8 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             for f in new_report.findings
             if f.broken
         ]
+        session.iteration_count += 1
+        session.transition_to(SessionState.REMEDIATION_REQUIRED, f"Remaining breakages detected: {new_report.broken_count}")
         session.remediation_history.append({
             "iteration": session.iteration_count,
             "report_id": new_report.report_id,
@@ -416,8 +416,8 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
     else:
-        session.transition_to(SessionState.SEALED, "All breakages remediated successfully")
         session.active_breakages = []
+        session.transition_to(SessionState.SEALED, "All breakages remediated successfully")
         session.remediation_history.append({
             "iteration": session.iteration_count,
             "report_id": new_report.report_id,
