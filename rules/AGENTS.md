@@ -130,7 +130,7 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
     - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
     - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
     - After any code modification, the AI **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
-    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after 5 iterations, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
+    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after either 5 iterations or 15 elapsed minutes, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
 
 21. **Mandatory Cortical Evolution & Learning Rule**:
     - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
