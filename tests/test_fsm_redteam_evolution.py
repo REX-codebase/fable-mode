@@ -214,9 +214,17 @@ class TestFSMRedTeamEvolution(unittest.TestCase):
         session_name = "test_ping_pong_loop"
         session = FableSession(session_name=session_name, objective="Ping-pong hardening test", time_budget_minutes=5.0)
         session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Ping-pong evidence one", "README.md:L1")
+        session.log_epistemic_item("PROVEN", "Ping-pong evidence two", "README.md:L5")
+        session.set_goal_rubric(
+            "Ping-pong rubric",
+            [{"pointer_id": "P1", "satisfied": True, "score": 1.0, "verifier_command": "unittest"}],
+        )
+        session.log_refinement_cycle("security", "remediation", "breakage", "harden implementation")
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "modified", "remediated implementation")
         session.transition_to(SessionState.RED_TEAM_GATE, "Code written and ready for audit")
         session.save()
         ACTIVE_SESSIONS[session_name] = session

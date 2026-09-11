@@ -1,0 +1,180 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from fable_engine.session import FableSession, RED_TEAM_ATTACK_VECTORS, SessionState
+from fable_v2.cortical.plasticity_engine import (
+    MAX_ACTIVE_NODES,
+    CorticalLobe,
+    HebbianPlasticityEngine,
+    HeuristicAntibody,
+)
+
+
+class SessionRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _clean_report(session: FableSession) -> dict:
+        report = {
+            "report_id": "clean-regression",
+            "target_name": "session",
+            "total_probes": len(RED_TEAM_ATTACK_VECTORS),
+            "broken_count": 0,
+            "passed": True,
+            "findings": [
+                {"scenario_id": vector, "vector": vector, "broken": False}
+                for vector in RED_TEAM_ATTACK_VECTORS
+            ],
+            "report_origin": "red_team_swarm",
+            "reviewed_change_id": session.derive_reviewed_change_id(),
+        }
+        report["attack_vector_results"] = session._attack_vector_results(report)
+        report["red_team_receipt"] = session.issue_red_team_receipt(
+            report, report["reviewed_change_id"]
+        )
+        return report
+
+    @staticmethod
+    def _add_current_sealing_evidence(session: FableSession) -> None:
+        session.log_epistemic_item("PROVEN", "Current evidence one", "README.md:L1")
+        session.log_epistemic_item("PROVEN", "Current evidence two", "README.md:L5")
+        session.set_goal_rubric(
+            "Current rubric",
+            [{
+                "pointer_id": "P1",
+                "satisfied": True,
+                "score": 1.0,
+                "verifier_command": "python -m unittest tests.test_requested_regressions",
+            }],
+        )
+        session.log_refinement_cycle("security", "sealing", "restored provenance", "fresh evidence")
+
+    def test_restored_file_changes_do_not_mask_a_new_trusted_change(self) -> None:
+        original = FableSession("restored_file_changes", "provenance", 5.0)
+        original.set_timer(5.0)
+        original.execution_locked = False
+        original.can_execute_code = True
+        original.transition_to(SessionState.IMPLEMENTATION, "implementation complete")
+        original.track_file_change("old.py", "modified", "historical change")
+        original.transition_to(SessionState.RED_TEAM_GATE, "code written")
+
+        restored = FableSession.from_dict(original.to_dict())
+        self.assertTrue(restored.file_changes[0]["_restored_untrusted"])
+        self._add_current_sealing_evidence(restored)
+        current = restored.track_file_change("new.py", "modified", "current change")
+        self.assertNotIn("_restored_untrusted", current)
+
+        restored.record_breakage_report(self._clean_report(restored))
+        self.assertEqual(restored.current_state, SessionState.SEALED)
+
+    def test_receipt_key_is_process_local_and_not_deserialized(self) -> None:
+        session = FableSession("receipt_key_local", "secret", 5.0)
+        serialized = session.to_dict()
+        self.assertNotIn("red_team_receipt_key", serialized)
+        self.assertNotIn("_red_team_receipt_key", serialized)
+
+        serialized["red_team_receipt_key"] = "00" * 32
+        serialized["_red_team_receipt_key"] = "11" * 32
+        restored = FableSession.from_dict(serialized)
+        self.assertNotEqual(restored._red_team_receipt_key, bytes(32))
+        self.assertNotEqual(restored._red_team_receipt_key, bytes.fromhex("11" * 32))
+
+    def test_fifth_failure_escalates_and_records_breakages_in_ledger(self) -> None:
+        session = FableSession("attempt_escalation", "bounds", 5.0)
+        session.current_state = SessionState.RED_TEAM_GATE
+        report = {
+            "total_probes": 1,
+            "broken_count": 1,
+            "passed": False,
+            "findings": [{
+                "scenario_id": "unsafe-state",
+                "vector": "state_invariant",
+                "hypothesis": "State remains unsafe",
+                "broken": True,
+            }],
+        }
+        for attempt in range(5):
+            session.record_breakage_report(dict(report, report_id=f"failed-{attempt}"))
+
+        self.assertEqual(session.current_state, SessionState.ESCALATION_UNRESOLVED_BREAKAGES)
+        self.assertEqual(session.remediation_attempt_count, 5)
+        self.assertTrue(session.active_breakages[0]["human_arbitration_required"])
+        ledger_id = session.active_breakages[0]["epistemic_ledger_item_id"]
+        ledger_item = next(item for item in session.epistemic_ledger if item["id"] == ledger_id)
+        self.assertIn(ledger_item["tag"], {"UNKNOWN", "HYPOTHESIS"})
+
+    def test_elapsed_remediation_limit_escalates(self) -> None:
+        now = [100.0]
+        session = FableSession("elapsed_escalation", "bounds", 5.0, wall_clock=lambda: now[0])
+        session.current_state = SessionState.RED_TEAM_GATE
+        report = {
+            "total_probes": 1,
+            "broken_count": 1,
+            "passed": False,
+            "findings": [{"scenario_id": "unknown", "broken": True}],
+        }
+        session.record_breakage_report(dict(report, report_id="first"))
+        now[0] += 900.0
+        session.record_breakage_report(dict(report, report_id="elapsed"))
+        self.assertEqual(session.current_state, SessionState.ESCALATION_UNRESOLVED_BREAKAGES)
+
+
+class CorticalRegressionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cortex_dir = Path(self.temp_dir.name)
+        self.engine = HebbianPlasticityEngine(cortex_dir=self.cortex_dir)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_sync_removes_stale_reciprocal_edges(self) -> None:
+        self.engine.define_cortical_lobe(
+            "sync_lobe", initial_synaptic_weights={"kept": 0.7, "stale": 0.8}
+        )
+        self.engine.define_cortical_lobe(
+            "sync_lobe", initial_synaptic_weights={"kept": 0.9}
+        )
+        matrix = self.engine.get_synaptic_matrix()
+        self.assertNotIn("stale", matrix["sync_lobe"])
+        self.assertNotIn("sync_lobe", matrix["stale"])
+        self.assertEqual(matrix["kept"]["sync_lobe"], 0.9)
+
+    def test_pairwise_processing_is_deduplicated_and_bounded(self) -> None:
+        nodes = [f"node-{index}" for index in range(MAX_ACTIVE_NODES + 50)]
+        receipt = self.engine.consolidate_task(
+            "bounded", co_activated_nodes=["", *nodes, *nodes], final_passed=True
+        )
+        self.assertEqual(len(receipt["activation_signals"]), MAX_ACTIVE_NODES)
+
+    def test_source_task_id_survives_all_cortical_artifact_flows(self) -> None:
+        antibody = HeuristicAntibody(
+            antibody_id="ab-source",
+            domain="concurrency",
+            trigger_condition="race",
+            lethal_anti_pattern="check then use",
+            prescribed_defense="atomic operation",
+            source_task_id="task-source-42",
+        )
+        restored_antibody = HeuristicAntibody.from_dict(antibody.to_dict())
+        self.assertEqual(restored_antibody.source_task_id, "task-source-42")
+        self.assertIn("Source Task ID", restored_antibody.to_markdown())
+
+        lobe = CorticalLobe(name="source", antibodies=[restored_antibody])
+        artifact = self.cortex_dir / "source.md"
+        lobe.save_to_disk(artifact)
+        restored_lobe = CorticalLobe.load_from_disk(artifact)
+        self.assertEqual(restored_lobe.antibodies[0].source_task_id, "task-source-42")
+
+        fallback = self.cortex_dir / "fallback.md"
+        fallback.write_text(restored_antibody.to_markdown(), encoding="utf-8")
+        fallback_lobe = CorticalLobe.load_from_disk(fallback)
+        self.assertEqual(fallback_lobe.antibodies[0].source_task_id, "task-source-42")
+
+        self.engine._lobes["source"] = restored_lobe
+        recall = self.engine.recall_cortical_context("source")
+        self.assertIn("Source Task ID", recall)
+        self.assertIn("task-source-42", recall)
+
+
+if __name__ == "__main__":
+    unittest.main()

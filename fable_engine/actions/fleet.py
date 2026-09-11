@@ -216,7 +216,18 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
         custom_hypotheses=custom_hypotheses,
     )
     report_dict = report.to_dict()
-    session.record_breakage_report(report_dict)
+    if int(report_dict.get("broken_count", 0)) == 0:
+        if not session._fresh_stage_records()[2]:
+            return "Error: A current immutable reviewed_change_id is required before accepting a clean review."
+        change_id = str(arguments.get("reviewed_change_id") or session.derive_reviewed_change_id()).strip()
+        report_dict["report_origin"] = "red_team_swarm"
+        report_dict["reviewed_change_id"] = change_id
+        report_dict["attack_vector_results"] = session._attack_vector_results(report_dict)
+        report_dict["red_team_receipt"] = session.issue_red_team_receipt(report_dict, change_id)
+    try:
+        session.record_breakage_report(report_dict)
+    except (TypeError, ValueError) as exc:
+        return f"Error: Cannot record red-team report: {exc}"
     session.save()
 
     md_report = _get_swarm().document_breakage(report, output_path=output_path)
@@ -254,91 +265,47 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
         return "Error: 'report', 'report_data', 'findings', or 'broken_scenarios' is required for 'record_breakage_report'."
 
     session = get_or_load_session(session_name)
-    broken_count = int(report_data.get("broken_count", 0))
-    findings = report_data.get("findings", [])
+    try:
+        session.record_breakage_report(dict(report_data))
+        broken_count = int(report_data.get("broken_count", 0))
+    except (TypeError, ValueError) as exc:
+        return f"Error: Cannot record breakage report: {exc}"
+    session.save()
 
     if broken_count > 0:
-        session.transition_to(SessionState.REMEDIATION_REQUIRED, f"Breakages detected: {broken_count}")
-        session.iteration_count += 1
-        session.active_breakages = [
-            {
-                "scenario_id": f.get("scenario_id") if isinstance(f, dict) else getattr(f, "scenario_id", ""),
-                "hypothesis": f.get("hypothesis") if isinstance(f, dict) else getattr(f, "hypothesis", ""),
-                "reproduction_code": f.get("reproduction_code") if isinstance(f, dict) else getattr(f, "reproduction_code", ""),
-                "severity": f.get("severity", "MEDIUM") if isinstance(f, dict) else getattr(f, "severity", "MEDIUM"),
-                "error_message": f.get("error_message") if isinstance(f, dict) else getattr(f, "error_message", ""),
-                "vector": f.get("vector") if isinstance(f, dict) else getattr(f, "vector", ""),
-            }
-            for f in findings
-            if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
-        ]
         directives = report_data.get("remediation_directives") or [
-            f"Remediate {b.get('hypothesis', b.get('scenario_id', 'breakage'))}" for b in session.active_breakages
+            f"Remediate {item.get('hypothesis', item.get('scenario_id', 'breakage'))}"
+            for item in session.active_breakages
         ]
-        session.remediation_history.append({
-            "iteration": session.iteration_count,
-            "report_id": report_data.get("report_id"),
-            "broken_count": broken_count,
-            "timestamp": time.time(),
-            "breakages": list(session.active_breakages),
-            "remediation_directives": directives,
-        })
-        session.breakage_reports.append(report_data)
-        session.save()
-
-        directives_list = "\n".join([f"- {d}" for d in directives])
+        directives_list = "\n".join(f"- {directive}" for directive in directives)
         order_msg = f"TASK REJECTED: {broken_count} breakages detected. Deploy subagent to fix findings."
-        reminder = SILENT_DELIBERATION_REMINDER if session.execution_locked else ""
+        escalation = session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES
+        arbitration_message = (
+            "> **Human architecture arbitration required: remediation bounds exceeded.**\n"
+            if escalation else ""
+        )
         return (
             f"### 🚨 {order_msg}\n\n"
-            f"> [!CAUTION]\n"
-            f"> **{order_msg}**\n\n"
+            f"> [!CAUTION]\n> **{order_msg}**\n\n"
             f"- **Session**: `{session.session_name}`\n"
-            f"- **Current State**: `REMEDIATION_REQUIRED` 🔴\n"
+            f"- **Current State**: `{session.current_state.value}` 🔴\n"
             f"- **Broken Count**: `{broken_count}`\n"
-            f"- **Active Breakages Tracked**: `{len(session.active_breakages)}`\n\n"
-            f"#### 🛠️ Structured Remediation Directives:\n{directives_list}\n"
-            f"{reminder}"
+            f"- **Active Breakages Tracked**: `{len(session.active_breakages)}`\n"
+            f"- **Remediation Attempts**: `{session.remediation_attempt_count}`\n"
+            f"{arbitration_message}"
+            f"\n#### 🛠️ Structured Remediation Directives:\n{directives_list}\n"
+            f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
-    else:
-        # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
-        proven_untrusted_free = [
-            i for i in session.epistemic_ledger
-            if i.get("tag") == "PROVEN"
-            and not i.get("_restored_untrusted")
-            and str(i.get("evidence", "")).strip()
-        ]
-        valid_refinements = [
-            r for r in session.refinement_cycles
-            if not r.get("_restored_untrusted")
-        ]
-        achieved_rubric = any(
-            r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
-            for r in session.goal_rubrics
-        )
-        has_current_file_changes = len(session.file_changes) >= 1 and not getattr(session, "_restored_untrusted", False)
 
-        if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
-            return (
-                "Error: Cannot SEAL session: Missing current-process mandatory-stage evidence. "
-                "Session must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
-                ">=1 achieved goal rubric meeting target score, and current-process file changes logged before sealing."
-            )
-
-        session.record_breakage_report(report_data)
-        session.save()
-
-        completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
-        reminder = SILENT_DELIBERATION_REMINDER if session.execution_locked else ""
-        return (
-            f"### 🛡️ {completed_msg}\n\n"
-            f"🟢 **{completed_msg}**\n\n"
-            f"- **Session**: `{session.session_name}`\n"
-            f"- **Current State**: `SEALED` 🟢\n"
-            f"- **Broken Count**: `0`\n"
-            f"- **Status**: Verified resilient. Ready for `evolve_cortex`.\n"
-            f"{reminder}"
-        )
+    return (
+        "### 🛡️ TASK COMPLETED: 0 breakages remain. Code sealed.\n\n"
+        "🟢 **TASK COMPLETED: 0 breakages remain. Code sealed.**\n\n"
+        f"- **Session**: `{session.session_name}`\n"
+        f"- **Current State**: `{session.current_state.value}` 🟢\n"
+        "- **Broken Count**: `0`\n"
+        "- **Status**: Verified resilient. Ready for `evolve_cortex`."
+        f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+    )
 
 
 def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
@@ -372,77 +339,70 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
 
     if not prior_report:
         return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
-    timeout_sec = float(arguments.get("timeout_seconds", 3.0))
-    all_fixed, new_report = _get_swarm().verify_remediation(
-        target_callable=remediated_code,
-        prior_report=prior_report,
-        timeout_seconds=timeout_sec,
-    )
-    session.breakage_reports.append(new_report.to_dict())
+    try:
+        timeout_sec = float(arguments.get("timeout_seconds", 3.0))
+        all_fixed, verification = _get_swarm().verify_remediation(
+            target_callable=remediated_code,
+            prior_report=prior_report,
+            timeout_seconds=timeout_sec,
+        )
+        report = verification.to_dict()
+        # A seal requires a fresh review across all five vectors, not only the
+        # scenarios that failed in the prior report.
+        if all_fixed and verification.broken_count == 0:
+            report = _get_swarm().run_full_review_cycle(
+                target_callable=remediated_code,
+                target_name=verification.target_name,
+                auto_consolidate=False,
+            ).to_dict()
+        if int(report.get("broken_count", 0)) == 0:
+            if not session._fresh_stage_records()[2]:
+                return "Error: A current immutable reviewed_change_id is required before accepting a clean remediation."
+            change_id = str(
+                arguments.get("reviewed_change_id")
+                or report.get("reviewed_change_id")
+                or session.derive_reviewed_change_id()
+            ).strip()
+            report["report_origin"] = "red_team_swarm"
+            report["reviewed_change_id"] = change_id
+            report["attack_vector_results"] = session._attack_vector_results(report)
+            report["red_team_receipt"] = session.issue_red_team_receipt(report, change_id)
+        session.record_breakage_report(report)
+    except (TypeError, ValueError) as exc:
+        return f"Error: Cannot record remediation verification: {exc}"
 
-    if not all_fixed or new_report.broken_count > 0:
-        session.active_breakages = [
-            {
-                "scenario_id": f.scenario_id,
-                "hypothesis": f.hypothesis,
-                "reproduction_code": f.reproduction_code,
-                "severity": f.severity,
-                "error_message": f.error_message,
-                "vector": f.vector,
-            }
-            for f in new_report.findings
-            if f.broken
-        ]
-        session.iteration_count += 1
-        session.transition_to(SessionState.REMEDIATION_REQUIRED, f"Remaining breakages detected: {new_report.broken_count}")
-        session.remediation_history.append({
-            "iteration": session.iteration_count,
-            "report_id": new_report.report_id,
-            "broken_count": new_report.broken_count,
-            "timestamp": time.time(),
-            "breakages": list(session.active_breakages),
-            "remediation_directives": new_report.remediation_directives,
-        })
-        session.save()
-
-        directives_list = "\n".join([f"- {d}" for d in new_report.remediation_directives])
-        order_msg = f"TASK REJECTED: {new_report.broken_count} breakages detected. Deploy subagent to fix findings."
-        reminder = SILENT_DELIBERATION_REMINDER if session.execution_locked else ""
+    session.save()
+    broken_count = int(report.get("broken_count", 0))
+    if broken_count > 0:
+        directives = report.get("remediation_directives", [])
+        directives_list = "\n".join(f"- {directive}" for directive in directives)
+        order_msg = f"TASK REJECTED: {broken_count} breakages detected. Deploy subagent to fix findings."
+        escalation = session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES
+        arbitration_message = (
+            "> **Human architecture arbitration required: remediation bounds exceeded.**\n"
+            if escalation else ""
+        )
         return (
-            f"### 🚨 {order_msg}\n\n"
-            f"> [!CAUTION]\n"
-            f"> **{order_msg}**\n\n"
+            f"### 🚨 {order_msg}\n\n> [!CAUTION]\n> **{order_msg}**\n\n"
             f"- **Session**: `{session.session_name}`\n"
-            f"- **Current State**: `REMEDIATION_REQUIRED` 🔴 (Iteration {session.iteration_count})\n"
-            f"- **Remaining Breakages**: `{new_report.broken_count}`\n\n"
+            f"- **Current State**: `{session.current_state.value}` 🔴 "
+            f"(Attempt {session.remediation_attempt_count})\n"
+            f"- **Remaining Breakages**: `{broken_count}`\n"
+            f"{arbitration_message}\n"
             f"#### 🛠️ Directives for Next Remediation Cycle:\n{directives_list}\n"
-            f"{reminder}"
+            f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
-    else:
-        session.active_breakages = []
-        session.transition_to(SessionState.SEALED, "All breakages remediated successfully")
-        session.remediation_history.append({
-            "iteration": session.iteration_count,
-            "report_id": new_report.report_id,
-            "broken_count": 0,
-            "timestamp": time.time(),
-            "status": "ALL_BREAKAGES_FIXED",
-        })
-        session.save()
 
-        completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
-        reminder = SILENT_DELIBERATION_REMINDER if session.execution_locked else ""
-        return (
-            f"### 🛡️ {completed_msg}\n\n"
-            f"🟢 **{completed_msg}**\n\n"
-            f"- **Session**: `{session.session_name}`\n"
-            f"- **Current State**: `SEALED` 🟢\n"
-            f"- **Broken Count**: `0`\n"
-            f"- **Remediation Iterations**: `{session.iteration_count}`\n\n"
-            f"> [!NOTE]\n"
-            f"> All prior adversarial breakages resolved with zero regressions. Session is in `SEALED` state. Automatically proceed or advance to `EVOLVED` state via `evolve_cortex`."
-            f"{reminder}"
-        )
+    completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
+    return (
+        f"### 🛡️ {completed_msg}\n\n🟢 **{completed_msg}**\n\n"
+        f"- **Session**: `{session.session_name}`\n"
+        f"- **Current State**: `{session.current_state.value}` 🟢\n"
+        "- **Broken Count**: `0`\n"
+        f"- **Remediation Iterations**: `{session.iteration_count}`\n\n"
+        "> [!NOTE]\n> All prior adversarial breakages resolved with zero regressions. Session is in `SEALED` state. Automatically proceed or advance to `EVOLVED` state via `evolve_cortex`."
+        f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
+    )
 
 
 def _handle_evolve_cortex(arguments: Dict[str, Any]) -> str:

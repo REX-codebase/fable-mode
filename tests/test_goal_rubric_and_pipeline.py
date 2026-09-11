@@ -117,6 +117,10 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
         })
 
         session = ACTIVE_SESSIONS[self.session_name]
+        session.proof_receipts.extend([
+            {"receipt_id": "rcpt_core_1"},
+            {"receipt_id": "rcpt_safety_1"},
+        ])
 
         # Step 1: Evaluate only PTR-CORE (score: (1.0*1.0 + 3.0*0.0)/4.0 = 0.25 -> 25%)
         res1 = handle_fable_session({
@@ -168,8 +172,8 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
             "session_name": self.session_name,
             "rubric_id": "partial_rubric",
             "evaluations": [
-                {"pointer_id": "A", "score": 0.90, "satisfied": True},
-                {"pointer_id": "B", "score": 0.90, "satisfied": True}
+                {"pointer_id": "A", "score": 0.90, "satisfied": True, "verifier_command": "verify-a"},
+                {"pointer_id": "B", "score": 0.90, "satisfied": True, "verifier_command": "verify-b"}
             ]
         })
         r_partial = session.get_goal_rubric("partial_rubric")

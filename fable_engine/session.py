@@ -9,6 +9,7 @@ Implements:
 from __future__ import annotations
 
 import collections
+import copy
 import hashlib
 import hmac
 import json
@@ -16,6 +17,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import stat
 import sys
 import tempfile
@@ -92,6 +94,15 @@ PHASE_INDEX_MAP = {phase: i + 1 for i, phase in enumerate(PHASES)}
 
 MIN_TIME_BUDGET_MINUTES = 2.0
 MAX_TIME_BUDGET_MINUTES = 7 * 24 * 60
+MAX_REMEDIATION_ATTEMPTS = 5
+MAX_REMEDIATION_SECONDS = 900.0
+RED_TEAM_ATTACK_VECTORS = (
+    "chaos_environment",
+    "byzantine_payload",
+    "concurrency_race",
+    "resource_exhaustion",
+    "state_invariant",
+)
 FORCE_UNLOCK_ENV = "FABLE_FORCE_UNLOCK_TOKEN"
 SESSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
@@ -136,6 +147,7 @@ class SessionState(str, Enum):
     RED_TEAM_GATE = "RED_TEAM_GATE"
     ARBITRATION = "ARBITRATION"
     REMEDIATION_REQUIRED = "REMEDIATION_REQUIRED"
+    ESCALATION_UNRESOLVED_BREAKAGES = "ESCALATION_UNRESOLVED_BREAKAGES"
     SEALED = "SEALED"
     EVOLVED = "EVOLVED"
 
@@ -144,9 +156,15 @@ VALID_TRANSITIONS = {
     SessionState.INIT: {SessionState.DEEPTHINK_TIMELOCK},
     SessionState.DEEPTHINK_TIMELOCK: {SessionState.IMPLEMENTATION},
     SessionState.IMPLEMENTATION: {SessionState.RED_TEAM_GATE},
-    SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
+    SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED},
     SessionState.ARBITRATION: {SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
-    SessionState.REMEDIATION_REQUIRED: {SessionState.ARBITRATION, SessionState.SEALED, SessionState.REMEDIATION_REQUIRED},
+    SessionState.REMEDIATION_REQUIRED: {
+        SessionState.ARBITRATION,
+        SessionState.SEALED,
+        SessionState.REMEDIATION_REQUIRED,
+        SessionState.ESCALATION_UNRESOLVED_BREAKAGES,
+    },
+    SessionState.ESCALATION_UNRESOLVED_BREAKAGES: {SessionState.ESCALATION_UNRESOLVED_BREAKAGES},
     SessionState.SEALED: {SessionState.EVOLVED},
     SessionState.EVOLVED: {SessionState.EVOLVED},
 }
@@ -193,6 +211,8 @@ class FableSession:
 
         self.current_state = SessionState.INIT
         self.iteration_count = 0
+        self.remediation_attempt_count = 0
+        self.remediation_started_at: Optional[float] = None
         self.active_breakages: List[Dict[str, Any]] = []
         self.remediation_history: List[Dict[str, Any]] = []
         self._timer_set = False
@@ -215,6 +235,8 @@ class FableSession:
         ]
         self.unlock_details: Optional[Dict[str, Any]] = None
         self._restored_untrusted = False
+        self._red_team_receipt_key = secrets.token_bytes(32)
+        self._reviewed_change_id: Optional[str] = None
 
         # System 3 Meta-Cognitive State
         self.system3_causal_graphs: List[Dict[str, Any]] = []
@@ -424,6 +446,8 @@ class FableSession:
             "silent_deliberation_active": self.execution_locked,
             "current_state": self.current_state.value if isinstance(self.current_state, SessionState) else str(self.current_state),
             "iteration_count": self.iteration_count,
+            "remediation_attempt_count": self.remediation_attempt_count,
+            "remediation_started_at": self.remediation_started_at,
             "active_breakages_count": len(self.active_breakages),
             "active_breakages": self.active_breakages,
             "remediation_history": self.remediation_history,
@@ -796,7 +820,17 @@ class FableSession:
                 receipt_id = ""
                 meta = {}
 
-            parsed_items.append({
+            evidence_type = str(
+                (item.get("evidence_type") if isinstance(item, dict) else "")
+                or meta.get("evidence_type")
+                or ("verifier" if verifier else "")
+            ).strip()
+            evidence_phase = str(
+                (item.get("evidence_phase") if isinstance(item, dict) else "")
+                or meta.get("evidence_phase")
+                or (self.active_phase if verifier else "")
+            ).strip()
+            parsed_item = {
                 "pointer_id": p_id,
                 "description": desc,
                 "weight": max(0.0, weight),
@@ -804,8 +838,12 @@ class FableSession:
                 "satisfied": satisfied,
                 "score": max(0.0, min(1.0, score)),
                 "evidence_receipt_id": receipt_id,
+                "evidence_type": evidence_type,
+                "evidence_phase": evidence_phase,
                 "metadata": meta
-            })
+            }
+            self._annotate_rubric_item_trust(parsed_item)
+            parsed_items.append(parsed_item)
 
         total_weight = sum(it["weight"] for it in parsed_items)
         if total_weight > 0:
@@ -814,7 +852,12 @@ class FableSession:
         else:
             current_score = 0.0
 
-        status = "achieved" if current_score >= target_score_val else "pending"
+        has_untrusted_items = any(
+            bool(it.get("satisfied"))
+            and (it.get("metadata") or {}).get("evidence_trust") == "untrusted"
+            for it in parsed_items
+        )
+        status = "achieved" if current_score >= target_score_val and not has_untrusted_items else "pending"
         r_id = (rubric_id or f"rubric_{self.session_name}_{len(self.goal_rubrics) + 1}").strip()
 
         rubric_entry = {
@@ -826,6 +869,7 @@ class FableSession:
             "current_score": current_score,
             "status": status,
             "metadata": metadata or {},
+            "created_phase": self.active_phase,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock()))
         }
 
@@ -878,9 +922,10 @@ class FableSession:
             elif isinstance(raw_evals, list):
                 evals_list = [dict(x) if isinstance(x, dict) else {"pointer_id": str(x), "satisfied": True, "score": 1.0} for x in raw_evals]
 
+        candidate = copy.deepcopy(rubric)
         for ev in evals_list:
             p_id = str(ev.get("pointer_id", "")).strip()
-            for it in rubric["items"]:
+            for it in candidate["items"]:
                 if it.get("pointer_id") == p_id:
                     if "satisfied" in ev:
                         it["satisfied"] = bool(ev["satisfied"])
@@ -892,20 +937,46 @@ class FableSession:
                         it["evidence_receipt_id"] = str(ev["evidence_receipt_id"]).strip()
                     if "verifier_command" in ev:
                         it["verifier_command"] = str(ev["verifier_command"]).strip()
+                        if it["verifier_command"] and not str(it.get("evidence_type", "")).strip():
+                            it["evidence_type"] = "verifier"
+                        if it["verifier_command"] and not str(it.get("evidence_phase", "")).strip():
+                            it["evidence_phase"] = self.active_phase
+                    if "evidence_type" in ev:
+                        it["evidence_type"] = str(ev["evidence_type"]).strip()
+                    if "evidence_phase" in ev:
+                        it["evidence_phase"] = str(ev["evidence_phase"]).strip()
                     if "metadata" in ev and isinstance(ev["metadata"], dict):
                         it.setdefault("metadata", {}).update(ev["metadata"])
 
-        total_weight = sum(it.get("weight", 1.0) for it in rubric["items"])
+        for item in candidate["items"]:
+            self._annotate_rubric_item_trust(item)
+
+        total_weight = sum(it.get("weight", 1.0) for it in candidate["items"])
         if total_weight > 0:
-            weighted_sum = sum(float(it.get("score", 1.0 if it.get("satisfied") else 0.0)) * float(it.get("weight", 1.0)) for it in rubric["items"])
+            weighted_sum = sum(
+                float(it.get("score", 1.0 if it.get("satisfied") else 0.0))
+                * float(it.get("weight", 1.0))
+                for it in candidate["items"]
+            )
             current_score = round(weighted_sum / total_weight, 4)
         else:
             current_score = 0.0
 
-        rubric["current_score"] = current_score
-        target_score = float(rubric.get("target_score", 0.95))
-        rubric["status"] = "achieved" if current_score >= target_score else "in_progress"
-        rubric["last_evaluated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock()))
+        candidate["current_score"] = current_score
+        target_score = float(candidate.get("target_score", 0.95))
+        has_untrusted_items = any(
+            bool(it.get("satisfied"))
+            and (it.get("metadata") or {}).get("evidence_trust") == "untrusted"
+            for it in candidate["items"]
+        )
+        candidate["status"] = (
+            "achieved" if current_score >= target_score and not has_untrusted_items else "in_progress"
+        )
+        candidate["last_evaluated_at"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock())
+        )
+        rubric.clear()
+        rubric.update(candidate)
         return rubric
 
     def get_goal_rubric(self, rubric_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -947,83 +1018,270 @@ class FableSession:
         self.automation_pipelines.append(spec)
         return spec
 
-    def record_breakage_report(
+    @staticmethod
+    def _canonical_receipt_payload(value: Dict[str, Any]) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+    def _attack_vector_results(self, report_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        supplied = report_data.get("attack_vector_results")
+        if isinstance(supplied, dict):
+            return {str(key): dict(value) for key, value in supplied.items() if isinstance(value, dict)}
+        results = {vector: {"passed": True, "finding_count": 0} for vector in RED_TEAM_ATTACK_VECTORS}
+        for finding in report_data.get("findings", []):
+            vector = finding.get("vector", "") if isinstance(finding, dict) else getattr(finding, "vector", "")
+            vector = getattr(vector, "value", vector)
+            if vector in results:
+                results[vector]["finding_count"] += 1
+                if bool(finding.get("broken", False) if isinstance(finding, dict) else getattr(finding, "broken", False)):
+                    results[vector]["passed"] = False
+        return results
+
+    def issue_red_team_receipt(
         self,
-        report_data: Dict[str, Any]
+        report_data: Dict[str, Any],
+        reviewed_change_id: str,
+        origin: str = "red_team_swarm",
     ) -> Dict[str, Any]:
-        """Records an adversarial red team breakage report in session history and updates FSM state."""
-        self.breakage_reports.append(report_data)
-        broken_count = int(report_data.get("broken_count", 0))
+        """Issue a process-local attestation for a complete, clean Red-Team report."""
+        if int(report_data.get("broken_count", 0)) != 0:
+            raise ValueError("Only a zero-breakage report can receive a red-team receipt.")
+        change_id = str(reviewed_change_id or "").strip()
+        if not change_id or len(change_id) > 256:
+            raise ValueError("A bounded immutable reviewed_change_id is required.")
+        vectors = self._attack_vector_results(report_data)
+        if set(vectors) != set(RED_TEAM_ATTACK_VECTORS) or any(
+            result.get("passed") is not True for result in vectors.values()
+        ):
+            raise ValueError("A clean receipt requires passing results for all five attack vectors.")
+        issued_at = float(self._wall_clock())
+        report_body = {
+            key: value
+            for key, value in report_data.items()
+            if key not in ("red_team_receipt", "receipt", "attestation")
+        }
+        receipt = {
+            "receipt_type": "red_team_remediation",
+            "receipt_id": f"rt_rcpt_{secrets.token_hex(12)}",
+            "session_id": self.session_id,
+            "report_id": str(report_data.get("report_id", "")).strip(),
+            "report_origin": str(origin).strip(),
+            "reviewed_change_id": change_id,
+            "attack_vector_results": vectors,
+            "issued_at": issued_at,
+            "expires_at": issued_at + MAX_REMEDIATION_SECONDS,
+            "report_digest": hashlib.sha256(self._canonical_receipt_payload(report_body)).hexdigest(),
+        }
+        receipt["signature"] = hmac.new(
+            self._red_team_receipt_key,
+            self._canonical_receipt_payload(receipt),
+            hashlib.sha256,
+        ).hexdigest()
+        return receipt
+
+    def _validate_red_team_receipt(self, report_data: Dict[str, Any]) -> None:
+        receipt = report_data.get("red_team_receipt")
+        if not isinstance(receipt, dict):
+            raise ValueError("Zero-breakage reports require an authenticated red-team receipt.")
+        required = {
+            "receipt_type", "receipt_id", "session_id", "report_id", "report_origin",
+            "reviewed_change_id", "attack_vector_results", "issued_at", "expires_at",
+            "report_digest", "signature",
+        }
+        if not required.issubset(receipt):
+            raise ValueError("Red-team receipt is incomplete.")
+        if receipt.get("receipt_type") != "red_team_remediation" or receipt.get("session_id") != self.session_id:
+            raise ValueError("Red-team receipt is not bound to this session.")
+        if receipt.get("report_id") != str(report_data.get("report_id", "")).strip():
+            raise ValueError("Red-team receipt is not bound to this report.")
+        if receipt.get("report_origin") != "red_team_swarm" or report_data.get("report_origin") != "red_team_swarm":
+            raise ValueError("Report origin is not an attested Red-Team origin.")
+        now = float(self._wall_clock())
+        issued_at = float(receipt["issued_at"])
+        expires_at = float(receipt["expires_at"])
+        if issued_at > now or expires_at < now or expires_at - issued_at > MAX_REMEDIATION_SECONDS:
+            raise ValueError("Red-team receipt has invalid validity bounds.")
+        vectors = receipt.get("attack_vector_results")
+        if not isinstance(vectors, dict) or set(vectors) != set(RED_TEAM_ATTACK_VECTORS):
+            raise ValueError("Red-team receipt must contain all five attack-vector results.")
+        if any(not isinstance(value, dict) or value.get("passed") is not True for value in vectors.values()):
+            raise ValueError("Red-team receipt does not attest five passing attack vectors.")
+        if self._attack_vector_results(report_data) != vectors:
+            raise ValueError("Red-team receipt attack-vector results do not match the report.")
+        unsigned = {key: value for key, value in receipt.items() if key != "signature"}
+        expected_signature = hmac.new(
+            self._red_team_receipt_key,
+            self._canonical_receipt_payload(unsigned),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected_signature, str(receipt.get("signature", ""))):
+            raise ValueError("Red-team receipt authentication failed.")
+        report_body = {
+            key: value
+            for key, value in report_data.items()
+            if key not in ("red_team_receipt", "receipt", "attestation")
+        }
+        expected_digest = hashlib.sha256(self._canonical_receipt_payload(report_body)).hexdigest()
+        if not hmac.compare_digest(expected_digest, str(receipt.get("report_digest", ""))):
+            raise ValueError("Red-team receipt report binding failed.")
+        if str(report_data.get("reviewed_change_id", "")).strip() != str(receipt["reviewed_change_id"]).strip():
+            raise ValueError("Red-team receipt reviewed-change binding failed.")
+
+    def _fresh_stage_records(
+        self,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        return (
+            [item for item in self.epistemic_ledger if not item.get("_restored_untrusted")],
+            [item for item in self.refinement_cycles if not item.get("_restored_untrusted")],
+            [item for item in self.file_changes if not item.get("_restored_untrusted")],
+            [item for item in self.goal_rubrics if not item.get("_restored_untrusted")],
+        )
+
+    def derive_reviewed_change_id(self) -> str:
+        file_changes = self._fresh_stage_records()[2]
+        if not file_changes:
+            return ""
+        payload = json.dumps(file_changes, sort_keys=True, separators=(",", ":"))
+        return "chg_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _validate_satisfied_rubric_item(self, item: Dict[str, Any]) -> None:
+        if not item.get("satisfied"):
+            return
+        verifier = str(item.get("verifier_command", "")).strip()
+        receipt_id = str(item.get("evidence_receipt_id", "")).strip()
+        valid_receipt = bool(receipt_id) and any(
+            isinstance(receipt, dict) and str(receipt.get("receipt_id", "")) == receipt_id
+            for receipt in self.proof_receipts
+        )
+        if not verifier and not valid_receipt:
+            raise ValueError("Satisfied rubric criteria require a verifier or validated evidence receipt.")
+
+    def _annotate_rubric_item_trust(self, item: Dict[str, Any]) -> bool:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        item["metadata"] = metadata
+        metadata.pop("evidence_trust", None)
+        if not item.get("satisfied"):
+            return True
+        try:
+            self._validate_satisfied_rubric_item(item)
+        except ValueError:
+            metadata["evidence_trust"] = "untrusted"
+            return False
+        metadata["evidence_trust"] = "validated"
+        return True
+
+    def _validate_clean_stage_evidence(self) -> None:
+        epistemic, refinements, files, rubrics = self._fresh_stage_records()
+        proven = [
+            item for item in epistemic
+            if item.get("tag") == "PROVEN" and str(item.get("evidence", "")).strip()
+        ]
+        if len(proven) < 2 or not refinements or not files:
+            raise ValueError("Clean report lacks current-process epistemic, refinement, and file-change evidence.")
+        for rubric in rubrics:
+            if rubric.get("status") == "achieved" or float(rubric.get("current_score", 0.0)) >= float(rubric.get("target_score", 0.95)):
+                for item in rubric.get("items", []):
+                    self._validate_satisfied_rubric_item(item)
+                return
+        raise ValueError("Clean report lacks an achieved rubric with validated criteria evidence.")
+
+    def _validate_breakage_report(self, report_data: Dict[str, Any]) -> int:
+        if not isinstance(report_data, dict):
+            raise ValueError("Breakage report must be a dictionary.")
         findings = report_data.get("findings", [])
-        if broken_count > 0:
-            self.active_breakages = [
-                {
-                    "scenario_id": f.get("scenario_id") if isinstance(f, dict) else getattr(f, "scenario_id", ""),
-                    "hypothesis": f.get("hypothesis") if isinstance(f, dict) else getattr(f, "hypothesis", ""),
-                    "reproduction_code": f.get("reproduction_code") if isinstance(f, dict) else getattr(f, "reproduction_code", ""),
-                    "severity": f.get("severity", "MEDIUM") if isinstance(f, dict) else getattr(f, "severity", "MEDIUM"),
-                    "error_message": f.get("error_message") if isinstance(f, dict) else getattr(f, "error_message", ""),
-                    "vector": f.get("vector") if isinstance(f, dict) else getattr(f, "vector", ""),
-                }
-                for f in findings
-                if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
-            ]
-            self.remediation_history.append({
-                "iteration": self.iteration_count,
-                "report_id": report_data.get("report_id"),
-                "broken_count": broken_count,
-                "timestamp": self._wall_clock(),
-                "breakages": list(self.active_breakages),
-                "remediation_directives": report_data.get("remediation_directives", []),
-            })
-            try:
-                if self.current_state == SessionState.IMPLEMENTATION:
-                    self.transition_to(SessionState.RED_TEAM_GATE, "Breakage report submitted")
-                if self.current_state == SessionState.RED_TEAM_GATE:
-                    self.transition_to(SessionState.ARBITRATION, "Arbitration of breakages")
-                if self.current_state == SessionState.ARBITRATION:
-                    self.transition_to(SessionState.REMEDIATION_REQUIRED, f"{broken_count} breakages detected")
-                else:
-                    self.current_state = SessionState.REMEDIATION_REQUIRED
-            except Exception:
-                self.current_state = SessionState.REMEDIATION_REQUIRED
-        else:
+        if not isinstance(findings, list):
+            raise ValueError("Breakage report findings must be a list.")
+        broken_count = int(report_data.get("broken_count", 0))
+        total_probes = int(report_data.get("total_probes", len(findings)))
+        actual_broken = sum(
+            1 for finding in findings
+            if bool(finding.get("broken", False) if isinstance(finding, dict) else getattr(finding, "broken", False))
+        )
+        if broken_count < 0 or total_probes < len(findings) or broken_count != actual_broken:
+            raise ValueError("Breakage report counts do not match its findings.")
+        if bool(report_data.get("passed", broken_count == 0)) != (broken_count == 0):
+            raise ValueError("Breakage report passed flag does not match broken_count.")
+        if broken_count == 0:
+            self._validate_red_team_receipt(report_data)
+            self._validate_clean_stage_evidence()
+        return broken_count
+
+    def record_breakage_report(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and record a report, enforcing durable remediation bounds."""
+        broken_count = self._validate_breakage_report(report_data)
+        now = self._wall_clock()
+        if broken_count == 0:
+            if self.current_state not in (
+                SessionState.RED_TEAM_GATE,
+                SessionState.ARBITRATION,
+                SessionState.REMEDIATION_REQUIRED,
+            ):
+                raise ValueError(f"Clean report cannot be recorded from {self.current_state.value}.")
+            self.breakage_reports.append(dict(report_data))
+            self._reviewed_change_id = str(report_data.get("reviewed_change_id", "")).strip()
             self.active_breakages = []
-            # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
-            proven_untrusted_free = [
-                i for i in self.epistemic_ledger
-                if i.get("tag") == "PROVEN"
-                and not i.get("_restored_untrusted")
-                and str(i.get("evidence", "")).strip()
-            ]
-            valid_refinements = [
-                r for r in self.refinement_cycles
-                if not r.get("_restored_untrusted")
-            ]
-            achieved_rubric = any(
-                r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
-                for r in self.goal_rubrics
-            )
-            has_current_file_changes = len(self.file_changes) >= 1 and not getattr(self, "_restored_untrusted", False)
+            if self.current_state == SessionState.RED_TEAM_GATE:
+                self.transition_to(SessionState.ARBITRATION, "Arbitration of clean report")
+            self.transition_to(SessionState.SEALED, "Zero breakages verified")
+            return report_data
 
-            if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
-                raise ValueError(
-                    "SEALED state transition rejected: Session lacks required current-process mandatory-stage evidence "
-                    "(must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
-                    ">=1 achieved goal rubric meeting target score, and current-process file changes logged)."
+        if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+            raise ValueError("Session is already escalated for unresolved breakages.")
+
+        started_at = self.remediation_started_at if self.remediation_started_at is not None else now
+        attempt = self.remediation_attempt_count + 1
+        elapsed = max(0.0, now - started_at)
+        active: List[Dict[str, Any]] = []
+        for finding in report_data.get("findings", []):
+            if bool(finding.get("broken", False) if isinstance(finding, dict) else getattr(finding, "broken", False)):
+                active.append({
+                    "scenario_id": finding.get("scenario_id", "") if isinstance(finding, dict) else getattr(finding, "scenario_id", ""),
+                    "hypothesis": finding.get("hypothesis", "") if isinstance(finding, dict) else getattr(finding, "hypothesis", ""),
+                    "reproduction_code": finding.get("reproduction_code", "") if isinstance(finding, dict) else getattr(finding, "reproduction_code", ""),
+                    "severity": finding.get("severity", "MEDIUM") if isinstance(finding, dict) else getattr(finding, "severity", "MEDIUM"),
+                    "error_message": finding.get("error_message", "") if isinstance(finding, dict) else getattr(finding, "error_message", ""),
+                    "vector": finding.get("vector", "") if isinstance(finding, dict) else getattr(finding, "vector", ""),
+                })
+
+        escalated = attempt >= MAX_REMEDIATION_ATTEMPTS or elapsed >= MAX_REMEDIATION_SECONDS
+        if escalated:
+            for finding in active:
+                tag = "HYPOTHESIS" if str(finding.get("hypothesis", "")).strip() else "UNKNOWN"
+                finding["epistemic_status"] = tag
+                finding["human_arbitration_required"] = True
+                ledger_item = self.log_epistemic_item(
+                    tag,
+                    str(finding.get("hypothesis") or finding.get("scenario_id") or "Unresolved Red-Team breakage"),
+                    evidence=str(finding.get("error_message") or finding.get("reproduction_code") or ""),
                 )
+                finding["epistemic_ledger_item_id"] = ledger_item["id"]
 
-            try:
-                if self.current_state == SessionState.IMPLEMENTATION:
-                    self.transition_to(SessionState.RED_TEAM_GATE, "Clean report submitted")
-                if self.current_state == SessionState.RED_TEAM_GATE:
-                    self.transition_to(SessionState.ARBITRATION, "Arbitration of clean report")
-                if self.current_state in (SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED):
-                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
-                else:
-                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
-            except Exception as exc:
-                raise ValueError(f"Cannot transition to SEALED state: {exc}") from exc
+        self.breakage_reports.append(dict(report_data))
+        self.remediation_attempt_count = attempt
+        self.remediation_started_at = started_at
+        self.iteration_count += 1
+        self.active_breakages = active
+        self.remediation_history.append({
+            "iteration": self.iteration_count,
+            "attempt": attempt,
+            "report_id": report_data.get("report_id"),
+            "broken_count": broken_count,
+            "timestamp": now,
+            "breakages": list(active),
+            "remediation_directives": report_data.get("remediation_directives", []),
+        })
+        if self.current_state == SessionState.IMPLEMENTATION:
+            self.transition_to(SessionState.RED_TEAM_GATE, "Breakage report submitted")
+        if self.current_state == SessionState.RED_TEAM_GATE:
+            self.transition_to(SessionState.ARBITRATION, "Arbitration of breakages")
+        if self.current_state == SessionState.ARBITRATION:
+            self.transition_to(SessionState.REMEDIATION_REQUIRED, f"{broken_count} breakages detected")
+        if escalated:
+            self.transition_to(
+                SessionState.ESCALATION_UNRESOLVED_BREAKAGES,
+                "Remediation bounds exceeded; human architecture arbitration required",
+            )
+        elif self.current_state != SessionState.REMEDIATION_REQUIRED:
+            self.transition_to(SessionState.REMEDIATION_REQUIRED, f"{broken_count} breakages detected")
         return report_data
 
     def log_refinement_cycle(
@@ -1240,6 +1498,9 @@ class FableSession:
             "can_execute_code": self.can_execute_code,
             "current_state": self.current_state.value if isinstance(self.current_state, SessionState) else str(self.current_state),
             "iteration_count": self.iteration_count,
+            "remediation_attempt_count": self.remediation_attempt_count,
+            "remediation_started_at": self.remediation_started_at,
+            "reviewed_change_id": self._reviewed_change_id,
             "active_breakages": self.active_breakages,
             "remediation_history": self.remediation_history,
             "epistemic_ledger": self.epistemic_ledger,
@@ -1284,19 +1545,33 @@ class FableSession:
         session._restored_untrusted = True
         state_str = data.get("current_state", SessionState.INIT.value)
         try:
-            session.current_state = SessionState(state_str)
+            restored_state = SessionState(state_str)
         except ValueError:
-            session.current_state = SessionState.INIT
+            restored_state = SessionState.INIT
+        if restored_state in (SessionState.SEALED, SessionState.EVOLVED):
+            restored_state = SessionState.INIT
+        session.current_state = restored_state
         session.iteration_count = int(data.get("iteration_count", 0))
+        session.remediation_attempt_count = int(data.get("remediation_attempt_count", 0))
+        session.remediation_started_at = data.get("remediation_started_at")
+        session._reviewed_change_id = data.get("reviewed_change_id")
         session.active_breakages = list(data.get("active_breakages", []))
         session.remediation_history = list(data.get("remediation_history", []))
         session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
         session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
         session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
-        session.file_changes = data.get("file_changes", [])
+        session.file_changes = [
+            dict(item, _restored_untrusted=True)
+            for item in data.get("file_changes", [])
+            if isinstance(item, dict)
+        ]
         session.visual_mockups = data.get("visual_mockups", {"mockups": [], "selected_concept": None})
         session.proof_receipts = data.get("proof_receipts", [])
-        session.goal_rubrics = data.get("goal_rubrics", [])
+        session.goal_rubrics = [
+            dict(item, _restored_untrusted=True)
+            for item in data.get("goal_rubrics", [])
+            if isinstance(item, dict)
+        ]
         session.automation_pipelines = data.get("automation_pipelines", [])
         session.breakage_reports = data.get("breakage_reports", [])
         session.active_phase = PHASES[0]
