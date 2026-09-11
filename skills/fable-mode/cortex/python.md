@@ -20,7 +20,7 @@
       "lethal_anti_pattern": "def append_item(val, accumulator=[]): accumulator.append(val); return accumulator",
       "prescribed_defense": "Always specify default as None and initialize accumulator = [] inside function body if None.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_python_static_lint",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "AST codemod verified zero shared instance mutations across 1,000 function invocations"
     },
@@ -31,7 +31,7 @@
       "lethal_anti_pattern": "res = await asyncio.shield(critical_task); # If outer task is cancelled, critical_task keeps running in background untracked",
       "prescribed_defense": "Wrap shielded tasks in TaskGroup or explicitly attach done_callbacks to log and clean up orphaned background tasks.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_python_async_hardening",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Fuzz harness confirmed zero orphaned background tasks upon forced cancellation"
     },
@@ -42,7 +42,7 @@
       "lethal_anti_pattern": "try: await operation() except Exception: pass",
       "prescribed_defense": "Explicitly catch asyncio.CancelledError first and re-raise, or only catch specific operational exceptions.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_python_exception_audit",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Asyncio test harness verified proper propagation of cancellation signals"
     }
@@ -97,6 +97,7 @@
 - **Lethal Anti-Pattern**: def append_item(val, accumulator=[]): accumulator.append(val); return accumulator
 - **Prescribed Defense**: Always specify default as None and initialize accumulator = [] inside function body if None.
 - **Verified Counterfactual**: `AST codemod verified zero shared instance mutations across 1,000 function invocations`
+- **Source Task ID**: `task_python_static_lint`
 
 #### Antibody `ab_python_async_shield_cancellation_leak` [CRITICAL]
 - **Domain**: `python`
@@ -104,6 +105,7 @@
 - **Lethal Anti-Pattern**: res = await asyncio.shield(critical_task); # If outer task is cancelled, critical_task keeps running in background untracked
 - **Prescribed Defense**: Wrap shielded tasks in TaskGroup or explicitly attach done_callbacks to log and clean up orphaned background tasks.
 - **Verified Counterfactual**: `Fuzz harness confirmed zero orphaned background tasks upon forced cancellation`
+- **Source Task ID**: `task_python_async_hardening`
 
 #### Antibody `ab_python_bare_except_cancellation_swallow` [CRITICAL]
 - **Domain**: `python`
@@ -111,4 +113,4 @@
 - **Lethal Anti-Pattern**: try: await operation() except Exception: pass
 - **Prescribed Defense**: Explicitly catch asyncio.CancelledError first and re-raise, or only catch specific operational exceptions.
 - **Verified Counterfactual**: `Asyncio test harness verified proper propagation of cancellation signals`
-
+- **Source Task ID**: `task_python_exception_audit`

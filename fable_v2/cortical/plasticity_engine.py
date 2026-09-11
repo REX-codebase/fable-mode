@@ -495,11 +495,17 @@ class HebbianPlasticityEngine:
     def _sync_lobe_to_matrix(self, lobe: CorticalLobe) -> None:
         """Synchronize a canonical lobe row and remove stale reciprocal edges."""
         slug = self._normalize_domain(lobe.name)
-        canonical = {
-            self.sanitize_field(node, max_len=128): round(min(1.0, max(0.05, float(weight))), 4)
-            for node, weight in lobe.synaptic_weights.items()
-            if self.sanitize_field(node, max_len=128)
-        }
+        canonical: dict[str, float] = {}
+        for node, weight in lobe.synaptic_weights.items():
+            canonical_node = self.sanitize_field(node, max_len=128)
+            if not canonical_node:
+                continue
+            canonical_weight = round(min(1.0, max(0.05, float(weight))), 4)
+            canonical[canonical_node] = max(
+                canonical_weight,
+                canonical.get(canonical_node, canonical_weight),
+            )
+        lobe.synaptic_weights = canonical
         old_row = self._synaptic_matrix.get(slug, {})
         for stale_node in set(old_row) - set(canonical):
             reverse_row = self._synaptic_matrix.get(stale_node)
@@ -569,10 +575,9 @@ class HebbianPlasticityEngine:
         )
 
         lobe_path = self.cortex_dir / f"{slug}.md"
+        self._sync_lobe_to_matrix(lobe)
         lobe.save_to_disk(lobe_path)
         self._lobes[slug] = lobe
-
-        self._sync_lobe_to_matrix(lobe)
         self._save_synaptic_matrix()
         return lobe
 
@@ -618,8 +623,8 @@ class HebbianPlasticityEngine:
                 primed_w = min(1.0, max(0.05, current_w + 0.02))
                 lobe.synaptic_weights[node_clean] = round(primed_w, 4)
 
-        lobe.save_to_disk(self._get_lobe_path(slug))
         self._sync_lobe_to_matrix(lobe)
+        lobe.save_to_disk(self._get_lobe_path(slug))
         self._save_synaptic_matrix()
         return lobe
 

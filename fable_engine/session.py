@@ -235,6 +235,7 @@ class FableSession:
         ]
         self.unlock_details: Optional[Dict[str, Any]] = None
         self._restored_untrusted = False
+        self._sealing_authorized = False
         self._red_team_receipt_key = secrets.token_bytes(32)
         self._reviewed_change_id: Optional[str] = None
 
@@ -317,6 +318,15 @@ class FableSession:
             raise ValueError(
                 f"Illegal state transition from {self.current_state.value} to {target_state.value}. "
                 f"Allowed transitions from {self.current_state.value}: {[s.value for s in allowed]}"
+            )
+
+        if (
+            target_state == SessionState.SEALED
+            and self.current_state != SessionState.SEALED
+            and not self._sealing_authorized
+        ):
+            raise ValueError(
+                "Transition to SEALED requires a clean report validated by record_breakage_report()."
             )
 
         if self.current_state == SessionState.INIT and target_state == SessionState.DEEPTHINK_TIMELOCK:
@@ -1146,14 +1156,32 @@ class FableSession:
     def _validate_satisfied_rubric_item(self, item: Dict[str, Any]) -> None:
         if not item.get("satisfied"):
             return
-        verifier = str(item.get("verifier_command", "")).strip()
         receipt_id = str(item.get("evidence_receipt_id", "")).strip()
+
+        def is_validated_receipt(receipt: Any) -> bool:
+            if (
+                not isinstance(receipt, dict)
+                or receipt.get("_restored_untrusted")
+                or str(receipt.get("receipt_id", "")) != receipt_id
+            ):
+                return False
+            if "verified" in receipt or "passed" in receipt:
+                return receipt.get("verified") is True or receipt.get("passed") is True
+            proof_fields = {
+                "claim", "proof_type", "target_resource", "sha256_digest",
+                "verified_at", "verifier_details",
+            }
+            return proof_fields.issubset(receipt)
+
         valid_receipt = bool(receipt_id) and any(
-            isinstance(receipt, dict) and str(receipt.get("receipt_id", "")) == receipt_id
+            is_validated_receipt(receipt)
             for receipt in self.proof_receipts
         )
-        if not verifier and not valid_receipt:
-            raise ValueError("Satisfied rubric criteria require a verifier or validated evidence receipt.")
+        if not valid_receipt:
+            raise ValueError(
+                "Satisfied rubric criteria require a validated evidence receipt; "
+                "a verifier command alone is not execution evidence."
+            )
 
     def _annotate_rubric_item_trust(self, item: Dict[str, Any]) -> bool:
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
@@ -1221,7 +1249,11 @@ class FableSession:
             self.active_breakages = []
             if self.current_state == SessionState.RED_TEAM_GATE:
                 self.transition_to(SessionState.ARBITRATION, "Arbitration of clean report")
-            self.transition_to(SessionState.SEALED, "Zero breakages verified")
+            self._sealing_authorized = True
+            try:
+                self.transition_to(SessionState.SEALED, "Zero breakages verified")
+            finally:
+                self._sealing_authorized = False
             return report_data
 
         if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
@@ -1566,7 +1598,11 @@ class FableSession:
             if isinstance(item, dict)
         ]
         session.visual_mockups = data.get("visual_mockups", {"mockups": [], "selected_concept": None})
-        session.proof_receipts = data.get("proof_receipts", [])
+        session.proof_receipts = [
+            dict(item, _restored_untrusted=True)
+            for item in data.get("proof_receipts", [])
+            if isinstance(item, dict)
+        ]
         session.goal_rubrics = [
             dict(item, _restored_untrusted=True)
             for item in data.get("goal_rubrics", [])

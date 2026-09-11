@@ -118,8 +118,8 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
 
         session = ACTIVE_SESSIONS[self.session_name]
         session.proof_receipts.extend([
-            {"receipt_id": "rcpt_core_1"},
-            {"receipt_id": "rcpt_safety_1"},
+            {"receipt_id": "rcpt_core_1", "verified": True},
+            {"receipt_id": "rcpt_safety_1", "verified": True},
         ])
 
         # Step 1: Evaluate only PTR-CORE (score: (1.0*1.0 + 3.0*0.0)/4.0 = 0.25 -> 25%)
@@ -167,18 +167,37 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
                 {"pointer_id": "B", "weight": 1.0}
             ]
         })
+        session.proof_receipts.extend([
+            {"receipt_id": "rcpt_partial_a", "verified": True},
+            {"receipt_id": "rcpt_partial_b", "verified": True},
+        ])
         handle_fable_session({
             "action": "evaluate_goal_rubric",
             "session_name": self.session_name,
             "rubric_id": "partial_rubric",
             "evaluations": [
-                {"pointer_id": "A", "score": 0.90, "satisfied": True, "verifier_command": "verify-a"},
-                {"pointer_id": "B", "score": 0.90, "satisfied": True, "verifier_command": "verify-b"}
+                {"pointer_id": "A", "score": 0.90, "satisfied": True, "verifier_command": "verify-a", "evidence_receipt_id": "rcpt_partial_a"},
+                {"pointer_id": "B", "score": 0.90, "satisfied": True, "verifier_command": "verify-b", "evidence_receipt_id": "rcpt_partial_b"}
             ]
         })
         r_partial = session.get_goal_rubric("partial_rubric")
         self.assertEqual(r_partial["current_score"], 0.90)
         self.assertEqual(r_partial["status"], "achieved")
+
+        command_only = session.set_goal_rubric(
+            "Caller-controlled verifier",
+            [{"pointer_id": "CMD", "satisfied": True, "score": 1.0, "verifier_command": "true"}],
+            rubric_id="command_only",
+        )
+        self.assertNotEqual(command_only["status"], "achieved")
+
+        session.proof_receipts.append({"receipt_id": "failed_receipt", "verified": False})
+        failed_receipt = session.set_goal_rubric(
+            "Failed verifier execution",
+            [{"pointer_id": "FAIL", "satisfied": True, "score": 1.0, "evidence_receipt_id": "failed_receipt"}],
+            rubric_id="failed_receipt",
+        )
+        self.assertNotEqual(failed_receipt["status"], "achieved")
 
     def test_get_goal_rubric(self):
         self._create_test_session()

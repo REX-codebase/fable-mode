@@ -18,7 +18,7 @@
       "lethal_anti_pattern": "SQLSyntaxError",
       "prescribed_defense": "Enforce parameterized queries with atomic binding",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_sec_01",
       "created_at": "2026-09-05T14:30:10.209868+00:00",
       "verified_counterfactual": "query(\"' OR 1=1 --\")"
     }
@@ -61,4 +61,4 @@
 - **Lethal Anti-Pattern**: SQLSyntaxError
 - **Prescribed Defense**: Enforce parameterized queries with atomic binding
 - **Verified Counterfactual**: `query("' OR 1=1 --")`
-
+- **Source Task ID**: `task_sec_01`

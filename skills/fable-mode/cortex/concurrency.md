@@ -20,7 +20,7 @@
       "lethal_anti_pattern": "if os.path.exists(path): open(path, 'w') # Attacker modifies path between check and open",
       "prescribed_defense": "Use atomic file creation flags (e.g. os.O_CREAT | os.O_EXCL) or file descriptor locks (fcntl/flock).",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_toctou_hardening",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Adversarial race probe with 16 threads verified zero TOCTOU corruption"
     },
@@ -31,7 +31,7 @@
       "lethal_anti_pattern": "if instance == null: synchronized(lock): if instance == null: instance = new Object()",
       "prescribed_defense": "Ensure instance pointer is declared volatile/atomic with acquire-release barriers to prevent publishing half-initialized objects.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_dcl_memory_barrier_audit",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "ThreadSanitizer (TSan) verified zero data races under 100,000 parallel reads"
     },
@@ -42,7 +42,7 @@
       "lethal_anti_pattern": "if (!queue.has_items()) cv.wait(lock); # Spurious wakeup causes queue.pop() on empty queue",
       "prescribed_defense": "Always enclose cv.wait within a while loop: while (!queue.has_items()) cv.wait(lock);",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_spurious_wakeup_audit",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Chaos stress test injected 1,000 spurious wakeups with zero out-of-order execution"
     }
@@ -97,6 +97,7 @@
 - **Lethal Anti-Pattern**: if os.path.exists(path): open(path, 'w') # Attacker modifies path between check and open
 - **Prescribed Defense**: Use atomic file creation flags (e.g. os.O_CREAT | os.O_EXCL) or file descriptor locks (fcntl/flock).
 - **Verified Counterfactual**: `Adversarial race probe with 16 threads verified zero TOCTOU corruption`
+- **Source Task ID**: `task_toctou_hardening`
 
 #### Antibody `ab_concurrency_double_checked_locking_reorder` [CRITICAL]
 - **Domain**: `concurrency`
@@ -104,6 +105,7 @@
 - **Lethal Anti-Pattern**: if instance == null: synchronized(lock): if instance == null: instance = new Object()
 - **Prescribed Defense**: Ensure instance pointer is declared volatile/atomic with acquire-release barriers to prevent publishing half-initialized objects.
 - **Verified Counterfactual**: `ThreadSanitizer (TSan) verified zero data races under 100,000 parallel reads`
+- **Source Task ID**: `task_dcl_memory_barrier_audit`
 
 #### Antibody `ab_concurrency_condition_variable_spurious_wakeup` [HIGH]
 - **Domain**: `concurrency`
@@ -111,4 +113,4 @@
 - **Lethal Anti-Pattern**: if (!queue.has_items()) cv.wait(lock); # Spurious wakeup causes queue.pop() on empty queue
 - **Prescribed Defense**: Always enclose cv.wait within a while loop: while (!queue.has_items()) cv.wait(lock);
 - **Verified Counterfactual**: `Chaos stress test injected 1,000 spurious wakeups with zero out-of-order execution`
-
+- **Source Task ID**: `task_spurious_wakeup_audit`

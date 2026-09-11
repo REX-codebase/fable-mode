@@ -210,21 +210,21 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
     output_path = arguments.get("output_path")
 
     session = get_or_load_session(session_name)
-    report = _get_swarm().run_full_review_cycle(
-        target_callable=code_snippet,
-        target_name=target_name,
-        custom_hypotheses=custom_hypotheses,
-    )
-    report_dict = report.to_dict()
-    if int(report_dict.get("broken_count", 0)) == 0:
-        if not session._fresh_stage_records()[2]:
-            return "Error: A current immutable reviewed_change_id is required before accepting a clean review."
-        change_id = str(arguments.get("reviewed_change_id") or session.derive_reviewed_change_id()).strip()
-        report_dict["report_origin"] = "red_team_swarm"
-        report_dict["reviewed_change_id"] = change_id
-        report_dict["attack_vector_results"] = session._attack_vector_results(report_dict)
-        report_dict["red_team_receipt"] = session.issue_red_team_receipt(report_dict, change_id)
     try:
+        report = _get_swarm().run_full_review_cycle(
+            target_callable=code_snippet,
+            target_name=target_name,
+            custom_hypotheses=custom_hypotheses,
+        )
+        report_dict = report.to_dict()
+        if int(report_dict.get("broken_count", 0)) == 0:
+            if not session._fresh_stage_records()[2]:
+                return "Error: A current immutable reviewed_change_id is required before accepting a clean review."
+            change_id = str(arguments.get("reviewed_change_id") or session.derive_reviewed_change_id()).strip()
+            report_dict["report_origin"] = "red_team_swarm"
+            report_dict["reviewed_change_id"] = change_id
+            report_dict["attack_vector_results"] = session._attack_vector_results(report_dict)
+            report_dict["red_team_receipt"] = session.issue_red_team_receipt(report_dict, change_id)
         session.record_breakage_report(report_dict)
     except (TypeError, ValueError) as exc:
         return f"Error: Cannot record red-team report: {exc}"

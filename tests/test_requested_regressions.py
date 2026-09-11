@@ -37,6 +37,7 @@ class SessionRegressionTests(unittest.TestCase):
     def _add_current_sealing_evidence(session: FableSession) -> None:
         session.log_epistemic_item("PROVEN", "Current evidence one", "README.md:L1")
         session.log_epistemic_item("PROVEN", "Current evidence two", "README.md:L5")
+        session.proof_receipts.append({"receipt_id": "current-sealing-receipt", "verified": True})
         session.set_goal_rubric(
             "Current rubric",
             [{
@@ -44,6 +45,7 @@ class SessionRegressionTests(unittest.TestCase):
                 "satisfied": True,
                 "score": 1.0,
                 "verifier_command": "python -m unittest tests.test_requested_regressions",
+                "evidence_receipt_id": "current-sealing-receipt",
             }],
         )
         session.log_refinement_cycle("security", "sealing", "restored provenance", "fresh evidence")
@@ -146,6 +148,16 @@ class CorticalRegressionTests(unittest.TestCase):
         )
         self.assertEqual(len(receipt["activation_signals"]), MAX_ACTIVE_NODES)
 
+    def test_synaptic_key_collisions_use_canonical_maximum_on_disk(self) -> None:
+        lobe = self.engine.define_cortical_lobe(
+            "canonical",
+            initial_synaptic_weights={"<system>node": 0.4, "node": 0.8},
+        )
+        self.assertEqual(lobe.synaptic_weights, {"node": 0.8})
+        restored = CorticalLobe.load_from_disk(self.cortex_dir / "canonical.md")
+        self.assertEqual(restored.synaptic_weights, {"node": 0.8})
+        self.assertEqual(self.engine.get_synaptic_matrix()["canonical"]["node"], 0.8)
+
     def test_source_task_id_survives_all_cortical_artifact_flows(self) -> None:
         antibody = HeuristicAntibody(
             antibody_id="ab-source",
@@ -174,6 +186,25 @@ class CorticalRegressionTests(unittest.TestCase):
         recall = self.engine.recall_cortical_context("source")
         self.assertIn("Source Task ID", recall)
         self.assertIn("task-source-42", recall)
+
+    def test_bundled_cortical_provenance_and_research_heuristic_are_preserved(self) -> None:
+        cortex_dir = Path(__file__).resolve().parents[1] / "skills" / "fable-mode" / "cortex"
+        expected_counts = {
+            "concurrency": 3,
+            "python": 3,
+            "rust": 3,
+            "research": 3,
+            "security": 1,
+        }
+        for domain, count in expected_counts.items():
+            lobe = CorticalLobe.load_from_disk(cortex_dir / f"{domain}.md")
+            self.assertEqual(len(lobe.antibodies), count)
+            self.assertTrue(all(antibody.source_task_id for antibody in lobe.antibodies))
+
+        research = CorticalLobe.load_from_disk(cortex_dir / "research.md")
+        self.assertTrue(
+            any("Fable's zero-cost research scrapers" in item for item in research.specialized_heuristics)
+        )
 
 
 if __name__ == "__main__":

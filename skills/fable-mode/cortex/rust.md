@@ -20,7 +20,7 @@
       "lethal_anti_pattern": "let guard = std_mutex.lock().unwrap(); some_async_fn().await; drop(guard);",
       "prescribed_defense": "Use tokio::sync::Mutex if the lock must span across await points, or strictly scope std::sync::MutexGuard within a synchronous block before the await point.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_rust_concurrency_audit",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "tokio-deadlock-detector verified zero thread starvation under 100 concurrent async tasks"
     },
@@ -31,7 +31,7 @@
       "lethal_anti_pattern": "let ref1 = unsafe { &mut *raw_ptr }; let ref2 = unsafe { &mut *raw_ptr };",
       "prescribed_defense": "Strictly utilize std::ptr::NonNull with provenance invariants and verify with cargo miri run under stacked borrows.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_rust_unsafe_validation",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Miri test harness executed with zero stacked borrow violations"
     },
@@ -42,7 +42,7 @@
       "lethal_anti_pattern": "let (tx, rx) = tokio::sync::mpsc::unbounded_channel();",
       "prescribed_defense": "Always use bounded channels with backpressure tokio::sync::mpsc::channel(capacity) and handle permit acquisition.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_rust_stream_backpressure",
       "created_at": "2026-09-04T12:00:00+00:00",
       "verified_counterfactual": "Memory profile confirmed steady-state RSS under 64MB at 1M events/sec"
     }
@@ -97,6 +97,7 @@
 - **Lethal Anti-Pattern**: let guard = std_mutex.lock().unwrap(); some_async_fn().await; drop(guard);
 - **Prescribed Defense**: Use tokio::sync::Mutex if the lock must span across await points, or strictly scope std::sync::MutexGuard within a synchronous block before the await point.
 - **Verified Counterfactual**: `tokio-deadlock-detector verified zero thread starvation under 100 concurrent async tasks`
+- **Source Task ID**: `task_rust_concurrency_audit`
 
 #### Antibody `ab_rust_unsound_raw_pointer_aliasing` [CRITICAL]
 - **Domain**: `rust`
@@ -104,6 +105,7 @@
 - **Lethal Anti-Pattern**: let ref1 = unsafe { &mut *raw_ptr }; let ref2 = unsafe { &mut *raw_ptr };
 - **Prescribed Defense**: Strictly utilize std::ptr::NonNull with provenance invariants and verify with cargo miri run under stacked borrows.
 - **Verified Counterfactual**: `Miri test harness executed with zero stacked borrow violations`
+- **Source Task ID**: `task_rust_unsafe_validation`
 
 #### Antibody `ab_rust_unbounded_channel_oom` [HIGH]
 - **Domain**: `rust`
@@ -111,4 +113,4 @@
 - **Lethal Anti-Pattern**: let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 - **Prescribed Defense**: Always use bounded channels with backpressure tokio::sync::mpsc::channel(capacity) and handle permit acquisition.
 - **Verified Counterfactual**: `Memory profile confirmed steady-state RSS under 64MB at 1M events/sec`
-
+- **Source Task ID**: `task_rust_stream_backpressure`

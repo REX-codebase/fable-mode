@@ -438,12 +438,14 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.proof_receipts.append({"receipt_id": "falsey-review-receipt", "verified": True})
         session.set_goal_rubric("Test Rubric", [{
             "pointer_id": "P1",
             "description": "Check 1",
             "satisfied": True,
             "score": 1.0,
             "verifier_command": "python -m unittest tests.test_red_team_swarm",
+            "evidence_receipt_id": "falsey-review-receipt",
         }])
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
@@ -484,12 +486,14 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.proof_receipts.append({"receipt_id": "falsey-remediation-receipt", "verified": True})
         session.set_goal_rubric("Test Rubric", [{
             "pointer_id": "P1",
             "description": "Check 1",
             "satisfied": True,
             "score": 1.0,
             "verifier_command": "python -m unittest tests.test_red_team_swarm",
+            "evidence_receipt_id": "falsey-remediation-receipt",
         }])
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
