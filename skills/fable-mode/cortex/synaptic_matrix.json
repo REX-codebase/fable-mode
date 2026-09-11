@@ -1,72 +1,240 @@
 {
+  "ast_diagnostics": {
+    "design_3d": 0.88
+  },
+  "asyncio_event_loop": {
+    "python": 0.94
+  },
+  "atomic_cas_loop": {
+    "concurrency": 0.94
+  },
+  "audit_anti_slop": {
+    "frontend_design": 0.98
+  },
+  "borrow_checker": {
+    "rust": 0.95
+  },
+  "citation_verifier": {
+    "research": 0.96
+  },
+  "concurrency": {
+    "atomic_cas_loop": 0.94,
+    "concurrency_fuzz": 0.96,
+    "hazard_pointers": 0.88,
+    "memory_ordering": 0.92,
+    "test_harness": 0.9,
+    "toctou_prevention": 0.95
+  },
+  "concurrency_fuzz": {
+    "concurrency": 0.96,
+    "rust": 0.85
+  },
+  "contradiction_resolver": {
+    "research": 0.91
+  },
+  "cpython_313_nogil": {
+    "python": 0.86
+  },
+  "design_3d": {
+    "ast_diagnostics": 0.88,
+    "fluid_typography": 0.88,
+    "fps_budget_profiler": 0.92,
+    "perceptual_diff": 0.92,
+    "render_vector": 0.95,
+    "run_command": 0.9,
+    "spring_motion_physics": 0.9,
+    "webgpu_tsl": 0.95
+  },
   "diagnostics": {
-    "red_team_swarm": 0.5886,
-    "system": 0.5528,
-    "test_harness": 0.6036
+    "python": 0.88,
+    "red_team_swarm": 0.7348,
+    "system": 0.7704,
+    "test_harness": 0.7548
+  },
+  "epistemic_grounding": {
+    "research": 0.95
+  },
+  "first_principles_synthesis": {
+    "research": 0.94
+  },
+  "fluid_typography": {
+    "design_3d": 0.88,
+    "frontend_design": 0.9
+  },
+  "fps_budget_profiler": {
+    "design_3d": 0.92
+  },
+  "frontend_design": {
+    "audit_anti_slop": 0.98,
+    "fluid_typography": 0.9,
+    "generate_awwwards_scaffold": 0.95,
+    "generate_design_tokens": 0.95,
+    "infer_design_brief": 0.96,
+    "render_vector": 0.92,
+    "spring_motion_physics": 0.9,
+    "validate_preflight_design": 0.94
+  },
+  "generate_awwwards_scaffold": {
+    "frontend_design": 0.95
+  },
+  "generate_design_tokens": {
+    "frontend_design": 0.95
+  },
+  "hazard_pointers": {
+    "concurrency": 0.88
+  },
+  "infer_design_brief": {
+    "frontend_design": 0.96
+  },
+  "latex_derivation": {
+    "research": 0.87
+  },
+  "memory_ordering": {
+    "concurrency": 0.92
   },
   "mutation": {
-    "process": 0.344,
-    "property_oracle": 0.7332,
+    "process": 0.732,
+    "property_oracle": 0.9519,
     "red_team_swarm": 1.0,
-    "security": 0.8201,
-    "target": 0.56,
+    "security": 0.7983,
+    "target": 0.804,
     "test_harness": 1.0
   },
+  "perceptual_diff": {
+    "design_3d": 0.92
+  },
+  "pin_project": {
+    "rust": 0.88
+  },
+  "pr14-remediation-sealing": {
+    "red_team_swarm": 0.2217,
+    "test_harness": 0.219
+  },
   "process": {
-    "mutation": 0.344,
-    "property_oracle": 0.3296,
-    "red_team_swarm": 0.3344,
-    "test_harness": 0.3392
+    "mutation": 0.732,
+    "property_oracle": 0.6888,
+    "red_team_swarm": 0.7032,
+    "test_harness": 0.7176
   },
   "property_oracle": {
-    "mutation": 0.7332,
-    "process": 0.3296,
-    "red_team_swarm": 0.694,
-    "security": 0.2648,
-    "target": 0.524,
-    "test_harness": 0.714
+    "mutation": 0.9519,
+    "process": 0.6888,
+    "red_team_swarm": 0.898,
+    "security": 0.3648,
+    "target": 0.7536,
+    "test_harness": 0.9255
+  },
+  "python": {
+    "asyncio_event_loop": 0.94,
+    "cpython_313_nogil": 0.86,
+    "diagnostics": 0.88,
+    "slot_optimizations": 0.89,
+    "test_harness": 0.92,
+    "typing_protocols": 0.91
   },
   "quorum": {
     "test_distributed_raft": 0.95
   },
   "red_team_swarm": {
-    "diagnostics": 0.5886,
+    "diagnostics": 0.7348,
     "mutation": 1.0,
-    "process": 0.3344,
-    "property_oracle": 0.694,
-    "security": 0.8342,
-    "system": 0.5654,
-    "target": 0.536,
+    "pr14-remediation-sealing": 0.2217,
+    "process": 0.7032,
+    "property_oracle": 0.898,
+    "security": 0.8082,
+    "system": 0.7872,
+    "target": 0.7704,
     "test_harness": 1.0
   },
+  "render_vector": {
+    "design_3d": 0.95,
+    "frontend_design": 0.92
+  },
+  "research": {
+    "citation_verifier": 0.96,
+    "contradiction_resolver": 0.91,
+    "epistemic_grounding": 0.95,
+    "first_principles_synthesis": 0.94,
+    "latex_derivation": 0.87,
+    "triz_dialectic": 0.89,
+    "zero_cost_scrapers": 0.7
+  },
+  "run_command": {
+    "design_3d": 0.9
+  },
+  "rust": {
+    "borrow_checker": 0.95,
+    "concurrency_fuzz": 0.85,
+    "pin_project": 0.88,
+    "tokio": 0.92,
+    "unsafe_audit": 0.79,
+    "zero_cost_abstractions": 0.9
+  },
   "security": {
-    "mutation": 0.8201,
-    "property_oracle": 0.2648,
-    "red_team_swarm": 0.8342,
-    "test_harness": 0.7988
+    "mutation": 0.7983,
+    "property_oracle": 0.3648,
+    "red_team_swarm": 0.8082,
+    "test_harness": 0.7812
+  },
+  "slot_optimizations": {
+    "python": 0.89
+  },
+  "spring_motion_physics": {
+    "design_3d": 0.9,
+    "frontend_design": 0.9
   },
   "system": {
-    "diagnostics": 0.5528,
-    "red_team_swarm": 0.5654,
-    "test_harness": 0.578
+    "diagnostics": 0.7704,
+    "red_team_swarm": 0.7872,
+    "test_harness": 0.804
   },
   "target": {
-    "mutation": 0.56,
-    "property_oracle": 0.524,
-    "red_team_swarm": 0.536,
-    "test_harness": 0.548
+    "mutation": 0.804,
+    "property_oracle": 0.7536,
+    "red_team_swarm": 0.7704,
+    "test_harness": 0.7872
   },
   "test_distributed_raft": {
     "quorum": 0.95
   },
   "test_harness": {
-    "diagnostics": 0.6036,
+    "concurrency": 0.9,
+    "diagnostics": 0.7548,
     "mutation": 1.0,
-    "process": 0.3392,
-    "property_oracle": 0.714,
+    "pr14-remediation-sealing": 0.219,
+    "process": 0.7176,
+    "property_oracle": 0.9255,
+    "python": 0.92,
     "red_team_swarm": 1.0,
-    "security": 0.7988,
-    "system": 0.578,
-    "target": 0.548
+    "security": 0.7812,
+    "system": 0.804,
+    "target": 0.7872
+  },
+  "toctou_prevention": {
+    "concurrency": 0.95
+  },
+  "tokio": {
+    "rust": 0.92
+  },
+  "triz_dialectic": {
+    "research": 0.89
+  },
+  "typing_protocols": {
+    "python": 0.91
+  },
+  "unsafe_audit": {
+    "rust": 0.79
+  },
+  "validate_preflight_design": {
+    "frontend_design": 0.94
+  },
+  "webgpu_tsl": {
+    "design_3d": 0.95
+  },
+  "zero_cost_abstractions": {
+    "rust": 0.9
+  },
+  "zero_cost_scrapers": {
+    "research": 0.7
   }
 }

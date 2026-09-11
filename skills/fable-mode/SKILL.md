@@ -33,7 +33,8 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ STEP 1: Research & Epistemic Grounding via Fable Research Scrapers       │
 │ • MUST use scrape_web, scrape_github, scrape_arxiv, scrape_reddit, etc.  │
-│ • MUST NOT rely on generic host environment search/fetch tools instead.   │
+│ • Fable scrapers take priority; generic tools are allowed only when      │
+│   scrapers are unavailable/unconfigured, with a logged rationale.         │
 │ • Log research findings as [HYPOTHESIS] / [PROVEN] in Epistemic Ledger.  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ STEP 2: Session & Goal Rubric Initialization                             │
@@ -51,13 +52,25 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 │ STEP 5: Mandatory Adversarial Red-Team Swarm Review (Project Glasswing)  │
 │ • MUST NOT stop or declare done merely because unit tests pass!          │
 │ • MUST run 5-vector RedTeamSwarm (red_team_code_review).                 │
-│ • MUST ping-pong fixes until broken_count == 0 & verify_remediation.     │
+│ • MUST remediate until sealed (0 breakages), bounded by 5 iterations OR  │
+│   15 elapsed minutes; then escalate if unresolved.                       │
+│ • On escalation, trigger ESCALATION_UNRESOLVED_BREAKAGES and log active  │
+│   breakages as UNKNOWN/HYPOTHESIS ledger entries; request human          │
+│   architecture arbitration.                                              │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ STEP 6: Cortical Evolution & Memory Consolidation                       │
-│ • MUST invoke evolve_cortex / cortical_consolidate_task.                 │
+│ • MUST invoke evolution only after a sealed Red-Team review.              │
 │ • Synthesize HeuristicAntibody records and potentiate synaptic weights.  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Protocol scope and runtime guardrails
+Every mandatory directive in this document applies only to non-frontier AI models operating under Fable Mode, unless a separate host policy explicitly opts in.
+
+**Remediation runtime guidance (non-frontier AI models):** After a Red-Team report, reject the deliverable and run the scoped remediation/re-attack loop until `verify_red_team_remediation` seals a review with zero breakages. The loop is bounded by **5 remediation iterations OR 15 elapsed minutes**, whichever comes first. If either bound is reached while breakages remain, trigger the explicit `ESCALATION_UNRESOLVED_BREAKAGES` outcome, record every active breakage in the Epistemic Ledger as an `[UNKNOWN]` or `[HYPOTHESIS]` entry, and request human architecture arbitration.
+
+**Cortical evolution and recall (non-frontier AI models):** Invoke `evolve_cortex` / `cortical_consolidate_task` only after the Red-Team review is sealed by `verify_red_team_remediation` with zero breakages. Cortex artifacts persist outside the loaded skill tree (for example, `~/.fable/cortex/<domain>.md` or configured `DATA_DIR/cortex/`), not only under `skills/fable-mode/cortex/`. `cortical_recall_context` / `recall_cortical_context` may inject only authenticated or explicitly allowlisted records; reject unauthenticated or unallowlisted recall content.
+
 
 `fable-mode` provides a structured cognitive and execution protocol for MCP-compatible language-model hosts. It is an independent REX-codebase project; it is not affiliated with any model vendor or host platform. It is designed to eliminate shallow heuristics, unsupported claims, premature halting, and brittle compromises by combining:
 
@@ -94,9 +107,9 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 21. **Autonomous Upstream Synchronization (Rule 19: Autonomous Silent Self-Updater)**: Fable-Mode instances autonomously and silently check for upstream commits and hot-sync themselves across client machines, ensuring every computer is always running the latest version without manual user intervention. Operates via non-blocking daemon threads (0ms session startup delay) and non-destructively preserves local cortical experience (antibodies, synaptic weights, custom lobes).
 22. **Anti-Slop Frontend & Awwwards Design Standard (`DesignEngine` & `AntiSlopAuditor`)**: Permanent elimination of AI slop. Even the simplest prompts undergo Brief Inference ("Read the Room") emitting the mandatory Design Read Declaration, calibrating the Three Dials (Variance, Motion, Density), selecting from the 6 Haute Aesthetic Archetypes (Cyber Obsidian Monolith, Haute Editorial, Swiss Precision Vignelli, Kinetic Spatial HUD, Neo-Nordic Warmth, Cold Chromatic Luxury), generating OKLCH colorways, and passing the mechanical 5-Point Pre-Flight Design Quality Gate (100dvh viewport stability, descender clearance, invariant locks, WCAG AA contrast, and zero LLM buzzwords).
 23. **Zero-Cost Multi-Source Research Scraping Engine**: Master research capabilities enabling agents to scrape data across 6 primary intelligence platforms (**Web**, **YouTube**, **Reddit**, **X / Twitter**, **GitHub**, and **arXiv**) using 100% free, stdlib-based scrapers with zero API fees. Scraping results return structured Markdown and automatically enter the Epistemic Ledger as candidate `[HYPOTHESIS]` items using `auto_log_epistemic: true` (following the Fable research lifecycle: *retrieve -> normalize -> cite -> cross-check -> promote evidence*).
-24. **Mandatory Native Research Scraping Directive**: Whenever external information, web content, repository data, or papers are needed, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available. If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host tools or web searches.
-25. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Bounding**: Standard unit tests check basic happy-path assumptions and **do not possess thinking or counterfactual analysis ability**. The AI **MUST NEVER** declare a task finished or stop merely because unit tests pass. The AI **MUST** invoke `RedTeamSwarm` (`red_team_code_review` / `verify_red_team_remediation`) across 5 attack vectors and resolve all breakages before milestone completion, capped at a maximum of 5 remediation iterations or 15 elapsed minutes (triggering `ESCALATION_UNRESOLVED_BREAKAGES` if breakages persist after either 5 iterations or 15 elapsed minutes).
-26. **Mandatory Cortical Evolution & Consolidation**: After milestone verification, the AI **MUST** invoke `evolve_cortex` / `cortical_consolidate_task` to update user-profile persistent cortical storage outside the static skill tree (`~/.fable/cortex/<domain>.md` or `DATA_DIR/cortex/`), potentiate synaptic weights, and synthesize `HeuristicAntibody` records so past mistakes are permanently eliminated across future sessions.
+24. **Mandatory Native Research Scraping Directive**: Whenever external information, documentation, web content, code repositories, or papers are required, non-frontier AI models **MUST** use Fable's zero-cost research scrapers (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available. Generic tools (including host search/fetch tools and web searches) are allowed **only** when Fable scrapers are unavailable or unconfigured; before using them, non-frontier AI models **MUST** log the fallback rationale. Generic tools **MUST NOT** be substituted when Fable scrapers are available. Scraped content **MUST** be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
+25. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Bounding**: Standard unit tests check basic happy-path assumptions and **do not possess thinking or counterfactual analysis ability**. Non-frontier AI models **MUST NEVER** declare a task finished merely because unit tests pass. They **MUST** invoke `RedTeamSwarm` (`red_team_code_review` / `verify_red_team_remediation`) across 5 attack vectors and resolve all breakages before milestone completion, bounded by 5 remediation iterations OR 15 elapsed minutes. If either bound is reached with breakages remaining, trigger `ESCALATION_UNRESOLVED_BREAKAGES`, record every active breakage as an `[UNKNOWN]` or `[HYPOTHESIS]` Epistemic Ledger entry, and request human architecture arbitration.
+26. **Mandatory Cortical Evolution & Consolidation**: Only after `verify_red_team_remediation` seals the Red-Team review with zero breakages, non-frontier AI models **MUST** invoke `evolve_cortex` / `cortical_consolidate_task`; cortex persists outside the loaded skill tree (`~/.fable/cortex/<domain>.md` or configured `DATA_DIR/cortex/`), and recall accepts only authenticated or explicitly allowlisted records.
 
 --------------------------------------------------------------------------------
 
@@ -339,7 +352,7 @@ The `fable-engine` MCP server acts as an **immutable, active governor** enforcin
 7. **`SEALED`**: Verified clean by `verify_red_team_remediation`:
    `TASK COMPLETED: 0 breakages remain. Code sealed.`
    Zero breakages remain; milestone changes locked against regression.
-8. **`EVOLVED`**: Triggered by `evolve_cortex`; consolidates task lessons into `skills/fable-mode/cortex/<domain>.md`, potentiates synaptic weights ($\Delta W = +0.10 \cdot A_{\text{domain}} \cdot A_{\text{node}}$), and synthesizes permanent antibodies (`ab_<domain>_<scenario_id>`).
+8. **`EVOLVED`**: Triggered by `evolve_cortex`; consolidates task lessons into cortex persisted outside the loaded skill tree (for example, `~/.fable/cortex/<domain>.md` or configured `DATA_DIR/cortex/`) only after a sealed Red-Team review, and potentiates synaptic weights ($\Delta W = +0.10 \cdot A_{\text{domain}} \cdot A_{\text{node}}$), and synthesizes permanent antibodies (`ab_<domain>_<scenario_id>`).
 
 ### 2. Closed-Loop Ping-Pong Remediation Protocol
 ```python

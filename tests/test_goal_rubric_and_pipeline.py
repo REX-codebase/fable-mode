@@ -124,7 +124,7 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
             "session_name": self.session_name,
             "rubric_id": "eval_rubric_test",
             "evaluations": [
-                {"pointer_id": "PTR-CORE", "satisfied": True, "score": 1.0, "evidence_receipt_id": "rcpt_core_1"}
+                {"pointer_id": "PTR-CORE", "satisfied": True, "score": 1.0, "evidence_receipt_id": "rcpt_core_1", "verifier_command": "unittest"}
             ]
         })
 
@@ -141,7 +141,7 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
             "session_name": self.session_name,
             "rubric_id": "eval_rubric_test",
             "evaluations": [
-                {"pointer_id": "PTR-SAFETY", "satisfied": True, "score": 1.0, "evidence_receipt_id": "rcpt_safety_1"}
+                {"pointer_id": "PTR-SAFETY", "satisfied": True, "score": 1.0, "evidence_receipt_id": "rcpt_safety_1", "verifier_command": "unittest"}
             ]
         })
 
@@ -168,8 +168,8 @@ class TestGoalRubricAndPipeline(unittest.TestCase):
             "session_name": self.session_name,
             "rubric_id": "partial_rubric",
             "evaluations": [
-                {"pointer_id": "A", "score": 0.90, "satisfied": True},
-                {"pointer_id": "B", "score": 0.90, "satisfied": True}
+                {"pointer_id": "A", "score": 0.90, "satisfied": True, "verifier_command": "unittest"},
+                {"pointer_id": "B", "score": 0.90, "satisfied": True, "verifier_command": "unittest"}
             ]
         })
         r_partial = session.get_goal_rubric("partial_rubric")

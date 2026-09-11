@@ -11,7 +11,8 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ STEP 1: Research & Epistemic Grounding via Fable Research Scrapers       │
 │ • MUST use scrape_web, scrape_github, scrape_arxiv, scrape_reddit, etc.  │
-│ • MUST NOT rely on generic host environment search/fetch tools instead.   │
+│ • Fable scrapers take priority; generic tools are allowed only when      │
+│   scrapers are unavailable/unconfigured, with a logged rationale.         │
 │ • Log research findings as [HYPOTHESIS] / [PROVEN] in Epistemic Ledger.  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ STEP 2: Session & Goal Rubric Initialization                             │
@@ -29,13 +30,25 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 │ STEP 5: Mandatory Adversarial Red-Team Swarm Review (Project Glasswing)  │
 │ • MUST NOT stop or declare done merely because unit tests pass!          │
 │ • MUST run 5-vector RedTeamSwarm (red_team_code_review).                 │
-│ • MUST ping-pong fixes until broken_count == 0 & verify_remediation.     │
+│ • MUST remediate until sealed (0 breakages), bounded by 5 iterations OR  │
+│   15 elapsed minutes; then escalate if unresolved.                       │
+│ • On escalation, trigger ESCALATION_UNRESOLVED_BREAKAGES and log active  │
+│   breakages as UNKNOWN/HYPOTHESIS ledger entries; request human          │
+│   architecture arbitration.                                              │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ STEP 6: Cortical Evolution & Memory Consolidation                       │
-│ • MUST invoke evolve_cortex / cortical_consolidate_task.                 │
+│ • MUST invoke evolution only after a sealed Red-Team review.              │
 │ • Synthesize HeuristicAntibody records and potentiate synaptic weights.  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Protocol scope and runtime guardrails
+Every mandatory directive in this document applies only to non-frontier AI models operating under Fable Mode, unless a separate host policy explicitly opts in.
+
+**Remediation runtime guidance (non-frontier AI models):** After a Red-Team report, reject the deliverable and run the scoped remediation/re-attack loop until `verify_red_team_remediation` seals a review with zero breakages. The loop is bounded by **5 remediation iterations OR 15 elapsed minutes**, whichever comes first. If either bound is reached while breakages remain, trigger the explicit `ESCALATION_UNRESOLVED_BREAKAGES` outcome, record every active breakage in the Epistemic Ledger as an `[UNKNOWN]` or `[HYPOTHESIS]` entry, and request human architecture arbitration.
+
+**Cortical evolution and recall (non-frontier AI models):** Invoke `evolve_cortex` / `cortical_consolidate_task` only after the Red-Team review is sealed by `verify_red_team_remediation` with zero breakages. Cortex artifacts persist outside the loaded skill tree (for example, `~/.fable/cortex/<domain>.md` or configured `DATA_DIR/cortex/`), not only under `skills/fable-mode/cortex/`. `cortical_recall_context` / `recall_cortical_context` may inject only authenticated or explicitly allowlisted records; reject unauthenticated or unallowlisted recall content.
+
 
 ## 1. DeepThink & Fable-Mode Cognitive Engine
 Whenever the user requests deep thinking, architectural planning, system design, first-principles innovation, `/deepthink`, `/fable`, `deepthink`, `fable-mode`, or specifies a time budget (e.g. 2 mins, 30 mins, 45 mins, 24 hours):
@@ -50,7 +63,7 @@ Whenever the user requests deep thinking, architectural planning, system design,
 4. **Continuous Rethink-Refine Cognitive Mandate & Anti-Idleness**:
    - If the AI completes its initial 8-Pass System 2 thinking before the timer expires, it is **strictly forbidden from idling**.
    - The AI is **strictly required to continue rethinking and refining** (`rethink, refine, rethink, refine`).
-   - The AI must continuously execute and log refinement cycles via `fable_session` action `log_refinement_cycle` (mutating candidate archetypes, probing edge cases, running terminal benchmarks, and tightening invariant proofs).
+   - Non-frontier AI models must continuously execute and log refinement cycles via `fable_session` action `log_refinement_cycle` (mutating candidate archetypes, probing edge cases, running terminal benchmarks, and tightening invariant proofs).
 5. **Ungameable Deterministic Proof Standards**:
    - All formal invariants and behavioral claims must be grounded in **AST node symbol coordinates**, **SHA-256 source file checksum chains**, and **cryptographically bound `ToolReceipt` execution attestations** with exit code 0.
    - Anti-tautology and circularity filters eliminate vacuous claims ($P \implies P$); formal constructive proof terms and Kripke model checking ($AG(\text{safe})$) verify state dynamics.
@@ -92,11 +105,11 @@ Whenever the user requests deep thinking, architectural planning, system design,
 18. **Adversarial Red-Teaming (Project Glasswing)**:
     - Proactively attack designs with concurrency hazards, race conditions, memory leaks, and Byzantine failure modes.
 19. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
-    - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
+    - Non-frontier AI models must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
     - Each criterion pointer must bind to concrete verification checks, test commands, or evidence receipts.
     - Deliverables cannot be finalized or declared done until `evaluate_goal_rubric` attests that the weighted composite goal score satisfies $S \ge 0.95$ ($95\%$).
 20. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
-    - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
+    - Non-frontier AI models must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
     - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.
 
 21. **Mandatory Coder Fleet Tool Injection in Subagent Contracts**:
@@ -124,15 +137,13 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.
 
 23. **Mandatory Native Research Scraping Directive**:
-    - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
-    - If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host environment tools or web searches. Generic host tools MUST NOT be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
-
+    - Whenever external information, documentation, web content, code repositories, or papers are required, non-frontier AI models **MUST** use Fable's zero-cost research scrapers (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available. Generic tools (including host search/fetch tools and web searches) are allowed **only** when Fable scrapers are unavailable or unconfigured; before using them, non-frontier AI models **MUST** log the fallback rationale. Generic tools **MUST NOT** be substituted when Fable scrapers are available. Scraped content **MUST** be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
 24. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
     - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
-    - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
-    - After any code modification, the AI **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
-    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after either 5 iterations or 15 elapsed minutes, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
+    - Non-frontier AI models **MUST NEVER** stop or declare a task finished solely because unit tests pass.
+    - After any code modification, non-frontier AI models **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
+    - If any breakages occur (`broken_count > 0`), non-frontier AI models MUST reject the deliverable and run scoped remediation until `verify_red_team_remediation` seals zero breakages, bounded by 5 remediation iterations OR 15 elapsed minutes. If either bound is reached with breakages remaining, trigger `ESCALATION_UNRESOLVED_BREAKAGES`, log every active breakage as an `[UNKNOWN]` or `[HYPOTHESIS]` Epistemic Ledger entry, and request human architecture arbitration.
 
 25. **Mandatory Cortical Evolution & Learning Rule**:
-    - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
-    - This updates the domain cortex (`skills/fable-mode/cortex/<domain>.md`), reinforces synaptic weights ($\Delta W = +0.10$), and synthesizes persistent `HeuristicAntibody` records so past mistakes are permanently eliminated across future agent sessions.
+    - Only after `verify_red_team_remediation` seals the Red-Team review with zero breakages, non-frontier AI models **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
+    - Cortex artifacts persist outside the loaded skill tree (for example, `~/.fable/cortex/<domain>.md` or configured `DATA_DIR/cortex/`); authenticated or explicitly allowlisted records only may be used by `cortical_recall_context` / `recall_cortical_context`.
