@@ -300,15 +300,28 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
             f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
     else:
-        # Guard SEALED state behind mandatory-stage evidence verification
-        has_epistemic = len(session.epistemic_ledger) >= 2
-        has_rubric = len(session.goal_rubrics) >= 1
-        has_refinement = len(session.refinement_cycles) >= 1
-        has_changes = len(session.file_changes) >= 1
-        if not (has_epistemic and has_rubric and has_refinement and has_changes):
+        # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
+        proven_untrusted_free = [
+            i for i in session.epistemic_ledger
+            if i.get("tag") == "PROVEN"
+            and not i.get("_restored_untrusted")
+            and str(i.get("evidence", "")).strip()
+        ]
+        valid_refinements = [
+            r for r in session.refinement_cycles
+            if not r.get("_restored_untrusted")
+        ]
+        achieved_rubric = any(
+            r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
+            for r in session.goal_rubrics
+        )
+        has_current_file_changes = len(session.file_changes) >= 1 and not getattr(session, "_restored_untrusted", False)
+
+        if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
             return (
-                "Error: Cannot SEAL session: Missing mandatory-stage evidence. "
-                "Session must have >=2 epistemic items, >=1 goal rubric, >=1 refinement cycle, and >=1 file change logged before sealing."
+                "Error: Cannot SEAL session: Missing current-process mandatory-stage evidence. "
+                "Session must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
+                ">=1 achieved goal rubric meeting target score, and current-process file changes logged before sealing."
             )
 
         session.record_breakage_report(report_data)

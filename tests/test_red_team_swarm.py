@@ -438,7 +438,7 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
-        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1"}])
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0}])
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
@@ -478,7 +478,7 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
-        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1"}])
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0}])
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True

@@ -989,15 +989,28 @@ class FableSession:
                 self.current_state = SessionState.REMEDIATION_REQUIRED
         else:
             self.active_breakages = []
-            # Guard SEALED state behind mandatory-stage evidence verification
-            has_epistemic = len(self.epistemic_ledger) >= 2
-            has_rubric = len(self.goal_rubrics) >= 1
-            has_refinement = len(self.refinement_cycles) >= 1
-            has_changes = len(self.file_changes) >= 1
-            if not (has_epistemic and has_rubric and has_refinement and has_changes):
+            # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
+            proven_untrusted_free = [
+                i for i in self.epistemic_ledger
+                if i.get("tag") == "PROVEN"
+                and not i.get("_restored_untrusted")
+                and str(i.get("evidence", "")).strip()
+            ]
+            valid_refinements = [
+                r for r in self.refinement_cycles
+                if not r.get("_restored_untrusted")
+            ]
+            achieved_rubric = any(
+                r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
+                for r in self.goal_rubrics
+            )
+            has_current_file_changes = len(self.file_changes) >= 1 and not getattr(self, "_restored_untrusted", False)
+
+            if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
                 raise ValueError(
-                    "SEALED state transition rejected: Session lacks required mandatory-stage evidence "
-                    "(must have >=2 epistemic items, >=1 goal rubric, >=1 refinement cycle, and >=1 file change logged)."
+                    "SEALED state transition rejected: Session lacks required current-process mandatory-stage evidence "
+                    "(must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
+                    ">=1 achieved goal rubric meeting target score, and current-process file changes logged)."
                 )
 
             try:

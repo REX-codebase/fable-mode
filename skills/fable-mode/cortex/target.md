@@ -3,12 +3,12 @@
   "name": "target",
   "description": "Custom cortical lobe for target development and specialized heuristics",
   "domain": "target",
-  "activation_count": 2,
+  "activation_count": 3,
   "synaptic_weights": {
-    "mutation": 0.444,
-    "test_harness": 0.4392,
-    "red_team_swarm": 0.4344,
-    "property_oracle": 0.4296
+    "mutation": 0.516,
+    "test_harness": 0.5088,
+    "red_team_swarm": 0.5016,
+    "property_oracle": 0.4944
   },
   "antibodies": [
     {
@@ -26,7 +26,7 @@
   "specialized_heuristics": [
     "Defense against [Hypothesis]: Hardened implementation"
   ],
-  "last_consolidated_at": "2026-09-10T16:23:18.199648+00:00"
+  "last_consolidated_at": "2026-09-11T07:20:46.528866+00:00"
 }
 ---
 
@@ -34,16 +34,16 @@
 
 > [!NOTE]
 > Custom cortical lobe for target development and specialized heuristics
-> Activation count: 2.
+> Activation count: 3.
 
 ## Metadata & Telemetry
 - **Name**: `target`
 - **Description**: Custom cortical lobe for target development and specialized heuristics
 - **Domain**: `target`
-- **Activation Count**: `2`
+- **Activation Count**: `3`
 - **Total Antibodies**: `1`
 - **Specialized Heuristics**: `1`
-- **Last Consolidated**: `2026-09-10T16:23:18.199648+00:00`
+- **Last Consolidated**: `2026-09-11T07:20:46.528866+00:00`
 
 ## Specialized Domain Heuristics
 1. Defense against [Hypothesis]: Hardened implementation
@@ -51,10 +51,10 @@
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
 | :--- | :--- | :--- |
-| `mutation` | `0.4440` | 🟡 Moderate |
-| `test_harness` | `0.4392` | 🟡 Moderate |
-| `red_team_swarm` | `0.4344` | 🟡 Moderate |
-| `property_oracle` | `0.4296` | 🟡 Moderate |
+| `mutation` | `0.5160` | 🟡 Moderate |
+| `test_harness` | `0.5088` | 🟡 Moderate |
+| `red_team_swarm` | `0.5016` | 🟡 Moderate |
+| `property_oracle` | `0.4944` | 🟡 Moderate |
 
 ## Immunological Antibodies (Red-Team Scars)
 #### Antibody `ab_target_target_chaos_01_missing_path` [MEDIUM]
