@@ -1,11 +1,11 @@
 # Fable-Mode Cognitive Directives & Strict Role Separation
 
-> ⚠️ **MANDATORY EXECUTION LAW & NON-COMPLIANCE PENALTY**:
-> Any failure to strictly adhere to Fable Mode guidelines—including bypassing Red-Team Swarm review, substituting plain unit tests for adversarial stress testing, ignoring Fable zero-cost research scrapers, or skipping Cortical Evolution—results in **IMMEDIATE TASK INVALIDATION, SESSION REJECT, AND COGNITIVE PENALTY**. AI models (especially non-frontier models) MUST NOT deviate from this control plane under any circumstances. Standard tests have zero counterfactual reasoning ability; passing tests alone is NEVER proof of correctness.
+> ⚠️ **MANDATORY EXECUTION LAW & NON-COMPLIANCE PENALTY (NON-FRONTIER AI MODELS)**:
+> Any failure by non-frontier AI models to strictly adhere to Fable Mode guidelines—including bypassing Red-Team Swarm review, substituting plain unit tests for adversarial stress testing, ignoring Fable zero-cost research scrapers, or skipping Cortical Evolution—results in **IMMEDIATE TASK INVALIDATION, SESSION REJECT, AND COGNITIVE PENALTY**. Non-frontier AI models MUST NOT deviate from this control plane under any circumstances. Standard tests have zero counterfactual reasoning ability; passing tests alone is NEVER proof of correctness.
 
 ## 0. Non-Frontier AI Mandatory Step-by-Step Execution Protocol
 
-All AI models executing under Fable-Mode MUST execute tasks through this strict sequential checklist without skipping steps:
+Non-frontier AI models executing under Fable-Mode MUST execute tasks through this strict sequential checklist without skipping steps:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -136,14 +136,14 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - **Mechanical Pre-Flight Quality Gate**: Enforce automated verification via `validate_preflight_design` and `audit_anti_slop` before declaring frontend deliverables complete.
 
 24. **Mandatory Native Research Scraping Directive**:
-    - Whenever external information, documentation, web content, code repositories, or papers are required for a task, the AI **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`).
-    - Generic host tools or raw Web searches **MUST NOT** be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
+    - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
+    - If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host environment tools or web searches. Generic host tools MUST NOT be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
 
-25. **Mandatory Red-Team Swarm vs Unit Tests Rule**:
+25. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
     - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
     - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
     - After any code modification, the AI **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
-    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages.
+    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after 5 iterations, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
 
 26. **Mandatory Cortical Evolution & Learning Rule**:
     - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.

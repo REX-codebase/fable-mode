@@ -300,9 +300,18 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
             f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
     else:
-        session.current_state = SessionState.SEALED
-        session.active_breakages = []
-        session.breakage_reports.append(report_data)
+        # Guard SEALED state behind mandatory-stage evidence verification
+        has_epistemic = len(session.epistemic_ledger) >= 2
+        has_rubric = len(session.goal_rubrics) >= 1
+        has_refinement = len(session.refinement_cycles) >= 1
+        has_changes = len(session.file_changes) >= 1
+        if not (has_epistemic and has_rubric and has_refinement and has_changes):
+            return (
+                "Error: Cannot SEAL session: Missing mandatory-stage evidence. "
+                "Session must have >=2 epistemic items, >=1 goal rubric, >=1 refinement cycle, and >=1 file change logged before sealing."
+            )
+
+        session.record_breakage_report(report_data)
         session.save()
 
         completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."

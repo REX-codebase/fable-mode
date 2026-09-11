@@ -989,6 +989,17 @@ class FableSession:
                 self.current_state = SessionState.REMEDIATION_REQUIRED
         else:
             self.active_breakages = []
+            # Guard SEALED state behind mandatory-stage evidence verification
+            has_epistemic = len(self.epistemic_ledger) >= 2
+            has_rubric = len(self.goal_rubrics) >= 1
+            has_refinement = len(self.refinement_cycles) >= 1
+            has_changes = len(self.file_changes) >= 1
+            if not (has_epistemic and has_rubric and has_refinement and has_changes):
+                raise ValueError(
+                    "SEALED state transition rejected: Session lacks required mandatory-stage evidence "
+                    "(must have >=2 epistemic items, >=1 goal rubric, >=1 refinement cycle, and >=1 file change logged)."
+                )
+
             try:
                 if self.current_state == SessionState.IMPLEMENTATION:
                     self.transition_to(SessionState.RED_TEAM_GATE, "Clean report submitted")
@@ -997,9 +1008,9 @@ class FableSession:
                 if self.current_state in (SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED):
                     self.transition_to(SessionState.SEALED, "Zero breakages verified")
                 else:
-                    self.current_state = SessionState.SEALED
-            except Exception:
-                self.current_state = SessionState.SEALED
+                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
+            except Exception as exc:
+                raise ValueError(f"Cannot transition to SEALED state: {exc}") from exc
         return report_data
 
     def log_refinement_cycle(

@@ -271,7 +271,7 @@ class CorticalLobe:
             lobe_name = path.stem
             return cls(name=lobe_name)
 
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
         # 1. Try parsing YAML / JSON frontmatter if present
         if text.startswith("---"):
@@ -361,7 +361,7 @@ class CorticalLobe:
 
         # Extract antibodies
         ab_blocks = re.findall(
-            r"#### Antibody `([^`]+)` \[([A-Z]+)\]\s*\n- \*\*Domain\*\*:\s*`([^`]+)`\s*\n- \*\*Trigger Condition\*\*:\s*([^\n]+)\s*\n- \*\*Lethal Anti-Pattern\*\*:\s*([^\n]+)\s*\n- \*\*Prescribed Defense\*\*:\s*([^\n]+)(?:\s*\n- \*\*Verified Counterfactual\*\*:\s*`?([^`\n]+)`?)?",
+            r"#### Antibody `([^`]+)` \[([A-Z]+)\]\s*\n- \*\*Domain\*\*:\s*`([^`]+)`\s*\n- \*\*Trigger Condition\*\*:\s*([^\r\n]+)\s*\n- \*\*Lethal Anti-Pattern\*\*:\s*([^\r\n]+)\s*\n- \*\*Prescribed Defense\*\*:\s*([^\r\n]+)(?:\s*\n- \*\*Verified Counterfactual\*\*:\s*`?([^`\r\n]+)`?)?",
             text,
         )
         for ab_id, sev, dom, trig, lethal, defense, counterfac in ab_blocks:
@@ -865,9 +865,19 @@ class HebbianPlasticityEngine:
         domain: Union[CorticalDomain, str],
         max_antibodies: int = 5,
     ) -> str:
-        """Recall high-signal cortical memory block to inject into agent/subagent prompts."""
+        """Recall high-signal cortical memory block to inject into agent/subagent prompts.
+
+        Sanitizes and validates all recalled cortex state to prevent prompt injection vulnerabilities.
+        """
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
+
+        def _sanitize(text: str) -> str:
+            clean = str(text or "").strip()
+            # Strip potential prompt injection markers and control overrides
+            clean = re.sub(r'<(?:system|im_start|im_end|instruct|prompt)[^>]*>', '', clean, flags=re.IGNORECASE)
+            clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
+            return clean[:500]  # Cap length per string field
 
         lines: list[str] = [
             f"### 🧠 Cortical Lobe Memory: `{slug.upper()}` (Activations: {lobe.activation_count})",
@@ -894,11 +904,15 @@ class HebbianPlasticityEngine:
         lines.append("#### 🛡️ Immunological Heuristic Antibodies (Red-Team Scars)")
         if sorted_antibodies:
             for ab in sorted_antibodies:
-                lines.append(f"- **[{ab.severity.upper()}] Trigger**: {ab.trigger_condition}")
-                lines.append(f"  - **Lethal Anti-Pattern**: `{ab.lethal_anti_pattern}`")
-                lines.append(f"  - **Prescribed Defense**: {ab.prescribed_defense}")
-                if ab.verified_counterfactual:
-                    lines.append(f"  - **Counterfactual**: `{ab.verified_counterfactual}`")
+                s_trig = _sanitize(ab.trigger_condition)
+                s_lethal = _sanitize(ab.lethal_anti_pattern)
+                s_defense = _sanitize(ab.prescribed_defense)
+                s_counterfac = _sanitize(ab.verified_counterfactual)
+                lines.append(f"- **[{ab.severity.upper()}] Trigger**: {s_trig}")
+                lines.append(f"  - **Lethal Anti-Pattern**: `{s_lethal}`")
+                lines.append(f"  - **Prescribed Defense**: {s_defense}")
+                if s_counterfac:
+                    lines.append(f"  - **Counterfactual**: `{s_counterfac}`")
         else:
             lines.append("- *(No active antibodies in this lobe)*")
         lines.append("")
@@ -907,7 +921,7 @@ class HebbianPlasticityEngine:
         lines.append("#### ⚡ Specialized Domain Heuristics & Invariants")
         if lobe.specialized_heuristics:
             for idx, h in enumerate(lobe.specialized_heuristics[:8], 1):
-                lines.append(f"{idx}. {h}")
+                lines.append(f"{idx}. {_sanitize(h)}")
         else:
             lines.append("- *(Baseline heuristics only)*")
         lines.append("")
