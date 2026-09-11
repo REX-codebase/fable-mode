@@ -472,6 +472,15 @@ class HebbianPlasticityEngine:
         self._lobes[slug] = lobe
         return lobe
 
+    @staticmethod
+    def sanitize_field(text: Any, max_len: int = 500) -> str:
+        """Data-boundary sanitization against instruction-bearing or prompt-injection content."""
+        clean = str(text or "").strip()
+        # Strip potential prompt injection markers and control overrides
+        clean = re.sub(r'<(?:system|im_start|im_end|instruct|prompt)[^>]*>', '', clean, flags=re.IGNORECASE)
+        clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
+        return clean[:max_len]
+
     def _load_synaptic_matrix(self) -> dict[str, dict[str, float]]:
         """Load cross-domain synaptic co-activation matrix from disk."""
         if self.matrix_path.exists():
@@ -519,14 +528,15 @@ class HebbianPlasticityEngine:
                 except (ValueError, TypeError):
                     weights[str(k)] = 0.50
 
-        desc = description.strip() if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
+        desc = self.sanitize_field(description) if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
+        sanitized_heuristics = [self.sanitize_field(h) for h in clean_heuristics if self.sanitize_field(h)]
 
         lobe = CorticalLobe(
             name=slug,
             description=desc,
             activation_count=1,
             synaptic_weights=weights,
-            specialized_heuristics=clean_heuristics,
+            specialized_heuristics=sanitized_heuristics,
             last_consolidated_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -872,20 +882,16 @@ class HebbianPlasticityEngine:
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
 
-        def _sanitize(text: str) -> str:
-            clean = str(text or "").strip()
-            # Strip potential prompt injection markers and control overrides
-            clean = re.sub(r'<(?:system|im_start|im_end|instruct|prompt)[^>]*>', '', clean, flags=re.IGNORECASE)
-            clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
-            return clean[:500]  # Cap length per string field
+        s_desc = self.sanitize_field(lobe.description)
+        s_slug = self.sanitize_field(slug.upper(), max_len=64)
 
         lines: list[str] = [
-            f"### 🧠 Cortical Lobe Memory: `{slug.upper()}` (Activations: {lobe.activation_count})",
+            f"### 🧠 Cortical Lobe Memory: `{s_slug}` (Activations: {lobe.activation_count})",
             "",
         ]
 
-        if lobe.description:
-            lines.append(f"> **Description**: {lobe.description}")
+        if s_desc:
+            lines.append(f"> **Description**: {s_desc}")
             lines.append("")
 
         lines.extend([
@@ -904,11 +910,12 @@ class HebbianPlasticityEngine:
         lines.append("#### 🛡️ Immunological Heuristic Antibodies (Red-Team Scars)")
         if sorted_antibodies:
             for ab in sorted_antibodies:
-                s_trig = _sanitize(ab.trigger_condition)
-                s_lethal = _sanitize(ab.lethal_anti_pattern)
-                s_defense = _sanitize(ab.prescribed_defense)
-                s_counterfac = _sanitize(ab.verified_counterfactual)
-                lines.append(f"- **[{ab.severity.upper()}] Trigger**: {s_trig}")
+                s_trig = self.sanitize_field(ab.trigger_condition)
+                s_lethal = self.sanitize_field(ab.lethal_anti_pattern)
+                s_defense = self.sanitize_field(ab.prescribed_defense)
+                s_counterfac = self.sanitize_field(ab.verified_counterfactual)
+                s_sev = self.sanitize_field(ab.severity.upper(), max_len=16)
+                lines.append(f"- **[{s_sev}] Trigger**: {s_trig}")
                 lines.append(f"  - **Lethal Anti-Pattern**: `{s_lethal}`")
                 lines.append(f"  - **Prescribed Defense**: {s_defense}")
                 if s_counterfac:
@@ -921,7 +928,7 @@ class HebbianPlasticityEngine:
         lines.append("#### ⚡ Specialized Domain Heuristics & Invariants")
         if lobe.specialized_heuristics:
             for idx, h in enumerate(lobe.specialized_heuristics[:8], 1):
-                lines.append(f"{idx}. {_sanitize(h)}")
+                lines.append(f"{idx}. {self.sanitize_field(h)}")
         else:
             lines.append("- *(Baseline heuristics only)*")
         lines.append("")
@@ -931,7 +938,8 @@ class HebbianPlasticityEngine:
         if lobe.synaptic_weights:
             top_nodes = sorted(lobe.synaptic_weights.items(), key=lambda x: x[1], reverse=True)[:6]
             for node, weight in top_nodes:
-                lines.append(f"- `{node}`: weight `{weight:.4f}`")
+                s_node = self.sanitize_field(node, max_len=64)
+                lines.append(f"- `{s_node}`: weight `{weight:.4f}`")
         else:
             lines.append("- *(Zero strong synaptic co-activations)*")
         lines.append("")
