@@ -651,7 +651,6 @@ class TestFableHandlerDispatch(unittest.TestCase):
             # 1. Sprout custom lobe
             res_sprout = handle_fable_session({
                 "action": "cortical_define_lobe",
-                "session_name": self.session_name,
                 "name": "test_distributed_raft",
                 "description": "Raft consensus, leader election, and term invariants",
                 "initial_heuristics": ["Followers only vote once per term"],
@@ -670,7 +669,6 @@ class TestFableHandlerDispatch(unittest.TestCase):
             # 3. Missing name error
             res_err = handle_fable_session({
                 "action": "cortical_define_lobe",
-                "session_name": self.session_name,
             })
             self.assertIn("Error: 'name' or 'lobe_name' is required", res_err)
         finally:

@@ -1,62 +1,72 @@
 {
   "diagnostics": {
-    "red_team_swarm": 0.4424,
-    "system": 0.4352,
-    "test_harness": 0.4524
+    "red_team_swarm": 0.5155,
+    "system": 0.494,
+    "test_harness": 0.528
   },
   "mutation": {
-    "property_oracle": 0.4416,
+    "process": 0.272,
+    "property_oracle": 0.5874,
     "red_team_swarm": 1.0,
-    "security": 0.6983,
-    "target": 0.416,
-    "test_harness": 0.9749
+    "security": 0.7592,
+    "target": 0.488,
+    "test_harness": 1.0
+  },
+  "process": {
+    "mutation": 0.272,
+    "property_oracle": 0.2648,
+    "red_team_swarm": 0.2672,
+    "test_harness": 0.2696
   },
   "property_oracle": {
-    "mutation": 0.4416,
-    "red_team_swarm": 0.422,
+    "mutation": 0.5874,
+    "process": 0.2648,
+    "red_team_swarm": 0.558,
     "security": 0.2648,
-    "target": 0.3944,
-    "test_harness": 0.432
+    "target": 0.4592,
+    "test_harness": 0.573
   },
   "quorum": {
     "test_distributed_raft": 0.95
   },
   "red_team_swarm": {
-    "diagnostics": 0.4424,
+    "diagnostics": 0.5155,
     "mutation": 1.0,
-    "property_oracle": 0.422,
-    "security": 0.7082,
-    "system": 0.4436,
-    "target": 0.4016,
+    "process": 0.2672,
+    "property_oracle": 0.558,
+    "security": 0.7712,
+    "system": 0.5045,
+    "target": 0.4688,
     "test_harness": 1.0
   },
   "security": {
-    "mutation": 0.6983,
+    "mutation": 0.7592,
     "property_oracle": 0.2648,
-    "red_team_swarm": 0.7082,
-    "test_harness": 0.6812
+    "red_team_swarm": 0.7712,
+    "test_harness": 0.74
   },
   "system": {
-    "diagnostics": 0.4352,
-    "red_team_swarm": 0.4436,
-    "test_harness": 0.452
+    "diagnostics": 0.494,
+    "red_team_swarm": 0.5045,
+    "test_harness": 0.515
   },
   "target": {
-    "mutation": 0.416,
-    "property_oracle": 0.3944,
-    "red_team_swarm": 0.4016,
-    "test_harness": 0.4088
+    "mutation": 0.488,
+    "property_oracle": 0.4592,
+    "red_team_swarm": 0.4688,
+    "test_harness": 0.4784
   },
   "test_distributed_raft": {
     "quorum": 0.95
   },
   "test_harness": {
-    "diagnostics": 0.4524,
-    "mutation": 0.9749,
-    "property_oracle": 0.432,
+    "diagnostics": 0.528,
+    "mutation": 1.0,
+    "process": 0.2696,
+    "property_oracle": 0.573,
     "red_team_swarm": 1.0,
-    "security": 0.6812,
-    "system": 0.452,
-    "target": 0.4088
+    "security": 0.74,
+    "system": 0.515,
+    "target": 0.4784
   }
 }

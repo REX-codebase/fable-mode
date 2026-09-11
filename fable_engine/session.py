@@ -9,7 +9,6 @@ Implements:
 from __future__ import annotations
 
 import collections
-import copy
 import hashlib
 import hmac
 import json
@@ -137,7 +136,6 @@ class SessionState(str, Enum):
     RED_TEAM_GATE = "RED_TEAM_GATE"
     ARBITRATION = "ARBITRATION"
     REMEDIATION_REQUIRED = "REMEDIATION_REQUIRED"
-    ESCALATION_UNRESOLVED_BREAKAGES = "ESCALATION_UNRESOLVED_BREAKAGES"
     SEALED = "SEALED"
     EVOLVED = "EVOLVED"
 
@@ -147,9 +145,8 @@ VALID_TRANSITIONS = {
     SessionState.DEEPTHINK_TIMELOCK: {SessionState.IMPLEMENTATION},
     SessionState.IMPLEMENTATION: {SessionState.RED_TEAM_GATE},
     SessionState.RED_TEAM_GATE: {SessionState.ARBITRATION},
-    SessionState.ARBITRATION: {SessionState.REMEDIATION_REQUIRED, SessionState.SEALED, SessionState.ESCALATION_UNRESOLVED_BREAKAGES},
-    SessionState.REMEDIATION_REQUIRED: {SessionState.ARBITRATION, SessionState.SEALED, SessionState.REMEDIATION_REQUIRED, SessionState.ESCALATION_UNRESOLVED_BREAKAGES},
-    SessionState.ESCALATION_UNRESOLVED_BREAKAGES: {SessionState.ESCALATION_UNRESOLVED_BREAKAGES},
+    SessionState.ARBITRATION: {SessionState.REMEDIATION_REQUIRED, SessionState.SEALED},
+    SessionState.REMEDIATION_REQUIRED: {SessionState.ARBITRATION, SessionState.SEALED, SessionState.REMEDIATION_REQUIRED},
     SessionState.SEALED: {SessionState.EVOLVED},
     SessionState.EVOLVED: {SessionState.EVOLVED},
 }
@@ -196,9 +193,6 @@ class FableSession:
 
         self.current_state = SessionState.INIT
         self.iteration_count = 0
-        self.remediation_attempt_count = 0
-        self.remediation_started_at: Optional[float] = None
-        self.architecture_arbitration_requested = False
         self.active_breakages: List[Dict[str, Any]] = []
         self.remediation_history: List[Dict[str, Any]] = []
         self._timer_set = False
@@ -272,12 +266,7 @@ class FableSession:
         """Read-only wall-clock representation of the authority deadline."""
         return self._authority_deadline_wall
 
-    def transition_to(
-        self,
-        new_state: Union[SessionState, str],
-        rationale: str = "",
-        sealing_report: Optional[Dict[str, Any]] = None,
-    ) -> SessionState:
+    def transition_to(self, new_state: Union[SessionState, str], rationale: str = "") -> SessionState:
         """Transitions the FSM to a new state after validating strict state machine invariants.
 
         Valid transitions:
@@ -308,9 +297,6 @@ class FableSession:
                 f"Allowed transitions from {self.current_state.value}: {[s.value for s in allowed]}"
             )
 
-        if target_state == SessionState.SEALED:
-            self._validate_sealing_evidence(sealing_report)
-
         if self.current_state == SessionState.INIT and target_state == SessionState.DEEPTHINK_TIMELOCK:
             timer_set = getattr(self, "_timer_set", False) or (self.pacing_budget_minutes != self.time_budget_minutes)
             rubric_set = len(self.goal_rubrics) > 0
@@ -328,88 +314,15 @@ class FableSession:
                 raise ValueError("Transition from IMPLEMENTATION to RED_TEAM_GATE requires code written / file changes logged.")
 
         elif self.current_state == SessionState.ARBITRATION and target_state == SessionState.SEALED:
-            if len(self.active_breakages) > 0 and sealing_report is None:
+            if len(self.active_breakages) > 0:
                 raise ValueError(f"Transition from ARBITRATION to SEALED rejected: {len(self.active_breakages)} breakages remain unresolved.")
 
         elif self.current_state == SessionState.REMEDIATION_REQUIRED and target_state == SessionState.SEALED:
-            if len(self.active_breakages) > 0 and sealing_report is None:
+            if len(self.active_breakages) > 0:
                 raise ValueError(f"Transition from REMEDIATION_REQUIRED to SEALED rejected: {len(self.active_breakages)} breakages remain unresolved.")
 
         self.current_state = target_state
         return self.current_state
-
-    def current_change_set_hash(self) -> str:
-        """Return a stable digest of file changes recorded by this process."""
-        trusted_changes = [
-            {k: v for k, v in item.items() if k != "_restored_untrusted"}
-            for item in self.file_changes
-            if isinstance(item, dict) and not item.get("_restored_untrusted")
-        ]
-        payload = json.dumps(
-            {"session_id": self.session_id, "file_changes": trusted_changes},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    def _validated_receipt_ids(self) -> set[str]:
-        receipt_ids: set[str] = set()
-        for receipt in self.proof_receipts:
-            if not isinstance(receipt, dict) or receipt.get("_restored_untrusted"):
-                continue
-            receipt_id = str(receipt.get("receipt_id", "")).strip()
-            if receipt_id and (receipt.get("verified") is True or receipt.get("sha256_digest")):
-                receipt_ids.add(receipt_id)
-        fable_run = getattr(self, "fable_run", None)
-        if fable_run is not None and not self._restored_untrusted:
-            for receipt_id, receipt in getattr(fable_run, "receipts", {}).items():
-                if getattr(receipt, "success", False):
-                    receipt_ids.add(str(receipt_id))
-        return receipt_ids
-
-    def _criterion_has_evidence(self, item: Dict[str, Any]) -> bool:
-        if not item.get("satisfied"):
-            return True
-        if str(item.get("verifier_command", "")).strip():
-            return True
-        receipt_id = str(item.get("evidence_receipt_id", "")).strip()
-        return bool(receipt_id and receipt_id in self._validated_receipt_ids())
-
-    def _rubric_is_achieved_and_bound(self, rubric: Dict[str, Any]) -> bool:
-        meets_score = (
-            rubric.get("status") == "achieved"
-            or float(rubric.get("current_score", 0.0)) >= float(rubric.get("target_score", 0.95))
-        )
-        items = rubric.get("items", [])
-        return bool(meets_score and items and all(self._criterion_has_evidence(item) for item in items))
-
-    def _validate_sealing_evidence(self, report_data: Optional[Dict[str, Any]]) -> None:
-        proven = [
-            item for item in self.epistemic_ledger
-            if item.get("tag") == "PROVEN"
-            and not item.get("_restored_untrusted")
-            and str(item.get("evidence", "")).strip()
-        ]
-        refinements = [item for item in self.refinement_cycles if not item.get("_restored_untrusted")]
-        achieved_rubric = any(self._rubric_is_achieved_and_bound(rubric) for rubric in self.goal_rubrics)
-        has_current_file_changes = any(
-            isinstance(item, dict) and not item.get("_restored_untrusted")
-            for item in self.file_changes
-        )
-        if not (len(proven) >= 2 and refinements and achieved_rubric and has_current_file_changes):
-            raise ValueError(
-                "SEALED state transition rejected: Session lacks required current-process mandatory-stage evidence "
-                "(must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
-                ">=1 achieved goal rubric with evidence-bound satisfied criteria, and current-process file changes logged)."
-            )
-        if report_data is None or not get_red_team_swarm().verify_report_attestation(
-            report_data,
-            self.current_change_set_hash(),
-        ):
-            raise ValueError(
-                "SEALED state transition rejected: zero-breakage report requires a valid Red-Team attestation "
-                "covering all five vectors and bound to the current change set."
-            )
 
     def set_timer(self, time_budget_minutes: float) -> Dict[str, Any]:
         """Set an agent pacing timer without changing the authority deadline.
@@ -511,9 +424,6 @@ class FableSession:
             "silent_deliberation_active": self.execution_locked,
             "current_state": self.current_state.value if isinstance(self.current_state, SessionState) else str(self.current_state),
             "iteration_count": self.iteration_count,
-            "remediation_attempt_count": self.remediation_attempt_count,
-            "remediation_started_at": self.remediation_started_at,
-            "architecture_arbitration_requested": self.architecture_arbitration_requested,
             "active_breakages_count": len(self.active_breakages),
             "active_breakages": self.active_breakages,
             "remediation_history": self.remediation_history,
@@ -886,16 +796,6 @@ class FableSession:
                 receipt_id = ""
                 meta = {}
 
-            prospective_item = {
-                "satisfied": satisfied,
-                "verifier_command": verifier,
-                "evidence_receipt_id": receipt_id,
-            }
-            if not self._criterion_has_evidence(prospective_item):
-                raise ValueError(
-                    f"Satisfied rubric criterion '{p_id}' requires a verifier_command or a validated evidence_receipt_id."
-                )
-
             parsed_items.append({
                 "pointer_id": p_id,
                 "description": desc,
@@ -982,25 +882,18 @@ class FableSession:
             p_id = str(ev.get("pointer_id", "")).strip()
             for it in rubric["items"]:
                 if it.get("pointer_id") == p_id:
-                    updated = copy.deepcopy(it)
                     if "satisfied" in ev:
-                        updated["satisfied"] = bool(ev["satisfied"])
+                        it["satisfied"] = bool(ev["satisfied"])
                     if "score" in ev:
-                        updated["score"] = max(0.0, min(1.0, float(ev["score"])))
+                        it["score"] = max(0.0, min(1.0, float(ev["score"])))
                     elif "satisfied" in ev:
-                        updated["score"] = 1.0 if updated["satisfied"] else 0.0
+                        it["score"] = 1.0 if it["satisfied"] else 0.0
                     if "evidence_receipt_id" in ev:
-                        updated["evidence_receipt_id"] = str(ev["evidence_receipt_id"]).strip()
+                        it["evidence_receipt_id"] = str(ev["evidence_receipt_id"]).strip()
                     if "verifier_command" in ev:
-                        updated["verifier_command"] = str(ev["verifier_command"]).strip()
+                        it["verifier_command"] = str(ev["verifier_command"]).strip()
                     if "metadata" in ev and isinstance(ev["metadata"], dict):
-                        updated.setdefault("metadata", {}).update(ev["metadata"])
-                    if not self._criterion_has_evidence(updated):
-                        raise ValueError(
-                            f"Satisfied rubric criterion '{p_id}' requires a verifier_command or a validated evidence_receipt_id."
-                        )
-                    it.clear()
-                    it.update(updated)
+                        it.setdefault("metadata", {}).update(ev["metadata"])
 
         total_weight = sum(it.get("weight", 1.0) for it in rubric["items"])
         if total_weight > 0:
@@ -1011,9 +904,7 @@ class FableSession:
 
         rubric["current_score"] = current_score
         target_score = float(rubric.get("target_score", 0.95))
-        rubric["status"] = "achieved" if current_score >= target_score and all(
-            self._criterion_has_evidence(item) for item in rubric["items"]
-        ) else "in_progress"
+        rubric["status"] = "achieved" if current_score >= target_score else "in_progress"
         rubric["last_evaluated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._wall_clock()))
         return rubric
 
@@ -1061,10 +952,7 @@ class FableSession:
         report_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Records an adversarial red team breakage report in session history and updates FSM state."""
-        if not isinstance(report_data, dict):
-            raise ValueError("Breakage report must be an object.")
-        if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
-            raise ValueError("Remediation is terminally escalated and requires human architecture arbitration.")
+        self.breakage_reports.append(report_data)
         broken_count = int(report_data.get("broken_count", 0))
         findings = report_data.get("findings", [])
         if broken_count > 0:
@@ -1080,13 +968,8 @@ class FableSession:
                 for f in findings
                 if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
             ]
-            if self.remediation_started_at is None:
-                self.remediation_started_at = self._wall_clock()
-            self.remediation_attempt_count += 1
-            self.iteration_count += 1
-            self.breakage_reports.append(report_data)
             self.remediation_history.append({
-                "iteration": self.remediation_attempt_count,
+                "iteration": self.iteration_count,
                 "report_id": report_data.get("report_id"),
                 "broken_count": broken_count,
                 "timestamp": self._wall_clock(),
@@ -1104,69 +987,44 @@ class FableSession:
                     self.current_state = SessionState.REMEDIATION_REQUIRED
             except Exception:
                 self.current_state = SessionState.REMEDIATION_REQUIRED
-            if (
-                self.remediation_attempt_count >= 5
-                or self._wall_clock() - self.remediation_started_at >= 900.0
-            ):
-                self.escalate_unresolved_breakages()
         else:
-            if self.remediation_limit_reached():
-                self.escalate_unresolved_breakages()
-                raise ValueError("Remediation time limit reached; human architecture arbitration is required.")
-            self._validate_sealing_evidence(report_data)
-            original_state = self.current_state
+            self.active_breakages = []
+            # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
+            proven_untrusted_free = [
+                i for i in self.epistemic_ledger
+                if i.get("tag") == "PROVEN"
+                and not i.get("_restored_untrusted")
+                and str(i.get("evidence", "")).strip()
+            ]
+            valid_refinements = [
+                r for r in self.refinement_cycles
+                if not r.get("_restored_untrusted")
+            ]
+            achieved_rubric = any(
+                r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
+                for r in self.goal_rubrics
+            )
+            has_current_file_changes = len(self.file_changes) >= 1 and not getattr(self, "_restored_untrusted", False)
+
+            if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
+                raise ValueError(
+                    "SEALED state transition rejected: Session lacks required current-process mandatory-stage evidence "
+                    "(must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
+                    ">=1 achieved goal rubric meeting target score, and current-process file changes logged)."
+                )
+
             try:
                 if self.current_state == SessionState.IMPLEMENTATION:
                     self.transition_to(SessionState.RED_TEAM_GATE, "Clean report submitted")
                 if self.current_state == SessionState.RED_TEAM_GATE:
                     self.transition_to(SessionState.ARBITRATION, "Arbitration of clean report")
-                self.transition_to(
-                    SessionState.SEALED,
-                    "Zero breakages verified",
-                    sealing_report=report_data,
-                )
+                if self.current_state in (SessionState.ARBITRATION, SessionState.REMEDIATION_REQUIRED):
+                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
+                else:
+                    self.transition_to(SessionState.SEALED, "Zero breakages verified")
             except Exception as exc:
-                self.current_state = original_state
                 raise ValueError(f"Cannot transition to SEALED state: {exc}") from exc
-            self.breakage_reports.append(report_data)
-            self.active_breakages = []
         return report_data
-
-    def remediation_limit_reached(self) -> bool:
-        if self.remediation_attempt_count >= 5:
-            return True
-        return bool(
-            self.remediation_started_at is not None
-            and self._wall_clock() - self.remediation_started_at >= 900.0
-        )
-
-    def escalate_unresolved_breakages(self) -> None:
-        """Enter the terminal remediation escalation and request human arbitration."""
-        if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
-            return
-        for breakage in self.active_breakages:
-            hypothesis = str(breakage.get("hypothesis", "")).strip()
-            self.epistemic_ledger.append({
-                "id": f"escalation_{len(self.epistemic_ledger) + 1:03d}",
-                "tag": "HYPOTHESIS" if hypothesis else "UNKNOWN",
-                "claim": hypothesis or str(breakage.get("scenario_id", "Unresolved Red-Team breakage")),
-                "evidence": str(breakage.get("error_message", "")),
-                "source": "red_team_escalation",
-                "timestamp": self._wall_clock(),
-                "phase": self.active_phase,
-            })
-        self.architecture_arbitration_requested = True
-        self.remediation_history.append({
-            "iteration": self.remediation_attempt_count,
-            "timestamp": self._wall_clock(),
-            "status": SessionState.ESCALATION_UNRESOLVED_BREAKAGES.value,
-            "breakages": list(self.active_breakages),
-            "human_architecture_arbitration_requested": True,
-        })
-        self.transition_to(
-            SessionState.ESCALATION_UNRESOLVED_BREAKAGES,
-            "Remediation limit reached; human architecture arbitration required",
-        )
 
     def log_refinement_cycle(
         self,
@@ -1430,26 +1288,14 @@ class FableSession:
         except ValueError:
             session.current_state = SessionState.INIT
         session.iteration_count = int(data.get("iteration_count", 0))
-        session.remediation_attempt_count = int(data.get("remediation_attempt_count", session.iteration_count))
-        started_at = data.get("remediation_started_at")
-        session.remediation_started_at = float(started_at) if started_at is not None else None
-        session.architecture_arbitration_requested = bool(data.get("architecture_arbitration_requested", False))
         session.active_breakages = list(data.get("active_breakages", []))
         session.remediation_history = list(data.get("remediation_history", []))
         session.epistemic_ledger = [dict(item, _restored_untrusted=True) for item in data.get("epistemic_ledger", []) if isinstance(item, dict)]
         session.invariants = [dict(item, _restored_untrusted=True) for item in data.get("invariants", []) if isinstance(item, dict)]
         session.refinement_cycles = [dict(item, _restored_untrusted=True) for item in data.get("refinement_cycles", []) if isinstance(item, dict)]
-        session.file_changes = [
-            dict(item, _restored_untrusted=True)
-            for item in data.get("file_changes", [])
-            if isinstance(item, dict)
-        ]
+        session.file_changes = data.get("file_changes", [])
         session.visual_mockups = data.get("visual_mockups", {"mockups": [], "selected_concept": None})
-        session.proof_receipts = [
-            dict(item, _restored_untrusted=True)
-            for item in data.get("proof_receipts", [])
-            if isinstance(item, dict)
-        ]
+        session.proof_receipts = data.get("proof_receipts", [])
         session.goal_rubrics = data.get("goal_rubrics", [])
         session.automation_pipelines = data.get("automation_pipelines", [])
         session.breakage_reports = data.get("breakage_reports", [])

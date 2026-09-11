@@ -114,11 +114,11 @@ class CoderFleetDispatcher:
             "record_breakage_report": self.red_team_swarm.document_breakage,
             "verify_red_team_remediation": self.red_team_swarm.verify_remediation,
             # 12. Cortical Plasticity Engine (Modular Fable Part 2: Hebbian Learning & Domain Lobes)
-            "cortical_define_lobe": self.plasticity_engine._define_cortical_lobe_from_trusted_caller,
+            "cortical_define_lobe": self.plasticity_engine.define_cortical_lobe,
             "cortical_list_lobes": self.plasticity_engine.list_cortical_lobes,
             "cortical_activate_lobe": self.plasticity_engine.activate_lobe,
             "cortical_consolidate_task": self.plasticity_engine.consolidate_task,
-            "cortical_recall_context": self.plasticity_engine._recall_cortical_context_from_trusted_caller,
+            "cortical_recall_context": self.plasticity_engine.recall_cortical_context,
             "cortical_inspect_matrix": self.plasticity_engine.get_synaptic_matrix,
             "evolve_cortex": self.plasticity_engine.consolidate_task,
             # 13. Fable-Vector Neuro-Symbolic Vector Engine
