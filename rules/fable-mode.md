@@ -135,9 +135,10 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - **7-Layer Optical Depth Staging**: Structure layouts across Atmospheric Void base, Micro-Grain SVG Noise (anti-banding), Volumetric Inverse-Square Lighting, Refractive Glass Substrate, Hairline Specular Rims (0.5px sub-pixel bevels), Fluid Clamp Typography, and Newtonian Micro-Physics.
     - **Mechanical Pre-Flight Quality Gate**: Enforce automated verification via `validate_preflight_design` and `audit_anti_slop` before declaring frontend deliverables complete.
 
-24. **Mandatory Native Research Scraping Directive**:
+24. **Mandatory Native Research Scraping Directive & Authenticated Record Validation**:
     - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
     - If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host environment tools or web searches. Generic host tools MUST NOT be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
+    - `recall_cortical_context` and session evidence handlers MUST accept only authenticated or explicitly allowlisted records before injecting them into agent cognitive contexts or prompts, enforcing data-boundary sanitization against untrusted instruction overrides.
 
 25. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
     - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
