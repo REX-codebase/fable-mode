@@ -5,9 +5,9 @@
   "domain": "system",
   "activation_count": 4,
   "synaptic_weights": {
-    "test_harness": 0.552,
-    "red_team_swarm": 0.5436,
-    "diagnostics": 0.5352
+    "diagnostics": 0.4352,
+    "red_team_swarm": 0.4436,
+    "test_harness": 0.452
   },
   "antibodies": [],
   "specialized_heuristics": [],
@@ -36,9 +36,9 @@
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
 | :--- | :--- | :--- |
-| `test_harness` | `0.5520` | 🟡 Moderate |
-| `red_team_swarm` | `0.5436` | 🟡 Moderate |
-| `diagnostics` | `0.5352` | 🟡 Moderate |
+| `test_harness` | `0.4520` | 🟡 Moderate |
+| `red_team_swarm` | `0.4436` | 🟡 Moderate |
+| `diagnostics` | `0.4352` | 🟡 Moderate |
 
 ## Immunological Antibodies (Red-Team Scars)
 - *(Zero known fatal vulnerabilities cataloged)*

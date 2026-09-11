@@ -141,11 +141,11 @@ Whenever the user requests deep thinking, architectural planning, system design,
     - `recall_cortical_context` and session evidence handlers MUST accept only authenticated or explicitly allowlisted records before injecting them into agent cognitive contexts or prompts, enforcing data-boundary sanitization against untrusted instruction overrides.
 
 25. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
-    - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
-    - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
-    - After any code modification, the AI **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
-    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after either 5 iterations or 15 elapsed minutes, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
+    - For non-frontier AI models, standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
+    - Non-frontier AI models **MUST NEVER** stop or declare a task finished solely because unit tests pass.
+    - After any code modification, non-frontier AI models **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
+    - If a non-frontier AI model encounters breakages (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages. The runtime handlers MUST stop remediation when the fifth failed attempt occurs or 900 seconds have elapsed, transition to `ESCALATION_UNRESOLVED_BREAKAGES`, record every active breakage in the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, request human architecture arbitration, and only then save the session.
 
 26. **Mandatory Cortical Evolution & Learning Rule**:
-    - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
+    - After milestone verification and Red-Team sealing, a non-frontier AI model's Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
     - This updates the domain cortex (`skills/fable-mode/cortex/<domain>.md`), reinforces synaptic weights ($\Delta W = +0.10$), and synthesizes persistent `HeuristicAntibody` records so past mistakes are permanently eliminated across future agent sessions.

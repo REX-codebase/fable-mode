@@ -10,10 +10,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import json
+import hashlib
+import hmac
+import math
 import os
 from pathlib import Path
 import re
+import secrets
 from typing import Any, Optional, Union
+import unicodedata
 import uuid
 
 try:
@@ -406,8 +411,97 @@ class HebbianPlasticityEngine:
 
         self.cortex_dir.mkdir(parents=True, exist_ok=True)
         self.matrix_path = self.cortex_dir / "synaptic_matrix.json"
+        configured_key = os.environ.get("FABLE_CORTEX_PROVENANCE_KEY", "").encode("utf-8")
+        self._integrity_key = configured_key or hashlib.sha256(b"fable-cortex-provenance-v1").digest()
+        self._request_key = secrets.token_bytes(32)
         self._lobes: dict[str, CorticalLobe] = {}
         self._synaptic_matrix: dict[str, dict[str, float]] = self._load_synaptic_matrix()
+
+    @staticmethod
+    def _canonical_payload(payload: dict[str, Any]) -> bytes:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+    def _issue_request_provenance(self, caller: str, operation: str, payload: dict[str, Any]) -> dict[str, str]:
+        body = {"caller": caller, "operation": operation, "payload": payload}
+        return {
+            "caller": caller,
+            "operation": operation,
+            "signature": hmac.new(self._request_key, self._canonical_payload(body), hashlib.sha256).hexdigest(),
+        }
+
+    def _validate_request_provenance(
+        self,
+        provenance: Optional[dict[str, Any]],
+        operation: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if not isinstance(provenance, dict):
+            raise PermissionError(f"{operation} requires trusted caller provenance.")
+        caller = str(provenance.get("caller", ""))
+        if caller not in {"fable_engine", "coder_fleet", "plasticity_engine"} or provenance.get("operation") != operation:
+            raise PermissionError(f"{operation} caller is not authorized.")
+        body = {"caller": caller, "operation": operation, "payload": payload}
+        expected = hmac.new(self._request_key, self._canonical_payload(body), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(str(provenance.get("signature", "")), expected):
+            raise PermissionError(f"{operation} provenance signature is invalid.")
+
+    def _load_manifest(self) -> dict[str, dict[str, str]]:
+        manifest_path = self.cortex_dir / "cortex_provenance.json"
+        if not manifest_path.exists():
+            return {}
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Cortex provenance manifest is invalid.") from exc
+        if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, dict) for k, v in data.items()):
+            raise ValueError("Cortex provenance manifest has an invalid schema.")
+        return data
+
+    def _signature_for_digest(self, relative_name: str, digest: str) -> str:
+        return hmac.new(
+            self._integrity_key,
+            f"{relative_name}:{digest}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _verify_persisted_file(self, path: Path) -> None:
+        manifest = self._load_manifest()
+        entry = manifest.get(path.name)
+        if not isinstance(entry, dict):
+            raise PermissionError(f"Persisted cortex state '{path.name}' has no trusted provenance.")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        expected = self._signature_for_digest(path.name, digest)
+        if entry.get("sha256") != digest or not hmac.compare_digest(str(entry.get("signature", "")), expected):
+            raise PermissionError(f"Persisted cortex state '{path.name}' failed provenance verification.")
+
+    def _record_persisted_file(self, path: Path) -> None:
+        manifest = self._load_manifest()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest[path.name] = {
+            "sha256": digest,
+            "signature": self._signature_for_digest(path.name, digest),
+        }
+        manifest_path = self.cortex_dir / "cortex_provenance.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _save_lobe(self, lobe: CorticalLobe, path: Path) -> None:
+        lobe.save_to_disk(path)
+        self._record_persisted_file(path)
+
+    def _load_trusted_lobe(self, path: Path) -> CorticalLobe:
+        self._verify_persisted_file(path)
+        lobe = CorticalLobe.load_from_disk(path)
+        if (
+            not re.fullmatch(r"[a-z0-9_-]{1,128}", lobe.name)
+            or not isinstance(lobe.description, str)
+            or not isinstance(lobe.activation_count, int)
+            or lobe.activation_count < 0
+            or not isinstance(lobe.synaptic_weights, dict)
+            or not isinstance(lobe.specialized_heuristics, list)
+            or not isinstance(lobe.antibodies, list)
+        ):
+            raise ValueError(f"Persisted cortex state '{path.name}' failed schema validation.")
+        return lobe
 
     def _normalize_domain(self, domain: Union[CorticalDomain, str]) -> str:
         """Convert string or enum to canonical lobe name slug."""
@@ -459,7 +553,7 @@ class HebbianPlasticityEngine:
 
         lobe_path = self._get_lobe_path(slug)
         if lobe_path.exists():
-            lobe = CorticalLobe.load_from_disk(lobe_path)
+            lobe = self._load_trusted_lobe(lobe_path)
             if not lobe.name:
                 lobe.name = slug
             if description and not lobe.description:
@@ -467,7 +561,15 @@ class HebbianPlasticityEngine:
         else:
             desc = description or f"Custom cortical lobe for {slug} development and specialized heuristics"
             lobe = CorticalLobe(name=slug, description=desc)
-            lobe.save_to_disk(lobe_path)
+            self._save_lobe(lobe, lobe_path)
+
+        # The global matrix is canonical for persisted domain-to-node weights.
+        matrix_row = self._synaptic_matrix.get(slug)
+        if isinstance(matrix_row, dict) and matrix_row:
+            lobe.synaptic_weights = {
+                str(node): round(min(1.0, max(0.05, float(weight))), 4)
+                for node, weight in matrix_row.items()
+            }
 
         self._lobes[slug] = lobe
         return lobe
@@ -475,16 +577,24 @@ class HebbianPlasticityEngine:
     @staticmethod
     def sanitize_field(text: Any, max_len: int = 500) -> str:
         """Data-boundary sanitization against instruction-bearing or prompt-injection content."""
-        clean = str(text or "").strip()
-        # Strip potential prompt injection markers and control overrides
-        clean = re.sub(r'<(?:system|im_start|im_end|instruct|prompt)[^>]*>', '', clean, flags=re.IGNORECASE)
-        clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
-        return clean[:max_len]
+        clean = unicodedata.normalize("NFKC", str(text or ""))
+        clean = "".join(ch for ch in clean if ch in "\t\n" or unicodedata.category(ch) != "Cc")
+        clean = re.sub(r"\s+", " ", clean).strip()
+        clean = re.sub(
+            r"(?i)\b(ignore|override|bypass|disregard)\b.{0,40}\b(instruction|prompt|system|policy|rule)s?\b",
+            "[redacted directive]",
+            clean,
+        )
+        clean = clean[:max_len].replace("&", "&amp;").replace("<", "&lt;").replace("`", "&#96;")
+        if clean.startswith(">"):
+            clean = "&gt;" + clean[1:]
+        return clean
 
     def _load_synaptic_matrix(self) -> dict[str, dict[str, float]]:
         """Load cross-domain synaptic co-activation matrix from disk."""
         if self.matrix_path.exists():
             try:
+                self._verify_persisted_file(self.matrix_path)
                 data = json.loads(self.matrix_path.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
                     matrix: dict[str, dict[str, float]] = {}
@@ -492,14 +602,15 @@ class HebbianPlasticityEngine:
                         if isinstance(row, dict):
                             matrix[str(k)] = {str(col): round(float(val), 4) for col, val in row.items()}
                     return matrix
-            except Exception:
-                pass
+            except (OSError, ValueError, TypeError, PermissionError):
+                raise
         return {}
 
     def _save_synaptic_matrix(self) -> None:
         """Persist cross-domain synaptic co-activation matrix to disk."""
         payload = json.dumps(self._synaptic_matrix, indent=2, sort_keys=True)
         self.matrix_path.write_text(payload, encoding="utf-8")
+        self._record_persisted_file(self.matrix_path)
 
     def define_cortical_lobe(
         self,
@@ -508,12 +619,30 @@ class HebbianPlasticityEngine:
         initial_heuristics: Optional[list[str]] = None,
         initial_synaptic_weights: Optional[dict[str, float]] = None,
         lobe_name: str = "",
+        provenance: Optional[dict[str, Any]] = None,
     ) -> CorticalLobe:
         """Allows the AI or user to dynamically sprout a new Cortical Lobe from scratch!
 
         Cleans/slugifies the name, creates the lobe with name, description, initial heuristics,
         saves it to disk as cortex/<slug>.md, and integrates it into the synaptic matrix.
         """
+        if not isinstance(name, str) or not isinstance(lobe_name, str) or not isinstance(description, str):
+            raise ValueError("Cortical lobe name and description must be strings.")
+        if initial_heuristics is not None and (
+            not isinstance(initial_heuristics, list) or not all(isinstance(item, str) for item in initial_heuristics)
+        ):
+            raise ValueError("initial_heuristics must be a list of strings.")
+        if initial_synaptic_weights is not None and not isinstance(initial_synaptic_weights, dict):
+            raise ValueError("initial_synaptic_weights must be an object.")
+        request_payload = {
+            "name": name,
+            "lobe_name": lobe_name,
+            "description": description,
+            "initial_heuristics": initial_heuristics or [],
+            "initial_synaptic_weights": initial_synaptic_weights or {},
+        }
+        self._validate_request_provenance(provenance, "cortical_define_lobe", request_payload)
+
         raw = str(name or lobe_name).strip()
         slug = re.sub(r'[^a-zA-Z0-9_-]', '_', raw.lower()).strip('_')
         if not slug:
@@ -524,9 +653,15 @@ class HebbianPlasticityEngine:
         if initial_synaptic_weights:
             for k, v in initial_synaptic_weights.items():
                 try:
-                    weights[str(k)] = round(min(1.0, max(0.05, float(v))), 4)
+                    numeric = float(v)
+                    if not math.isfinite(numeric):
+                        raise ValueError("weight must be finite")
+                    node = re.sub(r"[^a-zA-Z0-9_-]", "_", str(k).strip()).strip("_")[:128]
+                    if not node:
+                        raise ValueError("synaptic node name is empty")
+                    weights[node] = round(min(1.0, max(0.05, numeric)), 4)
                 except (ValueError, TypeError):
-                    weights[str(k)] = 0.50
+                    raise ValueError(f"Invalid synaptic weight for node '{k}'.")
 
         desc = self.sanitize_field(description) if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
         sanitized_heuristics = [self.sanitize_field(h) for h in clean_heuristics if self.sanitize_field(h)]
@@ -541,7 +676,7 @@ class HebbianPlasticityEngine:
         )
 
         lobe_path = self.cortex_dir / f"{slug}.md"
-        lobe.save_to_disk(lobe_path)
+        self._save_lobe(lobe, lobe_path)
         self._lobes[slug] = lobe
 
         # Integrate into synaptic matrix
@@ -555,6 +690,20 @@ class HebbianPlasticityEngine:
 
         self._save_synaptic_matrix()
         return lobe
+
+    def _define_cortical_lobe_from_trusted_caller(self, **kwargs: Any) -> CorticalLobe:
+        """Authorized boundary used by the Fable server and fleet dispatcher."""
+        payload = {
+            "name": kwargs.get("name", ""),
+            "lobe_name": kwargs.get("lobe_name", ""),
+            "description": kwargs.get("description", ""),
+            "initial_heuristics": kwargs.get("initial_heuristics") or [],
+            "initial_synaptic_weights": kwargs.get("initial_synaptic_weights") or {},
+        }
+        kwargs["provenance"] = self._issue_request_provenance(
+            "fable_engine", "cortical_define_lobe", payload
+        )
+        return self.define_cortical_lobe(**kwargs)
 
     def activate_lobe(
         self,
@@ -583,7 +732,7 @@ class HebbianPlasticityEngine:
         is_new = (slug not in self._lobes) and (not lobe_path.exists())
         if is_new:
             desc = description or f"Custom cortical lobe for {slug} development and specialized heuristics"
-            lobe = self.define_cortical_lobe(name=slug, description=desc)
+            lobe = self._define_cortical_lobe_from_trusted_caller(name=slug, description=desc)
         else:
             lobe = self._load_or_create_lobe(slug, description=description)
             lobe.activation_count += 1
@@ -598,8 +747,25 @@ class HebbianPlasticityEngine:
                 primed_w = min(1.0, max(0.05, current_w + 0.02))
                 lobe.synaptic_weights[node_clean] = round(primed_w, 4)
 
-        lobe.save_to_disk(self._get_lobe_path(slug))
+        self._synchronize_domain_weights(slug, lobe)
+
+        self._save_lobe(lobe, self._get_lobe_path(slug))
+        self._save_synaptic_matrix()
         return lobe
+
+    def _synchronize_domain_weights(self, slug: str, lobe: CorticalLobe) -> None:
+        """Regenerate matrix domain associations from the in-memory lobe weights."""
+        old_row = self._synaptic_matrix.get(slug, {})
+        for removed_node in set(old_row) - set(lobe.synaptic_weights):
+            reciprocal = self._synaptic_matrix.get(removed_node)
+            if isinstance(reciprocal, dict):
+                reciprocal.pop(slug, None)
+        self._synaptic_matrix[slug] = {}
+        for node, weight in lobe.synaptic_weights.items():
+            canonical_weight = round(min(1.0, max(0.05, float(weight))), 4)
+            lobe.synaptic_weights[node] = canonical_weight
+            self._synaptic_matrix[slug][node] = canonical_weight
+            self._synaptic_matrix.setdefault(node, {})[slug] = canonical_weight
 
     def list_cortical_lobes(self) -> list[dict[str, Any]]:
         """Dynamically scans <cortex_dir>/*.md on disk.
@@ -613,7 +779,7 @@ class HebbianPlasticityEngine:
 
         for md_file in sorted(self.cortex_dir.glob("*.md")):
             try:
-                lobe = CorticalLobe.load_from_disk(md_file)
+                lobe = self._load_trusted_lobe(md_file)
                 lobes_meta.append({
                     "name": lobe.name or md_file.stem,
                     "description": lobe.description,
@@ -675,7 +841,11 @@ class HebbianPlasticityEngine:
         depression_rate = 0.15
         plasticity_mode = "LTP" if final_passed else "LTD"
         score = 1.0 if final_passed else -1.0
-        active_nodes = [str(n).strip() for n in (co_activated_nodes or []) if str(n).strip()]
+        active_nodes = []
+        for raw_node in co_activated_nodes or []:
+            node = re.sub(r"[^a-zA-Z0-9_-]", "_", str(raw_node).strip()).strip("_")[:128]
+            if node and node not in active_nodes:
+                active_nodes.append(node)
 
         # Compute continuous domain activation A_domain
         A_domain = min(1.0, max(0.30, 0.40 + 0.10 * len(active_nodes)))
@@ -739,29 +909,17 @@ class HebbianPlasticityEngine:
                     self._synaptic_matrix[u][v] = new_pair_w
                     self._synaptic_matrix[v][u] = new_pair_w
 
-        # Also connect domain to active nodes in global matrix
-        dom_name = slug
-        if dom_name not in self._synaptic_matrix:
-            self._synaptic_matrix[dom_name] = {}
-        for node in active_nodes:
-            A_node = node_activations.get(node, 0.80)
-            old_dom_w = self._synaptic_matrix[dom_name].get(node, 0.20)
-            if final_passed:
-                delta_dom_w = learning_rate * A_domain * A_node
-            else:
-                delta_dom_w = - depression_rate * A_domain * A_node
-            new_dom_w = round(min(1.0, max(0.05, old_dom_w + delta_dom_w)), 4)
-            self._synaptic_matrix[dom_name][node] = new_dom_w
-            if node not in self._synaptic_matrix:
-                self._synaptic_matrix[node] = {}
-            self._synaptic_matrix[node][dom_name] = new_dom_w
+        # Domain-to-node associations have one authoritative value: the lobe row.
+        self._synchronize_domain_weights(slug, lobe)
 
         # 4. Synthesize Heuristic Antibodies from red-team broken scenarios
         antibodies_added = 0
         if broken_scenarios:
             for sc in broken_scenarios:
                 sc_dict = sc if isinstance(sc, dict) else (sc.to_dict() if hasattr(sc, "to_dict") else asdict(sc))
-                sc_id = str(sc_dict.get("scenario_id") or uuid.uuid4().hex[:6])
+                sc_id = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", str(sc_dict.get("scenario_id") or uuid.uuid4().hex[:6])
+                ).strip("_")[:128]
                 ab_id = f"ab_{slug}_{sc_id}"
 
                 trigger = str(
@@ -786,6 +944,8 @@ class HebbianPlasticityEngine:
                     prescribed = str(prescribed)
 
                 severity = str(sc_dict.get("severity", "HIGH")).upper()
+                if severity not in {"CRITICAL", "HIGH", "MEDIUM", "LOW"}:
+                    severity = "HIGH"
                 counterfac = str(
                     sc_dict.get("reproduction_code")
                     or sc_dict.get("verified_counterfactual")
@@ -793,6 +953,10 @@ class HebbianPlasticityEngine:
                 )
 
                 # Deduplicate by antibody_id or trigger_condition
+                trigger = self.sanitize_field(trigger)
+                lethal = self.sanitize_field(lethal)
+                prescribed = self.sanitize_field(prescribed)
+                counterfac = self.sanitize_field(counterfac)
                 existing_ab = next(
                     (a for a in lobe.antibodies if a.antibody_id == ab_id or a.trigger_condition == trigger),
                     None,
@@ -823,22 +987,22 @@ class HebbianPlasticityEngine:
             for item in lessons:
                 heuristic_text = ""
                 if isinstance(item, str):
-                    heuristic_text = item.strip()
+                    heuristic_text = self.sanitize_field(item)
                 elif isinstance(item, dict):
                     if item.get("heuristic") or item.get("lesson") or item.get("rule"):
-                        heuristic_text = str(
+                        heuristic_text = self.sanitize_field(
                             item.get("heuristic") or item.get("lesson") or item.get("rule") or ""
-                        ).strip()
+                        )
                     elif item.get("defense") or item.get("trigger"):
                         trigger = str(item.get("trigger", "")).strip()
                         defense = str(item.get("defense", "")).strip()
                         mistake = str(item.get("mistake", "")).strip()
                         if trigger and defense:
-                            heuristic_text = f"Defense against [{trigger}]: {defense}"
+                            heuristic_text = self.sanitize_field(f"Defense against [{trigger}]: {defense}")
                         elif defense:
-                            heuristic_text = f"Invariant: {defense}"
+                            heuristic_text = self.sanitize_field(f"Invariant: {defense}")
                         elif mistake:
-                            heuristic_text = f"Avoid mistake: {mistake}"
+                            heuristic_text = self.sanitize_field(f"Avoid mistake: {mistake}")
 
                 if heuristic_text and heuristic_text not in lobe.specialized_heuristics:
                     lobe.specialized_heuristics.append(heuristic_text)
@@ -847,7 +1011,7 @@ class HebbianPlasticityEngine:
         # 6. Save lobe and synaptic matrix to disk
         timestamp = datetime.now(timezone.utc).isoformat()
         lobe.last_consolidated_at = timestamp
-        lobe.save_to_disk(self._get_lobe_path(slug))
+        self._save_lobe(lobe, self._get_lobe_path(slug))
         self._save_synaptic_matrix()
 
         return {
@@ -874,11 +1038,21 @@ class HebbianPlasticityEngine:
         self,
         domain: Union[CorticalDomain, str],
         max_antibodies: int = 5,
+        provenance: Optional[dict[str, Any]] = None,
     ) -> str:
         """Recall high-signal cortical memory block to inject into agent/subagent prompts.
 
         Sanitizes and validates all recalled cortex state to prevent prompt injection vulnerabilities.
         """
+        if not isinstance(domain, (str, CorticalDomain)):
+            raise ValueError("domain must be a string or CorticalDomain.")
+        if isinstance(max_antibodies, bool) or not isinstance(max_antibodies, int) or not 0 <= max_antibodies <= 100:
+            raise ValueError("max_antibodies must be an integer between 0 and 100.")
+        request_payload = {
+            "domain": domain.value if isinstance(domain, CorticalDomain) else domain,
+            "max_antibodies": max_antibodies,
+        }
+        self._validate_request_provenance(provenance, "cortical_recall_context", request_payload)
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
 
@@ -945,6 +1119,21 @@ class HebbianPlasticityEngine:
         lines.append("")
 
         return "\n".join(lines)
+
+    def _recall_cortical_context_from_trusted_caller(
+        self,
+        domain: Union[CorticalDomain, str],
+        max_antibodies: int = 5,
+    ) -> str:
+        """Authorized recall boundary with a request-bound provenance signature."""
+        payload = {
+            "domain": domain.value if isinstance(domain, CorticalDomain) else domain,
+            "max_antibodies": max_antibodies,
+        }
+        provenance = self._issue_request_provenance(
+            "coder_fleet", "cortical_recall_context", payload
+        )
+        return self.recall_cortical_context(domain, max_antibodies, provenance)
 
     def get_synaptic_matrix(self) -> dict[str, dict[str, float]]:
         """Return the complete cross-domain synaptic co-activation matrix."""

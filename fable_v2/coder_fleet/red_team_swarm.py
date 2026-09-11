@@ -9,9 +9,12 @@ Production-grade Red Team Swarm engine providing:
 from __future__ import annotations
 
 import datetime
+import hashlib
+import hmac
 import inspect
 import json
 import os
+import secrets
 import threading
 import time
 import traceback
@@ -88,6 +91,10 @@ class RedTeamBreakageReport:
     findings: list[BreakFinding]
     created_at: str
     remediation_directives: list[str] = field(default_factory=list)
+    report_origin: str = ""
+    executed_vectors: list[str] = field(default_factory=list)
+    reviewed_change_set: str = ""
+    attestation: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize report to dictionary."""
@@ -99,6 +106,10 @@ class RedTeamBreakageReport:
             "passed": self.passed,
             "created_at": self.created_at,
             "remediation_directives": list(self.remediation_directives),
+            "report_origin": self.report_origin,
+            "executed_vectors": list(self.executed_vectors),
+            "reviewed_change_set": self.reviewed_change_set,
+            "attestation": self.attestation,
             "findings": [
                 {
                     "scenario_id": f.scenario_id,
@@ -141,6 +152,10 @@ class RedTeamBreakageReport:
             findings=findings,
             created_at=data.get("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat()),
             remediation_directives=data.get("remediation_directives", []),
+            report_origin=str(data.get("report_origin", "")),
+            executed_vectors=[str(v) for v in data.get("executed_vectors", [])],
+            reviewed_change_set=str(data.get("reviewed_change_set", "")),
+            attestation=str(data.get("attestation", "")),
         )
 
     def to_markdown(self) -> str:
@@ -231,6 +246,7 @@ class RedTeamSwarm:
         mock_auditor: Optional[MockAuditorEngine] = None,
         property_oracle: Optional[PropertyOracleEngine] = None,
         plasticity_engine: Optional[Any] = None,
+        attestation_key: Optional[bytes] = None,
     ) -> None:
         self.test_harness = test_harness or TestHarnessEngine()
         self.mock_auditor = mock_auditor or MockAuditorEngine()
@@ -238,15 +254,65 @@ class RedTeamSwarm:
         if plasticity_engine is not None:
             self.plasticity_engine = plasticity_engine
         else:
-            try:
-                from ..cortical.plasticity_engine import HebbianPlasticityEngine
-                self.plasticity_engine = HebbianPlasticityEngine()
-            except Exception:
-                try:
-                    from fable_v2.cortical.plasticity_engine import HebbianPlasticityEngine
-                    self.plasticity_engine = HebbianPlasticityEngine()
-                except Exception:
-                    self.plasticity_engine = None
+            # Persistence is an explicit dependency so an ad-hoc review cannot
+            # mutate the repository's bundled cortical state.
+            self.plasticity_engine = None
+        self._attestation_key = attestation_key or secrets.token_bytes(32)
+
+    @staticmethod
+    def _attestation_payload(report: RedTeamBreakageReport) -> bytes:
+        data = report.to_dict()
+        data.pop("attestation", None)
+        return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def attest_report(
+        self,
+        report: RedTeamBreakageReport,
+        reviewed_change_set: str,
+    ) -> RedTeamBreakageReport:
+        """Bind a complete swarm report to its origin, vectors, and reviewed changes."""
+        report.report_origin = "fable.red_team_swarm"
+        report.executed_vectors = sorted({str(f.vector) for f in report.findings})
+        report.reviewed_change_set = str(reviewed_change_set)
+        report.attestation = hmac.new(
+            self._attestation_key,
+            self._attestation_payload(report),
+            hashlib.sha256,
+        ).hexdigest()
+        return report
+
+    def verify_report_attestation(
+        self,
+        report_data: dict[str, Any],
+        reviewed_change_set: str,
+    ) -> bool:
+        """Verify an attested zero-breakage report against all five attack vectors."""
+        if not isinstance(report_data, dict):
+            return False
+        try:
+            report = RedTeamBreakageReport.from_dict(report_data)
+        except (TypeError, ValueError):
+            return False
+        required_vectors = {vector.value for vector in AttackVector}
+        finding_vectors = {str(f.vector) for f in report.findings}
+        if (
+            report.broken_count != 0
+            or not report.passed
+            or report.report_origin != "fable.red_team_swarm"
+            or set(report.executed_vectors) != required_vectors
+            or finding_vectors != required_vectors
+            or report.reviewed_change_set != reviewed_change_set
+            or not report.attestation
+        ):
+            return False
+        supplied = report.attestation
+        report.attestation = ""
+        expected = hmac.new(
+            self._attestation_key,
+            self._attestation_payload(report),
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(supplied, expected)
 
     def _resolve_callable(self, target: Any) -> Optional[Callable[..., Any]]:
         """Resolves target callable from function or class object.
@@ -781,6 +847,7 @@ class RedTeamSwarm:
         additional_scenarios: Optional[list[BreakScenario]] = None,
         auto_consolidate: bool = True,
         timeout_seconds: float = 3.0,
+        reviewed_change_set: str = "",
     ) -> tuple[bool, RedTeamBreakageReport]:
         """Re-runs the scenarios that previously caused breakages against the remediated callable.
 
@@ -800,10 +867,8 @@ class RedTeamSwarm:
         target_name = getattr(callable_fn, "__name__", p_rep.target_name)
         fresh_scenarios = self.generate_break_scenarios(target_name=target_name)
 
-        # Filter to previously broken scenarios
-        scenarios_to_rerun: list[BreakScenario] = [
-            s for s in fresh_scenarios if s.scenario_id in broken_ids or any(bid.endswith(s.scenario_id) for bid in broken_ids)
-        ]
+        # A sealing receipt must cover all five vectors, not only prior failures.
+        scenarios_to_rerun: list[BreakScenario] = list(fresh_scenarios)
 
         # If some broken IDs were custom or not in standard generator, reconstitute them from findings
         matched_ids = {s.scenario_id for s in scenarios_to_rerun}
@@ -837,15 +902,13 @@ class RedTeamSwarm:
             scenarios_to_rerun.extend(additional_scenarios)
 
         # If no scenarios were previously broken and no additional, rerun all fresh scenarios as sanity check
-        if not scenarios_to_rerun:
-            scenarios_to_rerun = fresh_scenarios
-
         new_report = self.execute_swarm_attack(
             target_callable=callable_fn,
             scenarios=scenarios_to_rerun,
             timeout_seconds=timeout_seconds,
             target_name=p_rep.target_name,
         )
+        self.attest_report(new_report, reviewed_change_set)
 
         all_fixed = new_report.passed
         if auto_consolidate and all_fixed and self.plasticity_engine is not None:
@@ -875,6 +938,7 @@ class RedTeamSwarm:
         target_name: str = "system",
         custom_hypotheses: Optional[list[str]] = None,
         auto_consolidate: bool = True,
+        reviewed_change_set: str = "",
     ) -> RedTeamBreakageReport:
         """Generates scenarios, executes swarm attack, and compiles the breakage report."""
         callable_fn = self._resolve_callable(target_callable)
@@ -889,6 +953,7 @@ class RedTeamSwarm:
             scenarios=scenarios,
             target_name=effective_name,
         )
+        self.attest_report(report, reviewed_change_set)
         if auto_consolidate and self.plasticity_engine is not None:
             if not report.passed:
                 self.plasticity_engine.consolidate_task(

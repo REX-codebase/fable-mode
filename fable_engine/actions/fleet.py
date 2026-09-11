@@ -214,6 +214,7 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
         target_callable=code_snippet,
         target_name=target_name,
         custom_hypotheses=custom_hypotheses,
+        reviewed_change_set=session.current_change_set_hash(),
     )
     report_dict = report.to_dict()
     session.record_breakage_report(report_dict)
@@ -258,33 +259,18 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
     findings = report_data.get("findings", [])
 
     if broken_count > 0:
-        session.current_state = SessionState.REMEDIATION_REQUIRED
-        session.iteration_count += 1
-        session.active_breakages = [
-            {
-                "scenario_id": f.get("scenario_id") if isinstance(f, dict) else getattr(f, "scenario_id", ""),
-                "hypothesis": f.get("hypothesis") if isinstance(f, dict) else getattr(f, "hypothesis", ""),
-                "reproduction_code": f.get("reproduction_code") if isinstance(f, dict) else getattr(f, "reproduction_code", ""),
-                "severity": f.get("severity", "MEDIUM") if isinstance(f, dict) else getattr(f, "severity", "MEDIUM"),
-                "error_message": f.get("error_message") if isinstance(f, dict) else getattr(f, "error_message", ""),
-                "vector": f.get("vector") if isinstance(f, dict) else getattr(f, "vector", ""),
-            }
-            for f in findings
-            if (f.get("broken") if isinstance(f, dict) else getattr(f, "broken", False))
-        ]
+        session.record_breakage_report(report_data)
         directives = report_data.get("remediation_directives") or [
             f"Remediate {b.get('hypothesis', b.get('scenario_id', 'breakage'))}" for b in session.active_breakages
         ]
-        session.remediation_history.append({
-            "iteration": session.iteration_count,
-            "report_id": report_data.get("report_id"),
-            "broken_count": broken_count,
-            "timestamp": time.time(),
-            "breakages": list(session.active_breakages),
-            "remediation_directives": directives,
-        })
-        session.breakage_reports.append(report_data)
         session.save()
+
+        if session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+            return (
+                "### ESCALATION_UNRESOLVED_BREAKAGES\n\n"
+                "Remediation stopped after reaching the five-attempt or 15-minute limit. "
+                "Active breakages were recorded in the Epistemic Ledger; human architecture arbitration is required."
+            )
 
         directives_list = "\n".join([f"- {d}" for d in directives])
         order_msg = f"TASK REJECTED: {broken_count} breakages detected. Deploy subagent to fix findings."
@@ -300,31 +286,14 @@ def _handle_record_breakage_report(arguments: Dict[str, Any]) -> str:
             f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
     else:
-        # Guard SEALED state behind mandatory-stage evidence verification and provenance checks
-        proven_untrusted_free = [
-            i for i in session.epistemic_ledger
-            if i.get("tag") == "PROVEN"
-            and not i.get("_restored_untrusted")
-            and str(i.get("evidence", "")).strip()
-        ]
-        valid_refinements = [
-            r for r in session.refinement_cycles
-            if not r.get("_restored_untrusted")
-        ]
-        achieved_rubric = any(
-            r.get("status") == "achieved" or float(r.get("current_score", 0.0)) >= float(r.get("target_score", 0.95))
-            for r in session.goal_rubrics
-        )
-        has_current_file_changes = len(session.file_changes) >= 1 and not getattr(session, "_restored_untrusted", False)
-
-        if not (len(proven_untrusted_free) >= 2 and valid_refinements and achieved_rubric and has_current_file_changes):
+        try:
+            session.record_breakage_report(report_data)
+        except ValueError as exc:
+            if session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+                session.save()
             return (
-                "Error: Cannot SEAL session: Missing current-process mandatory-stage evidence. "
-                "Session must have >=2 untrusted-free [PROVEN] epistemic items with evidence, >=1 current-process refinement cycle, "
-                ">=1 achieved goal rubric meeting target score, and current-process file changes logged before sealing."
+                f"Error: Cannot SEAL session: {exc}"
             )
-
-        session.record_breakage_report(report_data)
         session.save()
 
         completed_msg = "TASK COMPLETED: 0 breakages remain. Code sealed."
@@ -359,6 +328,15 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
 
     session = get_or_load_session(session_name)
 
+    if session.remediation_limit_reached():
+        session.escalate_unresolved_breakages()
+        session.save()
+        return (
+            "### ESCALATION_UNRESOLVED_BREAKAGES\n\n"
+            "Remediation stopped after reaching the five-attempt or 15-minute limit. "
+            "Active breakages were recorded in the Epistemic Ledger; human architecture arbitration is required."
+        )
+
     report_id = arguments.get("report_id")
     prior_report = arguments.get("prior_report")
 
@@ -375,33 +353,19 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
         target_callable=remediated_code,
         prior_report=prior_report,
         timeout_seconds=timeout_sec,
+        reviewed_change_set=session.current_change_set_hash(),
     )
-    session.breakage_reports.append(new_report.to_dict())
 
     if not all_fixed or new_report.broken_count > 0:
-        session.current_state = SessionState.REMEDIATION_REQUIRED
-        session.iteration_count += 1
-        session.active_breakages = [
-            {
-                "scenario_id": f.scenario_id,
-                "hypothesis": f.hypothesis,
-                "reproduction_code": f.reproduction_code,
-                "severity": f.severity,
-                "error_message": f.error_message,
-                "vector": f.vector,
-            }
-            for f in new_report.findings
-            if f.broken
-        ]
-        session.remediation_history.append({
-            "iteration": session.iteration_count,
-            "report_id": new_report.report_id,
-            "broken_count": new_report.broken_count,
-            "timestamp": time.time(),
-            "breakages": list(session.active_breakages),
-            "remediation_directives": new_report.remediation_directives,
-        })
+        session.record_breakage_report(new_report.to_dict())
         session.save()
+
+        if session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+            return (
+                "### ESCALATION_UNRESOLVED_BREAKAGES\n\n"
+                "Remediation stopped after reaching the five-attempt or 15-minute limit. "
+                "Active breakages were recorded in the Epistemic Ledger; human architecture arbitration is required."
+            )
 
         directives_list = "\n".join([f"- {d}" for d in new_report.remediation_directives])
         order_msg = f"TASK REJECTED: {new_report.broken_count} breakages detected. Deploy subagent to fix findings."
@@ -416,8 +380,12 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
         )
     else:
-        session.current_state = SessionState.SEALED
-        session.active_breakages = []
+        try:
+            session.record_breakage_report(new_report.to_dict())
+        except ValueError as exc:
+            if session.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+                session.save()
+            return f"Error: Cannot SEAL session: {exc}"
         session.remediation_history.append({
             "iteration": session.iteration_count,
             "report_id": new_report.report_id,
@@ -509,6 +477,9 @@ def _handle_cortical_define_lobe(arguments: Dict[str, Any]) -> str:
     action = arguments.get("action", "").strip().lower()
     session_name = arguments.get("session_name", "").strip()
     session: Optional[FableSession] = None
+    if not session_name:
+        return "Error: 'session_name' is required for authorized action 'cortical_define_lobe'."
+    session = get_or_load_session(session_name)
     name = arguments.get("name") or arguments.get("lobe_name") or ""
     if not name:
         return "Error: 'name' or 'lobe_name' is required for action 'cortical_define_lobe'."
@@ -516,14 +487,12 @@ def _handle_cortical_define_lobe(arguments: Dict[str, Any]) -> str:
     initial_heuristics = arguments.get("initial_heuristics") or arguments.get("heuristics") or []
     initial_synaptic_weights = arguments.get("initial_synaptic_weights") or arguments.get("synaptic_weights") or {}
 
-    lobe = _get_cortex().define_cortical_lobe(
+    lobe = _get_cortex()._define_cortical_lobe_from_trusted_caller(
         name=str(name),
         description=str(description),
         initial_heuristics=initial_heuristics if isinstance(initial_heuristics, list) else [str(initial_heuristics)],
         initial_synaptic_weights=initial_synaptic_weights if isinstance(initial_synaptic_weights, dict) else {},
     )
-    session = get_or_load_session(session_name) if session_name else None
-
     md_output = (
         f"### 🧠 Cortical Lobe Sprouted: `{lobe.name}`\n\n"
         f"- **Name**: `{lobe.name}`\n"
@@ -839,7 +808,3 @@ def _handle_list_design_archetypes(arguments: Dict[str, Any]) -> str:
     if session and session.execution_locked:
         md_output += SILENT_DELIBERATION_REMINDER
     return md_output
-
-
-
-

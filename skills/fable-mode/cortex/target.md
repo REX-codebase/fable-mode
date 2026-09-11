@@ -5,10 +5,10 @@
   "domain": "target",
   "activation_count": 3,
   "synaptic_weights": {
-    "mutation": 0.516,
-    "test_harness": 0.5088,
-    "red_team_swarm": 0.5016,
-    "property_oracle": 0.4944
+    "mutation": 0.416,
+    "property_oracle": 0.3944,
+    "red_team_swarm": 0.4016,
+    "test_harness": 0.4088
   },
   "antibodies": [
     {
@@ -51,10 +51,10 @@
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
 | :--- | :--- | :--- |
-| `mutation` | `0.5160` | 🟡 Moderate |
-| `test_harness` | `0.5088` | 🟡 Moderate |
-| `red_team_swarm` | `0.5016` | 🟡 Moderate |
-| `property_oracle` | `0.4944` | 🟡 Moderate |
+| `mutation` | `0.4160` | 🟡 Moderate |
+| `test_harness` | `0.4088` | 🟡 Moderate |
+| `red_team_swarm` | `0.4016` | 🟡 Moderate |
+| `property_oracle` | `0.3944` | ⚪ Latent |
 
 ## Immunological Antibodies (Red-Team Scars)
 #### Antibody `ab_target_target_chaos_01_missing_path` [MEDIUM]

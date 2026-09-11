@@ -325,6 +325,17 @@ class TestPingPongRemediationCycle(unittest.TestCase):
 
 
 class TestPublicActionHandlers(unittest.TestCase):
+    def setUp(self) -> None:
+        from fable_engine.session import get_red_team_swarm
+        self._cortex_temp = tempfile.TemporaryDirectory()
+        self._swarm = get_red_team_swarm()
+        self._original_plasticity_engine = self._swarm.plasticity_engine
+        self._swarm.plasticity_engine = HebbianPlasticityEngine(self._cortex_temp.name)
+
+    def tearDown(self) -> None:
+        self._swarm.plasticity_engine = self._original_plasticity_engine
+        self._cortex_temp.cleanup()
+
     def test_handle_red_team_code_review_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review
         from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
@@ -438,7 +449,7 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
-        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0}])
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0, "verifier_command": "pytest"}])
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
@@ -478,7 +489,13 @@ class TestPublicActionHandlers(unittest.TestCase):
         session.set_timer(5.0)
         session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
         session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
-        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0}])
+        session.set_goal_rubric("Test Rubric", [{"pointer_id": "P1", "description": "Check 1", "satisfied": True, "score": 1.0, "verifier_command": "pytest"}])
+
+        with self.assertRaisesRegex(ValueError, "requires a verifier_command"):
+            session.set_goal_rubric(
+                "Unbound Rubric",
+                [{"pointer_id": "UNBOUND", "description": "No evidence", "satisfied": True, "score": 1.0}],
+            )
         session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
@@ -510,6 +527,57 @@ class TestPublicActionHandlers(unittest.TestCase):
             })
             self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
             self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_unbound_satisfied_criterion_cannot_seal_remediation(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
+
+        session_name = f"test_unbound_rubric_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name, "Reject unbound rubric", 5.0)
+        session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence 1", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence 2", evidence="README.md:L5")
+        session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
+        session.goal_rubrics.append({
+            "rubric_id": "tampered_unbound",
+            "target_score": 0.95,
+            "current_score": 1.0,
+            "status": "achieved",
+            "items": [{"pointer_id": "P1", "satisfied": True, "score": 1.0}],
+        })
+        session.execution_locked = False
+        session.can_execute_code = True
+        session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "created", "Added implementation")
+        session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
+        session.active_breakages = [{"scenario_id": "prior", "hypothesis": "prior failure"}]
+        ACTIVE_SESSIONS[session_name] = session
+
+        try:
+            response = _handle_verify_red_team_remediation({
+                "action": "verify_red_team_remediation",
+                "session_name": session_name,
+                "remediated_code": lambda value=None: "ok",
+                "prior_report": {
+                    "report_id": "prior",
+                    "target_name": "target",
+                    "broken_count": 1,
+                    "findings": [{
+                        "scenario_id": "prior",
+                        "vector": "chaos_environment",
+                        "hypothesis": "prior failure",
+                        "broken": True,
+                    }],
+                },
+            })
+            self.assertIn("Error: Cannot SEAL session", response)
+            self.assertNotEqual(session.current_state, SessionState.SEALED)
+            self.assertEqual(session.active_breakages[0]["scenario_id"], "prior")
         finally:
             ACTIVE_SESSIONS.pop(session_name, None)
             if session_file.exists():
