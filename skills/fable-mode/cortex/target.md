@@ -3,12 +3,12 @@
   "name": "target",
   "description": "Custom cortical lobe for target development and specialized heuristics",
   "domain": "target",
-  "activation_count": 4,
+  "activation_count": 5,
   "synaptic_weights": {
-    "mutation": 0.588,
-    "test_harness": 0.5784,
-    "red_team_swarm": 0.5688,
-    "property_oracle": 0.5592
+    "mutation": 0.66,
+    "test_harness": 0.648,
+    "red_team_swarm": 0.636,
+    "property_oracle": 0.624
   },
   "antibodies": [
     {
@@ -34,13 +34,13 @@
 
 > [!NOTE]
 > Custom cortical lobe for target development and specialized heuristics
-> Activation count: 4.
+> Activation count: 5.
 
 ## Metadata & Telemetry
 - **Name**: `target`
 - **Description**: Custom cortical lobe for target development and specialized heuristics
 - **Domain**: `target`
-- **Activation Count**: `4`
+- **Activation Count**: `5`
 - **Total Antibodies**: `1`
 - **Specialized Heuristics**: `1`
 - **Last Consolidated**: `2026-09-11T11:59:41.070531+00:00`
@@ -51,10 +51,10 @@
 ## Synaptic Tool & Node Weights (Hebbian Association)
 | Synaptic Node / Tool | Weight ($W_{ij}$) | Strength |
 | :--- | :--- | :--- |
-| `mutation` | `0.5880` | 🟡 Moderate |
-| `test_harness` | `0.5784` | 🟡 Moderate |
-| `red_team_swarm` | `0.5688` | 🟡 Moderate |
-| `property_oracle` | `0.5592` | 🟡 Moderate |
+| `mutation` | `0.6600` | 🟡 Moderate |
+| `test_harness` | `0.6480` | 🟡 Moderate |
+| `red_team_swarm` | `0.6360` | 🟡 Moderate |
+| `property_oracle` | `0.6240` | 🟡 Moderate |
 
 ## Immunological Antibodies (Red-Team Scars)
 #### Antibody `ab_target_target_chaos_01_missing_path` [MEDIUM]
