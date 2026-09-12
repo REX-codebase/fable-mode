@@ -292,8 +292,12 @@ def main():
             elif tool_name.startswith("browser_"):
                 try:
                     sid = arguments.get("session_id")
-                    session = GLOBAL_BROWSER_ENGINE.get_or_create_session(sid)
                     res: Any = None
+
+                    if tool_name == "browser_close":
+                        res = GLOBAL_BROWSER_ENGINE.close_session(sid)
+                    else:
+                        session = GLOBAL_BROWSER_ENGINE.get_or_create_session(sid)
 
                     if tool_name in ("browser_open", "browser_navigate"):
                         url = str(arguments.get("url", ""))
@@ -313,9 +317,9 @@ def main():
                         max_l = int(arguments.get("max_layers", 3))
                         res = session.snapshot_layers(max_layers=max_l)
                     elif tool_name == "browser_screenshot":
-                        res = session.snapshot_layers(max_layers=1)
+                        res = session.snapshot_viewport()
                     elif tool_name == "browser_close":
-                        res = GLOBAL_BROWSER_ENGINE.close_session(sid)
+                        pass
                     elif tool_name == "browser_back":
                         res = session.back()
                     elif tool_name == "browser_forward":
@@ -325,8 +329,9 @@ def main():
                     elif tool_name == "browser_wait":
                         sec = float(arguments.get("seconds", 1.0))
                         import time
-                        time.sleep(min(max(sec, 0), 10))
-                        res = {"status": "waited", "seconds": sec}
+                        bounded_sec = min(max(sec, 0), 10)
+                        time.sleep(bounded_sec)
+                        res = {"status": "waited", "seconds": bounded_sec}
                     elif tool_name == "browser_press":
                         key = str(arguments.get("key", ""))
                         elem_id = arguments.get("element_id")

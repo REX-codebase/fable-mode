@@ -614,7 +614,7 @@ BROWSER_TOOL_SCHEMAS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "max_layers": {"type": "integer", "description": "Maximum number of screen-sized viewport layers to capture (default 3)."},
+                "max_layers": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum number of screen-sized viewport layers to capture (default 3)."},
                 "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
             }
         }
@@ -665,7 +665,7 @@ BROWSER_TOOL_SCHEMAS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "seconds": {"type": "number", "description": "Seconds to wait."},
+                "seconds": {"type": "number", "minimum": 0, "maximum": 10, "description": "Seconds to wait."},
                 "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
             },
             "required": ["seconds"]

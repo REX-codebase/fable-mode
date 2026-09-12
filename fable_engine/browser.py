@@ -8,6 +8,7 @@ element indexing, navigation, and layered PNG screenshot generation.
 from __future__ import annotations
 
 import base64
+import http.cookiejar
 import html
 from html.parser import HTMLParser
 import json
@@ -17,6 +18,7 @@ import pathlib
 import re
 import struct
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -28,6 +30,9 @@ logger = logging.getLogger("fable-engine.browser")
 DEFAULT_PROFILE_DIR = pathlib.Path.home() / ".fable" / "browser-profile"
 DEFAULT_VIEWPORT_WIDTH = 1280
 DEFAULT_VIEWPORT_HEIGHT = 800
+DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+MAX_SCREENSHOT_LAYERS = 10
+MAX_BROWSER_SESSIONS = 32
 
 
 class DOMElement:
@@ -71,11 +76,18 @@ class SimpleDOMParser(HTMLParser):
         self.root = DOMElement("elem_0", "root", {})
         self.stack: List[DOMElement] = [self.root]
         self.counter = 1
+        self.assigned_ids = {self.root.element_id}
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
         attr_dict = {k: (v or "") for k, v in attrs}
-        elem_id = attr_dict.get("id") or f"elem_{self.counter}"
+        base_id = attr_dict.get("id") or f"elem_{self.counter}"
         self.counter += 1
+        elem_id = base_id
+        suffix = 2
+        while elem_id in self.assigned_ids:
+            elem_id = f"{base_id}_{suffix}"
+            suffix += 1
+        self.assigned_ids.add(elem_id)
         elem = DOMElement(elem_id, tag, attr_dict)
         elem.parent = self.stack[-1]
         self.stack[-1].children.append(elem)
@@ -174,23 +186,33 @@ class ProfileManager:
             self.profile_dir = DEFAULT_PROFILE_DIR
         else:
             self.profile_dir = pathlib.Path(profile_dir)
-        self.profile_dir.mkdir(parents=True, exist_ok=True)
-        self.cookie_file = self.profile_dir / "cookies.json"
+        self.profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.profile_dir.chmod(0o700)
+        self.cookie_file = self.profile_dir / "cookies.txt"
         self.storage_file = self.profile_dir / "local_storage.json"
-        self.cookies: Dict[str, str] = {}
+        self.cookies = http.cookiejar.MozillaCookieJar(str(self.cookie_file))
         self.local_storage: Dict[str, Any] = {}
         self._load()
+
+    @staticmethod
+    def _ensure_private_file(path: pathlib.Path) -> None:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
 
     def _load(self):
         if self.cookie_file.exists():
             try:
-                with open(self.cookie_file, "r", encoding="utf-8") as f:
-                    self.cookies = json.load(f)
+                self.cookie_file.chmod(0o600)
+                self.cookies.load(ignore_discard=True, ignore_expires=True)
             except Exception as e:
                 logger.warning(f"Could not load cookies from {self.cookie_file}: {e}")
-                self.cookies = {}
+                self.cookies.clear()
         if self.storage_file.exists():
             try:
+                self.storage_file.chmod(0o600)
                 with open(self.storage_file, "r", encoding="utf-8") as f:
                     self.local_storage = json.load(f)
             except Exception as e:
@@ -199,23 +221,15 @@ class ProfileManager:
 
     def save(self):
         try:
-            with open(self.cookie_file, "w", encoding="utf-8") as f:
-                json.dump(self.cookies, f, indent=2)
-            with open(self.storage_file, "w", encoding="utf-8") as f:
+            self._ensure_private_file(self.cookie_file)
+            self.cookies.save(ignore_discard=True, ignore_expires=True)
+            self.cookie_file.chmod(0o600)
+            storage_fd = os.open(self.storage_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.fchmod(storage_fd, 0o600)
+            with os.fdopen(storage_fd, "w", encoding="utf-8") as f:
                 json.dump(self.local_storage, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save profile state: {e}")
-
-    def get_cookie_header(self) -> str:
-        return "; ".join(f"{k}={v}" for k, v in self.cookies.items())
-
-    def update_cookies_from_headers(self, headers: List[Tuple[str, str]]):
-        for key, val in headers:
-            if key.lower() == "set-cookie":
-                parts = val.split(";")[0].split("=", 1)
-                if len(parts) == 2:
-                    self.cookies[parts[0].strip()] = parts[1].strip()
-        self.save()
 
 
 class StealthBrowserSession:
@@ -230,11 +244,16 @@ class StealthBrowserSession:
         profile_manager: ProfileManager,
         viewport_width: int = DEFAULT_VIEWPORT_WIDTH,
         viewport_height: int = DEFAULT_VIEWPORT_HEIGHT,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ):
         self.session_id = session_id
         self.profile_manager = profile_manager
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
+        self.max_response_bytes = max(1, int(max_response_bytes))
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.profile_manager.cookies)
+        )
         self.url = "about:blank"
         self.history: List[str] = []
         self.history_index = -1
@@ -245,7 +264,13 @@ class StealthBrowserSession:
         self.page_title = ""
         self.page_html = ""
 
-    def open(self, url: str, timeout: float = 15.0) -> Dict[str, Any]:
+    def open(
+        self,
+        url: str,
+        timeout: float = 15.0,
+        *,
+        record_history: bool = True,
+    ) -> Dict[str, Any]:
         """Opens a URL (including localhost) using urllib with persistent cookies and standard headers."""
         if not url.startswith("http://") and not url.startswith("https://") and not url.startswith("about:"):
             url = "http://" + url
@@ -255,7 +280,8 @@ class StealthBrowserSession:
             self.page_title = "Blank Page"
             self.page_html = "<html><head><title>Blank Page</title></head><body><h1>Blank Page</h1></body></html>"
             self._parse_and_layout()
-            self._record_history(url)
+            if record_history:
+                self._record_history(url)
             return self._build_status()
 
         req = urllib.request.Request(url)
@@ -263,18 +289,21 @@ class StealthBrowserSession:
         req.add_header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         req.add_header("Accept-Language", "en-US,en;q=0.9")
 
-        cookie_str = self.profile_manager.get_cookie_header()
-        if cookie_str:
-            req.add_header("Cookie", cookie_str)
-
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                headers = resp.getheaders()
-                self.profile_manager.update_cookies_from_headers(headers)
-                body = resp.read().decode("utf-8", errors="replace")
+            with self.opener.open(req, timeout=timeout) as resp:
+                body_bytes = resp.read(self.max_response_bytes + 1)
+                self.profile_manager.save()
+                if len(body_bytes) > self.max_response_bytes:
+                    return {
+                        "status": "error",
+                        "error": f"Response body exceeds {self.max_response_bytes} byte limit",
+                        "url": url,
+                    }
+                body = body_bytes.decode("utf-8", errors="replace")
                 self.url = resp.geturl()
                 self.page_html = body
-                self._record_history(self.url)
+                if record_history:
+                    self._record_history(self.url)
                 self._parse_and_layout()
                 return self._build_status()
         except Exception as e:
@@ -294,13 +323,13 @@ class StealthBrowserSession:
     def back(self) -> Dict[str, Any]:
         if self.history_index > 0:
             self.history_index -= 1
-            return self.open(self.history[self.history_index])
+            return self.open(self.history[self.history_index], record_history=False)
         return self._build_status()
 
     def forward(self) -> Dict[str, Any]:
         if self.history_index < len(self.history) - 1:
             self.history_index += 1
-            return self.open(self.history[self.history_index])
+            return self.open(self.history[self.history_index], record_history=False)
         return self._build_status()
 
     def reload(self) -> Dict[str, Any]:
@@ -353,10 +382,14 @@ class StealthBrowserSession:
         if not elem:
             return {"error": f"Element '{element_id}' not found"}
         href = elem.attrs.get("href")
-        if href:
+        if href is not None:
             target_url = urllib.parse.urljoin(self.url, href)
             return self.open(target_url)
-        return {"status": "clicked", "element_id": element_id}
+        return {
+            "status": "error",
+            "error": f"Click is unsupported for <{elem.tag}> elements without a link target",
+            "element_id": element_id,
+        }
 
     def type_text(self, element_id: str, text: str) -> Dict[str, Any]:
         elem = self.elements_by_id.get(element_id)
@@ -366,17 +399,31 @@ class StealthBrowserSession:
         return {"status": "typed", "element_id": element_id, "text": text}
 
     def press_key(self, key: str, element_id: Optional[str] = None) -> Dict[str, Any]:
-        return {"status": "key_pressed", "key": key, "element_id": element_id}
+        return {
+            "status": "error",
+            "error": f"Key press '{key}' is unsupported by the lightweight browser engine",
+            "key": key,
+            "element_id": element_id,
+        }
 
     def snapshot_layers(self, max_layers: int = 3) -> Dict[str, Any]:
         """Captures N viewport-sized sequential screenshots (1 layer = 1 viewport height)."""
+        requested_layers = min(max(1, max_layers), MAX_SCREENSHOT_LAYERS)
+        document_layers = (self.document_height + self.viewport_height - 1) // self.viewport_height
+        total_layers = max(1, min(requested_layers, document_layers))
+
+        return self._capture_layers(total_layers, start_top=0)
+
+    def snapshot_viewport(self) -> Dict[str, Any]:
+        """Captures one viewport at the session's current scroll offset."""
+        return self._capture_layers(1, start_top=self.scroll_y)
+
+    def _capture_layers(self, total_layers: int, start_top: int) -> Dict[str, Any]:
         layers = []
         all_elements = list(self.elements_by_id.values())
 
-        total_layers = max(1, min(max_layers, (self.document_height + self.viewport_height - 1) // self.viewport_height))
-
         for layer_idx in range(total_layers):
-            layer_top = layer_idx * self.viewport_height
+            layer_top = start_top + layer_idx * self.viewport_height
 
             visible_elements = [
                 e for e in all_elements
@@ -430,14 +477,22 @@ class StealthBrowserSession:
 class StealthBrowserEngine:
     """Master Stealth Browser Manager managing active tab sessions and profiles."""
 
-    def __init__(self, profile_dir: Optional[pathlib.Path] = None):
+    def __init__(
+        self,
+        profile_dir: Optional[pathlib.Path] = None,
+        max_sessions: int = MAX_BROWSER_SESSIONS,
+    ):
         self.profile_manager = ProfileManager(profile_dir)
         self.sessions: Dict[str, StealthBrowserSession] = {}
         self.active_session_id: Optional[str] = None
+        self.max_sessions = max(1, min(int(max_sessions), MAX_BROWSER_SESSIONS))
 
     def get_or_create_session(self, session_id: Optional[str] = None) -> StealthBrowserSession:
         sid = session_id or self.active_session_id or "default_session"
         if sid not in self.sessions:
+            if len(self.sessions) >= self.max_sessions:
+                oldest_sid = next(iter(self.sessions))
+                self.close_session(oldest_sid)
             self.sessions[sid] = StealthBrowserSession(sid, self.profile_manager)
         self.active_session_id = sid
         return self.sessions[sid]
@@ -452,4 +507,30 @@ class StealthBrowserEngine:
         return {"status": "not_found", "session_id": sid}
 
 
-GLOBAL_BROWSER_ENGINE = StealthBrowserEngine()
+class _LazyBrowserEngine:
+    """Compatibility proxy that defers profile creation until first use."""
+
+    def __init__(self):
+        self._engine: Optional[StealthBrowserEngine] = None
+        self._lock = threading.Lock()
+
+    def _get(self) -> StealthBrowserEngine:
+        if self._engine is None:
+            with self._lock:
+                if self._engine is None:
+                    self._engine = StealthBrowserEngine()
+        return self._engine
+
+    def get_or_create_session(self, session_id: Optional[str] = None) -> StealthBrowserSession:
+        return self._get().get_or_create_session(session_id)
+
+    def close_session(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        if self._engine is None:
+            return {"status": "not_found", "session_id": session_id}
+        return self._engine.close_session(session_id)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get(), name)
+
+
+GLOBAL_BROWSER_ENGINE = _LazyBrowserEngine()
