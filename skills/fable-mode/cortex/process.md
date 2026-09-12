@@ -18,7 +18,7 @@
       "lethal_anti_pattern": "MemoryError",
       "prescribed_defense": "Enforce strict precondition verification and atomic isolation.",
       "severity": "MEDIUM",
-      "source_task_id": "",
+      "source_task_id": "rep_prior_01",
       "created_at": "2026-09-05T14:30:09.812375+00:00",
       "verified_counterfactual": "Counterfactual validation against vector: byzantine_payload"
     }
@@ -63,4 +63,4 @@
 - **Lethal Anti-Pattern**: MemoryError
 - **Prescribed Defense**: Enforce strict precondition verification and atomic isolation.
 - **Verified Counterfactual**: `Counterfactual validation against vector: byzantine_payload`
-
+- **Source Task ID**: `rep_prior_01`

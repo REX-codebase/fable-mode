@@ -22,7 +22,7 @@
       "lethal_anti_pattern": "scene.remove(mesh); # Leaves GPU buffers and VRAM allocations leaked indefinitely",
       "prescribed_defense": "Implement recursive traversal disposing mesh.geometry.dispose(), material.dispose(), and texture.dispose() before nullifying references.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_threejs_vram_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "WebGL renderer memory tracker confirmed 0 active geometries/textures after teardown"
     },
@@ -33,7 +33,7 @@
       "lethal_anti_pattern": "function animate() { const pos = new THREE.Vector3(); mesh.position.copy(pos); }",
       "prescribed_defense": "Pre-allocate scratch variables in file/class closure scope outside animate loop.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_webgl_fps_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Frame profiler confirmed zero GC pause pauses > 1.2ms over 60 seconds"
     },
@@ -44,7 +44,7 @@
       "lethal_anti_pattern": "<canvas id='webgl'></canvas> with dynamic JS resize causing Cumulative Layout Shift (CLS > 0.25)",
       "prescribed_defense": "Wrap in fixed aspect-ratio container with CSS contain: strict and pre-sized dimensions.",
       "severity": "MEDIUM",
-      "source_task_id": "",
+      "source_task_id": "task_web_vitals_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Lighthouse audit confirmed CLS = 0.00 across mobile and desktop viewports"
     },
@@ -55,7 +55,7 @@
       "lethal_anti_pattern": "const mat = new THREE.MeshStandardMaterial(); const cam = new THREE.PerspectiveCamera(); // cam at 0,0,0 with no lights",
       "prescribed_defense": "Enforce mandatory baseline AmbientLight(0.6) + DirectionalLight(1.8) and place camera outside bounding volume.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_threejs_grounding_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Scene luminance probe confirmed non-zero RGB pixel readings and visible meshes across viewports"
     },
@@ -66,7 +66,7 @@
       "lethal_anti_pattern": "const renderer = new WebGPURenderer(); const composer = new EffectComposer(renderer);",
       "prescribed_defense": "Use WebGLRenderer with EffectComposer; use WebGPURenderer (awaited .init()) with PostProcessing from 'three/webgpu'. Never cross backends.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_threejs_backend_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Zero TypeError getContext crashes in node-based postprocessing and webgl tests"
     },
@@ -77,7 +77,7 @@
       "lethal_anti_pattern": "useFrame(() => { setRotation(r => r + 0.01); });",
       "prescribed_defense": "Mutate object ref directly: useFrame((_, delta) => { ref.current.rotation.y += delta; })",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_r3f_render_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "React render profiler verified 60 FPS locked with zero component re-renders during animation"
     },
@@ -88,7 +88,7 @@
       "lethal_anti_pattern": "normalTexture.colorSpace = THREE.SRGBColorSpace;",
       "prescribed_defense": "Diffuse maps MUST be THREE.SRGBColorSpace; normal/roughness/metalness/ao maps MUST be THREE.NoColorSpace.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_pbr_colorspace_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Visual difference analyzer confirmed accurate PBR reflectance and normal perturbation without gamma warping"
     },
@@ -99,7 +99,7 @@
       "lethal_anti_pattern": "const loop = new DeterministicGameLoop(updatePhysics, render); const composer = new EffectComposer(renderer); // Hypertrophic overkill for simple hero badge",
       "prescribed_defense": "Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple PBR, zero physics accumulators, no post-processing).",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_threejs_triage_audit",
       "created_at": "2026-09-05T12:00:00+00:00",
       "verified_counterfactual": "Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator overhead on ambient UI components"
     }
@@ -168,6 +168,7 @@
 - **Lethal Anti-Pattern**: scene.remove(mesh); # Leaves GPU buffers and VRAM allocations leaked indefinitely
 - **Prescribed Defense**: Implement recursive traversal disposing mesh.geometry.dispose(), material.dispose(), and texture.dispose() before nullifying references.
 - **Verified Counterfactual**: `WebGL renderer memory tracker confirmed 0 active geometries/textures after teardown`
+- **Source Task ID**: `task_threejs_vram_audit`
 
 #### Antibody `ab_design_animation_loop_gc_freeze` [HIGH]
 - **Domain**: `design_3d`
@@ -175,6 +176,7 @@
 - **Lethal Anti-Pattern**: function animate() { const pos = new THREE.Vector3(); mesh.position.copy(pos); }
 - **Prescribed Defense**: Pre-allocate scratch variables in file/class closure scope outside animate loop.
 - **Verified Counterfactual**: `Frame profiler confirmed zero GC pause pauses > 1.2ms over 60 seconds`
+- **Source Task ID**: `task_webgl_fps_audit`
 
 #### Antibody `ab_design_unconstrained_canvas_cls` [MEDIUM]
 - **Domain**: `design_3d`
@@ -182,6 +184,7 @@
 - **Lethal Anti-Pattern**: <canvas id='webgl'></canvas> with dynamic JS resize causing Cumulative Layout Shift (CLS > 0.25)
 - **Prescribed Defense**: Wrap in fixed aspect-ratio container with CSS contain: strict and pre-sized dimensions.
 - **Verified Counterfactual**: `Lighthouse audit confirmed CLS = 0.00 across mobile and desktop viewports`
+- **Source Task ID**: `task_web_vitals_audit`
 
 #### Antibody `ab_design_threejs_black_screen_void` [CRITICAL]
 - **Domain**: `design_3d`
@@ -189,6 +192,7 @@
 - **Lethal Anti-Pattern**: const mat = new THREE.MeshStandardMaterial(); const cam = new THREE.PerspectiveCamera(); // cam at 0,0,0 with no lights
 - **Prescribed Defense**: Enforce mandatory baseline AmbientLight(0.6) + DirectionalLight(1.8) and place camera outside bounding volume.
 - **Verified Counterfactual**: `Scene luminance probe confirmed non-zero RGB pixel readings and visible meshes across viewports`
+- **Source Task ID**: `task_threejs_grounding_audit`
 
 #### Antibody `ab_design_threejs_backend_composer_collision` [CRITICAL]
 - **Domain**: `design_3d`
@@ -196,6 +200,7 @@
 - **Lethal Anti-Pattern**: const renderer = new WebGPURenderer(); const composer = new EffectComposer(renderer);
 - **Prescribed Defense**: Use WebGLRenderer with EffectComposer; use WebGPURenderer (awaited .init()) with PostProcessing from 'three/webgpu'. Never cross backends.
 - **Verified Counterfactual**: `Zero TypeError getContext crashes in node-based postprocessing and webgl tests`
+- **Source Task ID**: `task_threejs_backend_audit`
 
 #### Antibody `ab_design_threejs_r3f_state_render_loop` [HIGH]
 - **Domain**: `design_3d`
@@ -203,6 +208,7 @@
 - **Lethal Anti-Pattern**: useFrame(() => { setRotation(r => r + 0.01); });
 - **Prescribed Defense**: Mutate object ref directly: useFrame((_, delta) => { ref.current.rotation.y += delta; })
 - **Verified Counterfactual**: `React render profiler verified 60 FPS locked with zero component re-renders during animation`
+- **Source Task ID**: `task_r3f_render_audit`
 
 #### Antibody `ab_design_threejs_texture_colorspace_distortion` [HIGH]
 - **Domain**: `design_3d`
@@ -210,6 +216,7 @@
 - **Lethal Anti-Pattern**: normalTexture.colorSpace = THREE.SRGBColorSpace;
 - **Prescribed Defense**: Diffuse maps MUST be THREE.SRGBColorSpace; normal/roughness/metalness/ao maps MUST be THREE.NoColorSpace.
 - **Verified Counterfactual**: `Visual difference analyzer confirmed accurate PBR reflectance and normal perturbation without gamma warping`
+- **Source Task ID**: `task_pbr_colorspace_audit`
 
 #### Antibody `ab_design_threejs_hypertrophic_overkill` [HIGH]
 - **Domain**: `design_3d`
@@ -217,4 +224,4 @@
 - **Lethal Anti-Pattern**: const loop = new DeterministicGameLoop(updatePhysics, render); const composer = new EffectComposer(renderer); // Hypertrophic overkill for simple hero badge
 - **Prescribed Defense**: Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple PBR, zero physics accumulators, no post-processing).
 - **Verified Counterfactual**: `Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator overhead on ambient UI components`
-
+- **Source Task ID**: `task_threejs_triage_audit`

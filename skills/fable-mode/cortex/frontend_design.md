@@ -22,7 +22,7 @@
       "lethal_anti_pattern": "<div class=\"absolute -top-40 right-0 h-96 w-96 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl opacity-30\"></div>",
       "prescribed_defense": "Eliminate generic purple blobs. Use a single curated OKLCH accent colorway anchored on a neutral base with inverse-square volumetric lighting.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_anti_slop_audit_01",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Visual difference probe verified zero purple gradient artifacts; clean monochromatic OKLCH substrate confirmed."
     },
@@ -33,7 +33,7 @@
       "lethal_anti_pattern": "<div class=\"grid grid-cols-1 md:grid-cols-3 gap-8 text-center\"><div class=\"p-6 rounded-xl shadow\"><h3>Feature 1</h3></div>...</div>",
       "prescribed_defense": "Enforce dynamic asymmetric Bento Grid layout with mixed cell spans (2x2 hero cell, 2x1 telemetry ribbon, 1x1 sandboxes) and contrasting visual surfaces.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_bento_layout_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Layout inspector confirmed asymmetric 50/50 split and 8/4 bento grid with zero identical centered cards."
     },
@@ -44,7 +44,7 @@
       "lethal_anti_pattern": "<body class=\"font-sans\"> # Default unstyled Inter without display hierarchy",
       "prescribed_defense": "Pair curated display typefaces (Geist Display, Satoshi, PP Editorial New, Cabinet Grotesk) with body sans and monospace telemetry. Apply golden-ratio fluid clamp scales.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_typography_craft_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "CSS AST analyzer verified explicit display and body font declarations with zero fallback font-sans crutches."
     },
@@ -55,7 +55,7 @@
       "lethal_anti_pattern": "<div class=\"flex gap-2\"><span class=\"w-3 h-3 rounded-full bg-red-500\"></span><span class=\"w-3 h-3 rounded-full bg-yellow-500\"></span><span class=\"w-3 h-3 rounded-full bg-green-500\"></span></div>",
       "prescribed_defense": "Prohibit fake div screenshot window bars. Render authentic interactive component sandboxes or real high-resolution imagery.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_materiality_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "DOM scanner verified complete absence of fake colored window dots; real telemetry widgets rendered."
     },
@@ -66,7 +66,7 @@
       "lethal_anti_pattern": "<h1>Supercharge your workflow with our next-gen AI platform</h1>",
       "prescribed_defense": "Replace marketing buzzwords with concrete, functional, measurable engineering copy ('Deterministic execution brokers delivering sub-60ms state transitions').",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_copywriting_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "AST copy auditor confirmed zero regex matches for banned LLM marketing marker phrases."
     },
@@ -77,7 +77,7 @@
       "lethal_anti_pattern": "<section class=\"h-screen w-full flex items-center justify-center\">",
       "prescribed_defense": "Strictly use min-h-[100dvh] with desktop top padding capped at pt-24 (6rem) for rock-solid mobile stability.",
       "severity": "MEDIUM",
-      "source_task_id": "",
+      "source_task_id": "task_viewport_fit_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Mobile emulator verified zero Cumulative Layout Shift (CLS = 0.00) during mobile URL bar collapse."
     },
@@ -88,7 +88,7 @@
       "lethal_anti_pattern": "// app/page.tsx (without use client)\\nimport { motion } from \"motion/react\";",
       "prescribed_defense": "Isolate interactive spring motion into dedicated client leaf components with 'use client' at the file top.",
       "severity": "HIGH",
-      "source_task_id": "",
+      "source_task_id": "task_rsc_motion_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Next.js build compilation confirmed zero SSR hydration crashes or React Server Component boundary errors."
     },
@@ -99,7 +99,7 @@
       "lethal_anti_pattern": "<p class=\"text-zinc-400 bg-zinc-100\">Subtext</p> # Contrast ratio 2.3:1 (fails WCAG AA)",
       "prescribed_defense": "Validate all text against APCA Lc >= 75 / WCAG AA >= 4.5:1 mathematical luminance before committing styles.",
       "severity": "CRITICAL",
-      "source_task_id": "",
+      "source_task_id": "task_wcag_contrast_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Color analyzer verified text-to-background contrast ratio >= 4.5:1 across all light and dark theme tokens."
     },
@@ -110,7 +110,7 @@
       "lethal_anti_pattern": "<span class=\"tracking-widest uppercase text-xs\">Section Eyebrow</span> on all 5 page sections",
       "prescribed_defense": "Restrain uppercase tracking eyebrows to at most 1 per 3 sections (Total <= ceil(N / 3)).",
       "severity": "MEDIUM",
-      "source_task_id": "",
+      "source_task_id": "task_eyebrow_restraint_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Static inspection verified eyebrow count <= ceil(section_count / 3) across all generated pages."
     },
@@ -121,7 +121,7 @@
       "lethal_anti_pattern": "<div class=\"grid grid-cols-3 gap-4\"><div>Card 1</div><div>Card 2</div>...</div>",
       "prescribed_defense": "Bento grids must have exactly as many cells as real content. At least 2-3 cells must feature contrasting treatments (interactive widget, dark container, live telemetry pill).",
       "severity": "MEDIUM",
-      "source_task_id": "",
+      "source_task_id": "task_bento_content_audit",
       "created_at": "2026-09-06T12:00:00+00:00",
       "verified_counterfactual": "Bento grid inspector verified mixed spans (2x2, 2x1, 1x1) with real functional telemetry in every cell."
     }
@@ -188,6 +188,7 @@
 - **Lethal Anti-Pattern**: <div class="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl opacity-30"></div>
 - **Prescribed Defense**: Eliminate generic purple blobs. Use a single curated OKLCH accent colorway anchored on a neutral base with inverse-square volumetric lighting.
 - **Verified Counterfactual**: `Visual difference probe verified zero purple gradient artifacts; clean monochromatic OKLCH substrate confirmed.`
+- **Source Task ID**: `task_anti_slop_audit_01`
 
 #### Antibody `ab_design_centered_three_card_cliche` [HIGH]
 - **Domain**: `frontend_design`
@@ -195,6 +196,7 @@
 - **Lethal Anti-Pattern**: <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center"><div class="p-6 rounded-xl shadow"><h3>Feature 1</h3></div>...</div>
 - **Prescribed Defense**: Enforce dynamic asymmetric Bento Grid layout with mixed cell spans (2x2 hero cell, 2x1 telemetry ribbon, 1x1 sandboxes) and contrasting visual surfaces.
 - **Verified Counterfactual**: `Layout inspector confirmed asymmetric 50/50 split and 8/4 bento grid with zero identical centered cards.`
+- **Source Task ID**: `task_bento_layout_audit`
 
 #### Antibody `ab_design_inter_font_crutch` [HIGH]
 - **Domain**: `frontend_design`
@@ -202,6 +204,7 @@
 - **Lethal Anti-Pattern**: <body class="font-sans"> # Default unstyled Inter without display hierarchy
 - **Prescribed Defense**: Pair curated display typefaces (Geist Display, Satoshi, PP Editorial New, Cabinet Grotesk) with body sans and monospace telemetry. Apply golden-ratio fluid clamp scales.
 - **Verified Counterfactual**: `CSS AST analyzer verified explicit display and body font declarations with zero fallback font-sans crutches.`
+- **Source Task ID**: `task_typography_craft_audit`
 
 #### Antibody `ab_design_div_screenshot_mockup` [CRITICAL]
 - **Domain**: `frontend_design`
@@ -209,6 +212,7 @@
 - **Lethal Anti-Pattern**: <div class="flex gap-2"><span class="w-3 h-3 rounded-full bg-red-500"></span><span class="w-3 h-3 rounded-full bg-yellow-500"></span><span class="w-3 h-3 rounded-full bg-green-500"></span></div>
 - **Prescribed Defense**: Prohibit fake div screenshot window bars. Render authentic interactive component sandboxes or real high-resolution imagery.
 - **Verified Counterfactual**: `DOM scanner verified complete absence of fake colored window dots; real telemetry widgets rendered.`
+- **Source Task ID**: `task_materiality_audit`
 
 #### Antibody `ab_design_llm_marketing_fluff` [HIGH]
 - **Domain**: `frontend_design`
@@ -216,6 +220,7 @@
 - **Lethal Anti-Pattern**: <h1>Supercharge your workflow with our next-gen AI platform</h1>
 - **Prescribed Defense**: Replace marketing buzzwords with concrete, functional, measurable engineering copy ('Deterministic execution brokers delivering sub-60ms state transitions').
 - **Verified Counterfactual**: `AST copy auditor confirmed zero regex matches for banned LLM marketing marker phrases.`
+- **Source Task ID**: `task_copywriting_audit`
 
 #### Antibody `ab_design_viewport_instability_h_screen` [MEDIUM]
 - **Domain**: `frontend_design`
@@ -223,6 +228,7 @@
 - **Lethal Anti-Pattern**: <section class="h-screen w-full flex items-center justify-center">
 - **Prescribed Defense**: Strictly use min-h-[100dvh] with desktop top padding capped at pt-24 (6rem) for rock-solid mobile stability.
 - **Verified Counterfactual**: `Mobile emulator verified zero Cumulative Layout Shift (CLS = 0.00) during mobile URL bar collapse.`
+- **Source Task ID**: `task_viewport_fit_audit`
 
 #### Antibody `ab_design_rsc_motion_leak` [HIGH]
 - **Domain**: `frontend_design`
@@ -230,6 +236,7 @@
 - **Lethal Anti-Pattern**: // app/page.tsx (without use client)\nimport { motion } from "motion/react";
 - **Prescribed Defense**: Isolate interactive spring motion into dedicated client leaf components with 'use client' at the file top.
 - **Verified Counterfactual**: `Next.js build compilation confirmed zero SSR hydration crashes or React Server Component boundary errors.`
+- **Source Task ID**: `task_rsc_motion_audit`
 
 #### Antibody `ab_design_contrast_sub_ratio_gray` [CRITICAL]
 - **Domain**: `frontend_design`
@@ -237,6 +244,7 @@
 - **Lethal Anti-Pattern**: <p class="text-zinc-400 bg-zinc-100">Subtext</p> # Contrast ratio 2.3:1 (fails WCAG AA)
 - **Prescribed Defense**: Validate all text against APCA Lc >= 75 / WCAG AA >= 4.5:1 mathematical luminance before committing styles.
 - **Verified Counterfactual**: `Color analyzer verified text-to-background contrast ratio >= 4.5:1 across all light and dark theme tokens.`
+- **Source Task ID**: `task_wcag_contrast_audit`
 
 #### Antibody `ab_design_eyebrow_overload` [MEDIUM]
 - **Domain**: `frontend_design`
@@ -244,6 +252,7 @@
 - **Lethal Anti-Pattern**: <span class="tracking-widest uppercase text-xs">Section Eyebrow</span> on all 5 page sections
 - **Prescribed Defense**: Restrain uppercase tracking eyebrows to at most 1 per 3 sections (Total <= ceil(N / 3)).
 - **Verified Counterfactual**: `Static inspection verified eyebrow count <= ceil(section_count / 3) across all generated pages.`
+- **Source Task ID**: `task_eyebrow_restraint_audit`
 
 #### Antibody `ab_design_bento_grid_hollow_padding` [MEDIUM]
 - **Domain**: `frontend_design`
@@ -251,3 +260,4 @@
 - **Lethal Anti-Pattern**: <div class="grid grid-cols-3 gap-4"><div>Card 1</div><div>Card 2</div>...</div>
 - **Prescribed Defense**: Bento grids must have exactly as many cells as real content. At least 2-3 cells must feature contrasting treatments (interactive widget, dark container, live telemetry pill).
 - **Verified Counterfactual**: `Bento grid inspector verified mixed spans (2x2, 2x1, 1x1) with real functional telemetry in every cell.`
+- **Source Task ID**: `task_bento_content_audit`

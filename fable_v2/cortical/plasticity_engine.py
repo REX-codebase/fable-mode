@@ -28,6 +28,10 @@ _ANTIBODY_FIELDS = frozenset({
     "verified_counterfactual",
 })
 MAX_ACTIVE_NODES = 128
+_PROMPT_CONTROL_PATTERN = re.compile(
+    r"<\s*(?:\|\s*)?/?\s*(?:system|im_start|im_end|instruct|prompt)\b[^>]*>",
+    re.IGNORECASE,
+)
 
 
 class CorticalDomain(str, Enum):
@@ -487,8 +491,8 @@ class HebbianPlasticityEngine:
     def sanitize_field(text: Any, max_len: int = 500) -> str:
         """Data-boundary sanitization against instruction-bearing or prompt-injection content."""
         clean = str(text or "").strip()
-        # Strip potential prompt injection markers and control overrides
-        clean = re.sub(r'<(?:system|im_start|im_end|instruct|prompt)[^>]*>', '', clean, flags=re.IGNORECASE)
+        if _PROMPT_CONTROL_PATTERN.search(clean):
+            return ""
         clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
         return clean[:max_len]
 
