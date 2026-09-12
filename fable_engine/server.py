@@ -68,7 +68,8 @@ from fable_engine.guards import (
     EpistemicEvidenceValidator,
     ModelVelocityProfiler,
 )
-from fable_engine.schema import TOOL_SCHEMA
+from fable_engine.browser import GLOBAL_BROWSER_ENGINE
+from fable_engine.schema import BROWSER_TOOL_SCHEMAS, TOOL_SCHEMA
 from fable_engine.session import (
     ACTIVE_SESSIONS,
     FORCE_UNLOCK_ENV,
@@ -245,7 +246,7 @@ def main():
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "tools": [TOOL_SCHEMA]
+                    "tools": [TOOL_SCHEMA] + BROWSER_TOOL_SCHEMAS
                 }
             })
 
@@ -283,6 +284,79 @@ def main():
                                 {
                                     "type": "text",
                                     "text": f"Fable Engine Error: {str(ex)}"
+                                }
+                            ],
+                            "isError": True
+                        }
+                    })
+            elif tool_name.startswith("browser_"):
+                try:
+                    sid = arguments.get("session_id")
+                    session = GLOBAL_BROWSER_ENGINE.get_or_create_session(sid)
+                    res: Any = None
+
+                    if tool_name in ("browser_open", "browser_navigate"):
+                        url = str(arguments.get("url", ""))
+                        timeout = float(arguments.get("timeout", 15.0))
+                        res = session.open(url, timeout=timeout)
+                    elif tool_name == "browser_click":
+                        elem_id = str(arguments.get("element_id", ""))
+                        res = session.click(elem_id)
+                    elif tool_name == "browser_type":
+                        elem_id = str(arguments.get("element_id", ""))
+                        txt = str(arguments.get("text", ""))
+                        res = session.type_text(elem_id, txt)
+                    elif tool_name == "browser_scroll":
+                        delta_y = int(arguments.get("delta_y", 0))
+                        res = session.scroll(delta_y)
+                    elif tool_name == "browser_snapshot_layers":
+                        max_l = int(arguments.get("max_layers", 3))
+                        res = session.snapshot_layers(max_layers=max_l)
+                    elif tool_name == "browser_screenshot":
+                        res = session.snapshot_layers(max_layers=1)
+                    elif tool_name == "browser_close":
+                        res = GLOBAL_BROWSER_ENGINE.close_session(sid)
+                    elif tool_name == "browser_back":
+                        res = session.back()
+                    elif tool_name == "browser_forward":
+                        res = session.forward()
+                    elif tool_name == "browser_reload":
+                        res = session.reload()
+                    elif tool_name == "browser_wait":
+                        sec = float(arguments.get("seconds", 1.0))
+                        import time
+                        time.sleep(min(max(sec, 0), 10))
+                        res = {"status": "waited", "seconds": sec}
+                    elif tool_name == "browser_press":
+                        key = str(arguments.get("key", ""))
+                        elem_id = arguments.get("element_id")
+                        res = session.press_key(key, elem_id)
+                    else:
+                        raise ValueError(f"Unknown browser tool action: {tool_name}")
+
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(res, indent=2)
+                                }
+                            ],
+                            "isError": False
+                        }
+                    })
+                except Exception as ex:
+                    logger.error(f"Error handling {tool_name}: {ex}", exc_info=True)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Stealth Browser Error: {str(ex)}"
                                 }
                             ],
                             "isError": True

@@ -49,6 +49,7 @@ class ExecutionBrokerTests(unittest.TestCase):
     def test_inspect_files_is_implemented_and_bounded(self):
         target = self.workspace / "input.txt"
         target.write_text("hello world", encoding="utf-8")
+        target.chmod(0o600)
         result = self.broker.handle({"action": "inspect_files", "path": "input.txt"})
         self.assertEqual(result["content"], "hello world")
         self.assertFalse(result["truncated"])
