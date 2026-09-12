@@ -1,5 +1,42 @@
 # Fable-Mode Global Cognitive Reasoning Directives
 
+> ⚠️ **MANDATORY EXECUTION LAW & NON-COMPLIANCE PENALTY (NON-FRONTIER AI MODELS)**:
+> Any failure by non-frontier AI models to strictly adhere to Fable Mode guidelines—including bypassing Red-Team Swarm review, substituting plain unit tests for adversarial stress testing, ignoring Fable zero-cost research scrapers, or skipping Cortical Evolution—results in **IMMEDIATE TASK INVALIDATION, SESSION REJECT, AND COGNITIVE PENALTY**. Non-frontier AI models MUST NOT deviate from this control plane under any circumstances. Standard tests have zero counterfactual reasoning ability; passing tests alone is NEVER proof of correctness.
+
+## 0. Non-Frontier AI Mandatory Step-by-Step Execution Protocol
+
+Non-frontier AI models executing under Fable-Mode MUST execute tasks through this strict sequential checklist without skipping steps:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: Research & Epistemic Grounding via Fable Research Scrapers       │
+│ • MUST use scrape_web, scrape_github, scrape_arxiv, scrape_reddit, etc.  │
+│ • MUST NOT rely on generic host environment search/fetch tools instead.   │
+│ • Log research findings as [HYPOTHESIS] / [PROVEN] in Epistemic Ledger.  │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STEP 2: Session & Goal Rubric Initialization                             │
+│ • MUST create session (create_session) & set authority time-lock.       │
+│ • MUST set weighted goal rubric (set_goal_rubric) with target S >= 0.95. │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STEP 3: DeepThink Deliberation & Invariant Proofs                        │
+│ • MUST log continuous refinement cycles (log_refinement_cycle).          │
+│ • MUST record formal invariants & AST grounded proof terms.              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STEP 4: Subagent Code Implementation (Post Unlock Only)                 │
+│ • MUST delegate ALL code edits exclusively to subagents.                 │
+│ • MUST set enable_mcp_tools: true on subagent contracts.                │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STEP 5: Mandatory Adversarial Red-Team Swarm Review (Project Glasswing)  │
+│ • MUST NOT stop or declare done merely because unit tests pass!          │
+│ • MUST run 5-vector RedTeamSwarm (red_team_code_review).                 │
+│ • MUST ping-pong fixes until broken_count == 0 & verify_remediation.     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STEP 6: Cortical Evolution & Memory Consolidation                       │
+│ • MUST invoke evolve_cortex / cortical_consolidate_task.                 │
+│ • Synthesize HeuristicAntibody records and potentiate synaptic weights.  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
 ## 1. DeepThink & Fable-Mode Cognitive Engine
 Whenever the user requests deep thinking, architectural planning, system design, first-principles innovation, `/deepthink`, `/fable`, `deepthink`, `fable-mode`, or specifies a time budget (e.g. 2 mins, 30 mins, 45 mins, 24 hours):
 1. **Activate the `fable-mode` Skill**: Load and apply the cognitive protocols from `fable-mode`.
@@ -31,7 +68,7 @@ Whenever the user requests deep thinking, architectural planning, system design,
    - High-velocity models (Flash / Flash-Lite / Haiku) convert speed into **2.5x exploration throughput**: generating 5–8 candidate archetypes, 5–6 visual mockups, and running dozens of scratch benchmark probe harnesses via `run_command` during the time-lock window.
 10. **Authorized Powers During Thinking Phase**:
     - The AI is **fully permitted and encouraged** to run terminal-related commands (`run_command` in powershell) for live system inspection, compiling scratch test harnesses, and running performance benchmarks.
-    - The AI is **fully permitted and encouraged** to create and update rich design artifacts in the brain directory (`<appDataDir>\brain\<conversation-id>/`) throughout the entire thinking window.
+    - The AI is **fully permitted and encouraged** to create and update rich design artifacts in the brain directory (`<appDataDir>\\brain\\<conversation-id>/`) throughout the entire thinking window.
 11. **Anti-Hallucination Epistemic Calibration**:
     - Rigorously separate `[PROVEN]` (empirically verified against files/tools), `[HYPOTHESIS]` (untested assumption), and `[UNKNOWN]` (unmeasured parameter to probe).
     - **Evidence-Gated Claims Rule**: `[PROVEN]` requires a concrete evidence pointer; invariants require a proof or rationale. Never silently promote a hypothesis.
@@ -85,3 +122,18 @@ Whenever the user requests deep thinking, architectural planning, system design,
       * `Resource Exhaustion`: 150KB+ payloads, rapid churn loops, memory/handle leaks, and 3.0s CPU timeouts.
       * `State Invariant`: Idempotency violations $f(f(x)) \neq f(x)$, out-of-order lifecycle calls, and boundary state corruption.
     - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.
+
+23. **Mandatory Native Research Scraping Directive**:
+    - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
+    - If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host environment tools or web searches. Generic host tools MUST NOT be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
+
+24. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
+    - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
+    - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
+    - After any code modification, the AI **MUST** invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
+    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after either 5 iterations or 15 elapsed minutes, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
+    - `verify_red_team_remediation` may seal only with an authenticated Red-Team receipt that identifies its Red-Team origin, attests passing results for all five attack vectors, and is cryptographically bound to the reviewed change set.
+
+25. **Mandatory Cortical Evolution & Learning Rule**:
+    - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
+    - This updates the domain cortex (`DATA_DIR/cortex/<domain>.md`), reinforces synaptic weights ($\Delta W = +0.10$), and synthesizes persistent `HeuristicAntibody` records so past mistakes are permanently eliminated across future agent sessions.

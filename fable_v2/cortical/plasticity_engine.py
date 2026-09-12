@@ -22,6 +22,17 @@ try:
 except ImportError:
     _HAS_YAML = False
 
+_ANTIBODY_FIELDS = frozenset({
+    "antibody_id", "domain", "trigger_condition", "lethal_anti_pattern",
+    "prescribed_defense", "severity", "source_task_id", "created_at",
+    "verified_counterfactual",
+})
+MAX_ACTIVE_NODES = 128
+_PROMPT_CONTROL_PATTERN = re.compile(
+    r"<\s*(?:\|\s*)?/?\s*(?:system|im_start|im_end|instruct|prompt)\b[^>]*>",
+    re.IGNORECASE,
+)
+
 
 class CorticalDomain(str, Enum):
     """The 5 Specialized Cortical Domain Lobes."""
@@ -64,16 +75,19 @@ class HeuristicAntibody:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> HeuristicAntibody:
         """Construct HeuristicAntibody from dictionary."""
+        if not isinstance(d, dict):
+            raise ValueError("antibody must be an object")
+        allowed = {key: d[key] for key in _ANTIBODY_FIELDS if key in d}
         return cls(
-            antibody_id=str(d.get("antibody_id", f"ab_{uuid.uuid4().hex[:8]}")),
-            domain=str(d.get("domain", "general")),
-            trigger_condition=str(d.get("trigger_condition", "")),
-            lethal_anti_pattern=str(d.get("lethal_anti_pattern", "")),
-            prescribed_defense=str(d.get("prescribed_defense", "")),
-            severity=str(d.get("severity", "HIGH")),
-            source_task_id=str(d.get("source_task_id", "")),
-            created_at=str(d.get("created_at", datetime.now(timezone.utc).isoformat())),
-            verified_counterfactual=str(d.get("verified_counterfactual", "")),
+            antibody_id=str(allowed.get("antibody_id", f"ab_{uuid.uuid4().hex[:8]}")),
+            domain=str(allowed.get("domain", "general")),
+            trigger_condition=str(allowed.get("trigger_condition", "")),
+            lethal_anti_pattern=str(allowed.get("lethal_anti_pattern", "")),
+            prescribed_defense=str(allowed.get("prescribed_defense", "")),
+            severity=str(allowed.get("severity", "HIGH")),
+            source_task_id=str(allowed.get("source_task_id", "")),
+            created_at=str(allowed.get("created_at", datetime.now(timezone.utc).isoformat())),
+            verified_counterfactual=str(allowed.get("verified_counterfactual", "")),
         )
 
     def to_markdown(self) -> str:
@@ -271,7 +285,7 @@ class CorticalLobe:
             lobe_name = path.stem
             return cls(name=lobe_name)
 
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
         # 1. Try parsing YAML / JSON frontmatter if present
         if text.startswith("---"):
@@ -361,10 +375,10 @@ class CorticalLobe:
 
         # Extract antibodies
         ab_blocks = re.findall(
-            r"#### Antibody `([^`]+)` \[([A-Z]+)\]\s*\n- \*\*Domain\*\*:\s*`([^`]+)`\s*\n- \*\*Trigger Condition\*\*:\s*([^\n]+)\s*\n- \*\*Lethal Anti-Pattern\*\*:\s*([^\n]+)\s*\n- \*\*Prescribed Defense\*\*:\s*([^\n]+)(?:\s*\n- \*\*Verified Counterfactual\*\*:\s*`?([^`\n]+)`?)?",
+            r"#### Antibody `([^`]+)` \[([A-Z]+)\]\s*\n- \*\*Domain\*\*:\s*`([^`]+)`\s*\n- \*\*Trigger Condition\*\*:\s*([^\r\n]+)\s*\n- \*\*Lethal Anti-Pattern\*\*:\s*([^\r\n]+)\s*\n- \*\*Prescribed Defense\*\*:\s*([^\r\n]+)(?:\s*\n- \*\*Verified Counterfactual\*\*:\s*`?([^`\r\n]+)`?)?(?:\s*\n- \*\*Source Task ID\*\*:\s*`?([^`\r\n]+)`?)?",
             text,
         )
-        for ab_id, sev, dom, trig, lethal, defense, counterfac in ab_blocks:
+        for ab_id, sev, dom, trig, lethal, defense, counterfac, source_task_id in ab_blocks:
             antibodies.append(
                 HeuristicAntibody(
                     antibody_id=ab_id.strip(),
@@ -373,6 +387,7 @@ class CorticalLobe:
                     lethal_anti_pattern=lethal.strip(),
                     prescribed_defense=defense.strip(),
                     severity=sev.strip(),
+                    source_task_id=source_task_id.strip() if source_task_id else "",
                     created_at=last_consolidated,
                     verified_counterfactual=counterfac.strip() if counterfac else "",
                 )
@@ -472,6 +487,38 @@ class HebbianPlasticityEngine:
         self._lobes[slug] = lobe
         return lobe
 
+    @staticmethod
+    def sanitize_field(text: Any, max_len: int = 500) -> str:
+        """Data-boundary sanitization against instruction-bearing or prompt-injection content."""
+        clean = str(text or "").strip()
+        if _PROMPT_CONTROL_PATTERN.search(clean):
+            return ""
+        clean = clean.replace("[BEGIN UNTRUSTED EXTERNAL RESEARCH CONTENT]", "").replace("[END UNTRUSTED EXTERNAL RESEARCH CONTENT]", "")
+        return clean[:max_len]
+
+    def _sync_lobe_to_matrix(self, lobe: CorticalLobe) -> None:
+        """Synchronize a canonical lobe row and remove stale reciprocal edges."""
+        slug = self._normalize_domain(lobe.name)
+        canonical: dict[str, float] = {}
+        for node, weight in lobe.synaptic_weights.items():
+            canonical_node = self.sanitize_field(node, max_len=128)
+            if not canonical_node:
+                continue
+            canonical_weight = round(min(1.0, max(0.05, float(weight))), 4)
+            canonical[canonical_node] = max(
+                canonical_weight,
+                canonical.get(canonical_node, canonical_weight),
+            )
+        lobe.synaptic_weights = canonical
+        old_row = self._synaptic_matrix.get(slug, {})
+        for stale_node in set(old_row) - set(canonical):
+            reverse_row = self._synaptic_matrix.get(stale_node)
+            if reverse_row is not None:
+                reverse_row.pop(slug, None)
+        self._synaptic_matrix[slug] = dict(canonical)
+        for node, weight in canonical.items():
+            self._synaptic_matrix.setdefault(node, {})[slug] = weight
+
     def _load_synaptic_matrix(self) -> dict[str, dict[str, float]]:
         """Load cross-domain synaptic co-activation matrix from disk."""
         if self.matrix_path.exists():
@@ -519,30 +566,22 @@ class HebbianPlasticityEngine:
                 except (ValueError, TypeError):
                     weights[str(k)] = 0.50
 
-        desc = description.strip() if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
+        desc = self.sanitize_field(description) if description else f"Custom cortical lobe for {slug} development and specialized heuristics"
+        sanitized_heuristics = [self.sanitize_field(h) for h in clean_heuristics if self.sanitize_field(h)]
 
         lobe = CorticalLobe(
             name=slug,
             description=desc,
             activation_count=1,
             synaptic_weights=weights,
-            specialized_heuristics=clean_heuristics,
+            specialized_heuristics=sanitized_heuristics,
             last_consolidated_at=datetime.now(timezone.utc).isoformat(),
         )
 
         lobe_path = self.cortex_dir / f"{slug}.md"
+        self._sync_lobe_to_matrix(lobe)
         lobe.save_to_disk(lobe_path)
         self._lobes[slug] = lobe
-
-        # Integrate into synaptic matrix
-        if slug not in self._synaptic_matrix:
-            self._synaptic_matrix[slug] = {}
-        for node, w in weights.items():
-            self._synaptic_matrix[slug][node] = w
-            if node not in self._synaptic_matrix:
-                self._synaptic_matrix[node] = {}
-            self._synaptic_matrix[node][slug] = w
-
         self._save_synaptic_matrix()
         return lobe
 
@@ -588,7 +627,9 @@ class HebbianPlasticityEngine:
                 primed_w = min(1.0, max(0.05, current_w + 0.02))
                 lobe.synaptic_weights[node_clean] = round(primed_w, 4)
 
+        self._sync_lobe_to_matrix(lobe)
         lobe.save_to_disk(self._get_lobe_path(slug))
+        self._save_synaptic_matrix()
         return lobe
 
     def list_cortical_lobes(self) -> list[dict[str, Any]]:
@@ -665,7 +706,11 @@ class HebbianPlasticityEngine:
         depression_rate = 0.15
         plasticity_mode = "LTP" if final_passed else "LTD"
         score = 1.0 if final_passed else -1.0
-        active_nodes = [str(n).strip() for n in (co_activated_nodes or []) if str(n).strip()]
+        normalized_nodes = (
+            self.sanitize_field(node, max_len=128)
+            for node in (co_activated_nodes or [])
+        )
+        active_nodes = list(dict.fromkeys(node for node in normalized_nodes if node))[:MAX_ACTIVE_NODES]
 
         # Compute continuous domain activation A_domain
         A_domain = min(1.0, max(0.30, 0.40 + 0.10 * len(active_nodes)))
@@ -685,6 +730,7 @@ class HebbianPlasticityEngine:
                 node_activations[node] = round(A_j, 4)
 
         # 1. Update lobe synaptic weights via directional BCM rule
+        new_weights: dict[str, float] = {}
         for node in active_nodes:
             old_w = lobe.synaptic_weights.get(node, 0.30)
             A_node = node_activations.get(node, 0.80)
@@ -693,7 +739,8 @@ class HebbianPlasticityEngine:
             else:
                 delta_w = - depression_rate * A_domain * A_node
             new_w = min(1.0, max(0.05, old_w + delta_w))
-            lobe.synaptic_weights[node] = round(new_w, 4)
+            new_weights[node] = round(new_w, 4)
+        lobe.synaptic_weights = new_weights
 
         # 2. Homeostatic normalization across lobe weights
         # If total synaptic weight exceeds capacity, apply soft scaling while preserving [0.05, 1.0]
@@ -837,6 +884,7 @@ class HebbianPlasticityEngine:
         # 6. Save lobe and synaptic matrix to disk
         timestamp = datetime.now(timezone.utc).isoformat()
         lobe.last_consolidated_at = timestamp
+        self._sync_lobe_to_matrix(lobe)
         lobe.save_to_disk(self._get_lobe_path(slug))
         self._save_synaptic_matrix()
 
@@ -865,17 +913,23 @@ class HebbianPlasticityEngine:
         domain: Union[CorticalDomain, str],
         max_antibodies: int = 5,
     ) -> str:
-        """Recall high-signal cortical memory block to inject into agent/subagent prompts."""
+        """Recall high-signal cortical memory block to inject into agent/subagent prompts.
+
+        Sanitizes and validates all recalled cortex state to prevent prompt injection vulnerabilities.
+        """
         slug = self._normalize_domain(domain)
         lobe = self._load_or_create_lobe(slug)
 
+        s_desc = self.sanitize_field(lobe.description)
+        s_slug = self.sanitize_field(slug.upper(), max_len=64)
+
         lines: list[str] = [
-            f"### 🧠 Cortical Lobe Memory: `{slug.upper()}` (Activations: {lobe.activation_count})",
+            f"### 🧠 Cortical Lobe Memory: `{s_slug}` (Activations: {lobe.activation_count})",
             "",
         ]
 
-        if lobe.description:
-            lines.append(f"> **Description**: {lobe.description}")
+        if s_desc:
+            lines.append(f"> **Description**: {s_desc}")
             lines.append("")
 
         lines.extend([
@@ -894,11 +948,19 @@ class HebbianPlasticityEngine:
         lines.append("#### 🛡️ Immunological Heuristic Antibodies (Red-Team Scars)")
         if sorted_antibodies:
             for ab in sorted_antibodies:
-                lines.append(f"- **[{ab.severity.upper()}] Trigger**: {ab.trigger_condition}")
-                lines.append(f"  - **Lethal Anti-Pattern**: `{ab.lethal_anti_pattern}`")
-                lines.append(f"  - **Prescribed Defense**: {ab.prescribed_defense}")
-                if ab.verified_counterfactual:
-                    lines.append(f"  - **Counterfactual**: `{ab.verified_counterfactual}`")
+                s_trig = self.sanitize_field(ab.trigger_condition)
+                s_lethal = self.sanitize_field(ab.lethal_anti_pattern)
+                s_defense = self.sanitize_field(ab.prescribed_defense)
+                s_counterfac = self.sanitize_field(ab.verified_counterfactual)
+                s_source_task = self.sanitize_field(ab.source_task_id, max_len=128)
+                s_sev = self.sanitize_field(ab.severity.upper(), max_len=16)
+                lines.append(f"- **[{s_sev}] Trigger**: {s_trig}")
+                lines.append(f"  - **Lethal Anti-Pattern**: `{s_lethal}`")
+                lines.append(f"  - **Prescribed Defense**: {s_defense}")
+                if s_counterfac:
+                    lines.append(f"  - **Counterfactual**: `{s_counterfac}`")
+                if s_source_task:
+                    lines.append(f"  - **Source Task ID**: `{s_source_task}`")
         else:
             lines.append("- *(No active antibodies in this lobe)*")
         lines.append("")
@@ -907,7 +969,7 @@ class HebbianPlasticityEngine:
         lines.append("#### ⚡ Specialized Domain Heuristics & Invariants")
         if lobe.specialized_heuristics:
             for idx, h in enumerate(lobe.specialized_heuristics[:8], 1):
-                lines.append(f"{idx}. {h}")
+                lines.append(f"{idx}. {self.sanitize_field(h)}")
         else:
             lines.append("- *(Baseline heuristics only)*")
         lines.append("")
@@ -917,7 +979,8 @@ class HebbianPlasticityEngine:
         if lobe.synaptic_weights:
             top_nodes = sorted(lobe.synaptic_weights.items(), key=lambda x: x[1], reverse=True)[:6]
             for node, weight in top_nodes:
-                lines.append(f"- `{node}`: weight `{weight:.4f}`")
+                s_node = self.sanitize_field(node, max_len=64)
+                lines.append(f"- `{s_node}`: weight `{weight:.4f}`")
         else:
             lines.append("- *(Zero strong synaptic co-activations)*")
         lines.append("")

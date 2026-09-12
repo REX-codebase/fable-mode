@@ -1,25 +1,31 @@
 ---
-name: security
-description: Custom cortical lobe for security development and specialized heuristics
-domain: security
-activation_count: 15
-synaptic_weights:
-  red_team_swarm: 0.8082
-  mutation: 0.7983
-  test_harness: 0.7812
-  property_oracle: 0.3648
-antibodies:
-- antibody_id: ab_security_sec_sqli_01
-  domain: security
-  trigger_condition: Unsanitized input in query
-  lethal_anti_pattern: SQLSyntaxError
-  prescribed_defense: Enforce parameterized queries with atomic binding
-  severity: CRITICAL
-  source_task_id: task_sec_01
-  created_at: '2026-09-05T12:58:11.469175+00:00'
-  verified_counterfactual: query("' OR 1=1 --")
-specialized_heuristics: []
-last_consolidated_at: '2026-09-05T14:30:10.209868+00:00'
+{
+  "name": "security",
+  "description": "Custom cortical lobe for security development and specialized heuristics",
+  "domain": "security",
+  "activation_count": 15,
+  "synaptic_weights": {
+    "red_team_swarm": 0.8082,
+    "mutation": 0.7983,
+    "test_harness": 0.7812,
+    "property_oracle": 0.3648
+  },
+  "antibodies": [
+    {
+      "antibody_id": "ab_security_sec_sqli_01",
+      "domain": "security",
+      "trigger_condition": "Unsanitized input in query",
+      "lethal_anti_pattern": "SQLSyntaxError",
+      "prescribed_defense": "Enforce parameterized queries with atomic binding",
+      "severity": "CRITICAL",
+      "source_task_id": "task_sec_01",
+      "created_at": "2026-09-05T14:30:10.209868+00:00",
+      "verified_counterfactual": "query(\"' OR 1=1 --\")"
+    }
+  ],
+  "specialized_heuristics": [],
+  "last_consolidated_at": "2026-09-05T14:30:10.209868+00:00"
+}
 ---
 
 # Cortical Lobe: `security`
@@ -56,4 +62,3 @@ last_consolidated_at: '2026-09-05T14:30:10.209868+00:00'
 - **Prescribed Defense**: Enforce parameterized queries with atomic binding
 - **Verified Counterfactual**: `query("' OR 1=1 --")`
 - **Source Task ID**: `task_sec_01`
-

@@ -436,6 +436,18 @@ class TestPublicActionHandlers(unittest.TestCase):
 
         session = FableSession(session_name=session_name, objective="Test falsey callable", time_budget_minutes=5.0)
         session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.proof_receipts.append({"receipt_id": "falsey-review-receipt", "verified": True})
+        session.set_goal_rubric("Test Rubric", [{
+            "pointer_id": "P1",
+            "description": "Check 1",
+            "satisfied": True,
+            "score": 1.0,
+            "verifier_command": "python -m unittest tests.test_red_team_swarm",
+            "evidence_receipt_id": "falsey-review-receipt",
+        }])
+        session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
@@ -472,6 +484,18 @@ class TestPublicActionHandlers(unittest.TestCase):
 
         session = FableSession(session_name=session_name, objective="Test falsey remediation", time_budget_minutes=5.0)
         session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence item 1", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence item 2", evidence="README.md:L5")
+        session.proof_receipts.append({"receipt_id": "falsey-remediation-receipt", "verified": True})
+        session.set_goal_rubric("Test Rubric", [{
+            "pointer_id": "P1",
+            "description": "Check 1",
+            "satisfied": True,
+            "score": 1.0,
+            "verifier_command": "python -m unittest tests.test_red_team_swarm",
+            "evidence_receipt_id": "falsey-remediation-receipt",
+        }])
+        session.log_refinement_cycle("refine", "core", "bottleneck", "refinement")
         session.execution_locked = False
         session.can_execute_code = True
         session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
@@ -502,6 +526,59 @@ class TestPublicActionHandlers(unittest.TestCase):
             })
             self.assertNotIn("Error: Source-code strings cannot be evaluated in-process", resp)
             self.assertIn("TASK COMPLETED: 0 breakages remain. Code sealed.", resp)
+        finally:
+            ACTIVE_SESSIONS.pop(session_name, None)
+            if session_file.exists():
+                session_file.unlink()
+
+    def test_verify_remediation_does_not_seal_unbound_satisfied_criterion(self) -> None:
+        from fable_engine.actions.fleet import _handle_verify_red_team_remediation
+        from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR, SessionState
+
+        def remediated(value: Any = None) -> str:
+            return "ok"
+
+        session_name = f"test_unbound_rubric_{uuid.uuid4().hex[:8]}"
+        session_file = SESSIONS_DIR / f"{session_name}.json"
+        session = FableSession(session_name, "Reject unbound criterion", 5.0)
+        session.set_timer(5.0)
+        session.log_epistemic_item("PROVEN", "Evidence item one", evidence="README.md:L1")
+        session.log_epistemic_item("PROVEN", "Evidence item two", evidence="README.md:L5")
+        rubric = session.set_goal_rubric(
+            "Unbound rubric",
+            [{"pointer_id": "P1", "satisfied": True, "score": 1.0}],
+        )
+        self.assertNotEqual(rubric["status"], "achieved")
+        session.log_refinement_cycle("refine", "sealing", "unbound evidence", "require evidence binding")
+        session.execution_locked = False
+        session.can_execute_code = True
+        session.transition_to(SessionState.IMPLEMENTATION, "Implemented")
+        session.track_file_change("sample.py", "modified", "Hardened implementation")
+        session.transition_to(SessionState.RED_TEAM_GATE, "Ready for gate")
+        ACTIVE_SESSIONS[session_name] = session
+        prior_report = {
+            "report_id": "rep_unbound",
+            "target_name": "target",
+            "total_probes": 1,
+            "broken_count": 1,
+            "passed": False,
+            "findings": [{
+                "scenario_id": "target_chaos_01_missing_path",
+                "vector": "chaos_environment",
+                "hypothesis": "Missing path",
+                "broken": True,
+            }],
+        }
+
+        try:
+            response = _handle_verify_red_team_remediation({
+                "session_name": session_name,
+                "remediated_code": remediated,
+                "prior_report": prior_report,
+            })
+            self.assertIn("Satisfied rubric criteria require", response)
+            self.assertNotIn("Code sealed", response)
+            self.assertNotEqual(session.current_state, SessionState.SEALED)
         finally:
             ACTIVE_SESSIONS.pop(session_name, None)
             if session_file.exists():

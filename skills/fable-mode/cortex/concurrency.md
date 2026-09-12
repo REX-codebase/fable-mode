@@ -1,69 +1,61 @@
 ---
-name: concurrency
-description: Lock-free synchronization, atomic memory ordering, and race hardening
-domain: concurrency
-activation_count: 17
-synaptic_weights:
-  concurrency_fuzz: 0.96
-  atomic_cas_loop: 0.94
-  memory_ordering: 0.92
-  hazard_pointers: 0.88
-  toctou_prevention: 0.95
-  test_harness: 0.9
-antibodies:
-- antibody_id: ab_concurrency_toctou_file_race
-  domain: concurrency
-  trigger_condition: Checking file or resource existence before performing operations
-    in non-isolated threads
-  lethal_anti_pattern: 'if os.path.exists(path): open(path, ''w'') # Attacker modifies
-    path between check and open'
-  prescribed_defense: Use atomic file creation flags (e.g. os.O_CREAT | os.O_EXCL)
-    or file descriptor locks (fcntl/flock).
-  severity: CRITICAL
-  source_task_id: task_toctou_hardening
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: Adversarial race probe with 16 threads verified zero TOCTOU
-    corruption
-- antibody_id: ab_concurrency_double_checked_locking_reorder
-  domain: concurrency
-  trigger_condition: Implementing double-checked locking singleton without acquire/release
-    memory fences
-  lethal_anti_pattern: 'if instance == null: synchronized(lock): if instance == null:
-    instance = new Object()'
-  prescribed_defense: Ensure instance pointer is declared volatile/atomic with acquire-release
-    barriers to prevent publishing half-initialized objects.
-  severity: CRITICAL
-  source_task_id: task_dcl_memory_barrier_audit
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: ThreadSanitizer (TSan) verified zero data races under 100,000
-    parallel reads
-- antibody_id: ab_concurrency_condition_variable_spurious_wakeup
-  domain: concurrency
-  trigger_condition: Evaluating condition variable wait predicate using an if statement
-    instead of a while loop
-  lethal_anti_pattern: 'if (!queue.has_items()) cv.wait(lock); # Spurious wakeup causes
-    queue.pop() on empty queue'
-  prescribed_defense: 'Always enclose cv.wait within a while loop: while (!queue.has_items())
-    cv.wait(lock);'
-  severity: HIGH
-  source_task_id: task_spurious_wakeup_audit
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: Chaos stress test injected 1,000 spurious wakeups with
-    zero out-of-order execution
-specialized_heuristics:
-- 'Atomic CAS Loops: Always use compare_exchange_weak in retry loops to handle spurious
-  LL/SC failures on ARM architectures, falling back to compare_exchange_strong only
-  for single attempts.'
-- 'Memory Ordering Discipline: Use Acquire on loads paired with Release on stores
-  for synchronized handoffs; never default blindly to SeqCst when Acquire-Release
-  suffices.'
-- 'ABA Hazard Prevention: Prevent recycled pointer hazards in lock-free stacks using
-  tagged atomic pointers (pointer + 64-bit generation counter) or hazard pointer epochs.'
-- 'TOCTOU Eradication: In concurrent state checks and transitions, the validation
-  and state mutation must occur within a single atomic primitive or critical section.'
-- 'Hierarchical Lock Ordering: Prevent distributed deadlocks by establishing a strict
-  total order (L1 < L2 < L3) across all mutex acquisitions.'
-last_consolidated_at: '2026-09-04T12:00:00+00:00'
+{
+  "name": "concurrency",
+  "description": "Lock-free synchronization, atomic memory ordering, and race hardening",
+  "domain": "concurrency",
+  "activation_count": 17,
+  "synaptic_weights": {
+    "concurrency_fuzz": 0.96,
+    "toctou_prevention": 0.95,
+    "atomic_cas_loop": 0.94,
+    "memory_ordering": 0.92,
+    "test_harness": 0.9,
+    "hazard_pointers": 0.88
+  },
+  "antibodies": [
+    {
+      "antibody_id": "ab_concurrency_toctou_file_race",
+      "domain": "concurrency",
+      "trigger_condition": "Checking file or resource existence before performing operations in non-isolated threads",
+      "lethal_anti_pattern": "if os.path.exists(path): open(path, 'w') # Attacker modifies path between check and open",
+      "prescribed_defense": "Use atomic file creation flags (e.g. os.O_CREAT | os.O_EXCL) or file descriptor locks (fcntl/flock).",
+      "severity": "CRITICAL",
+      "source_task_id": "task_toctou_hardening",
+      "created_at": "2026-09-04T12:00:00+00:00",
+      "verified_counterfactual": "Adversarial race probe with 16 threads verified zero TOCTOU corruption"
+    },
+    {
+      "antibody_id": "ab_concurrency_double_checked_locking_reorder",
+      "domain": "concurrency",
+      "trigger_condition": "Implementing double-checked locking singleton without acquire/release memory fences",
+      "lethal_anti_pattern": "if instance == null: synchronized(lock): if instance == null: instance = new Object()",
+      "prescribed_defense": "Ensure instance pointer is declared volatile/atomic with acquire-release barriers to prevent publishing half-initialized objects.",
+      "severity": "CRITICAL",
+      "source_task_id": "task_dcl_memory_barrier_audit",
+      "created_at": "2026-09-04T12:00:00+00:00",
+      "verified_counterfactual": "ThreadSanitizer (TSan) verified zero data races under 100,000 parallel reads"
+    },
+    {
+      "antibody_id": "ab_concurrency_condition_variable_spurious_wakeup",
+      "domain": "concurrency",
+      "trigger_condition": "Evaluating condition variable wait predicate using an if statement instead of a while loop",
+      "lethal_anti_pattern": "if (!queue.has_items()) cv.wait(lock); # Spurious wakeup causes queue.pop() on empty queue",
+      "prescribed_defense": "Always enclose cv.wait within a while loop: while (!queue.has_items()) cv.wait(lock);",
+      "severity": "HIGH",
+      "source_task_id": "task_spurious_wakeup_audit",
+      "created_at": "2026-09-04T12:00:00+00:00",
+      "verified_counterfactual": "Chaos stress test injected 1,000 spurious wakeups with zero out-of-order execution"
+    }
+  ],
+  "specialized_heuristics": [
+    "Atomic CAS Loops: Always use compare_exchange_weak in retry loops to handle spurious LL/SC failures on ARM architectures, falling back to compare_exchange_strong only for single attempts.",
+    "Memory Ordering Discipline: Use Acquire on loads paired with Release on stores for synchronized handoffs; never default blindly to SeqCst when Acquire-Release suffices.",
+    "ABA Hazard Prevention: Prevent recycled pointer hazards in lock-free stacks using tagged atomic pointers (pointer + 64-bit generation counter) or hazard pointer epochs.",
+    "TOCTOU Eradication: In concurrent state checks and transitions, the validation and state mutation must occur within a single atomic primitive or critical section.",
+    "Hierarchical Lock Ordering: Prevent distributed deadlocks by establishing a strict total order (L1 < L2 < L3) across all mutex acquisitions."
+  ],
+  "last_consolidated_at": "2026-09-04T12:00:00+00:00"
+}
 ---
 
 # Cortical Lobe: `concurrency`
@@ -122,4 +114,3 @@ last_consolidated_at: '2026-09-04T12:00:00+00:00'
 - **Prescribed Defense**: Always enclose cv.wait within a while loop: while (!queue.has_items()) cv.wait(lock);
 - **Verified Counterfactual**: `Chaos stress test injected 1,000 spurious wakeups with zero out-of-order execution`
 - **Source Task ID**: `task_spurious_wakeup_audit`
-

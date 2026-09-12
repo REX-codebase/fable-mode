@@ -1,193 +1,124 @@
 ---
-name: design_3d
-description: Haute aesthetics, WebGPU TSL shaders, and responsive UI motion
-domain: design_3d
-activation_count: 18
-synaptic_weights:
-  webgpu_tsl: 0.95
-  spring_motion_physics: 0.9
-  fluid_typography: 0.88
-  render_vector: 0.95
-  perceptual_diff: 0.92
-  fps_budget_profiler: 0.92
-  run_command: 0.9
-  ast_diagnostics: 0.88
-antibodies:
-- antibody_id: ab_design_threejs_memory_leak
-  domain: design_3d
-  trigger_condition: Removing Three.js meshes from scene graph without recursively
-    disposing geometry, materials, and textures
-  lethal_anti_pattern: 'scene.remove(mesh); # Leaves GPU buffers and VRAM allocations
-    leaked indefinitely'
-  prescribed_defense: Implement recursive traversal disposing mesh.geometry.dispose(),
-    material.dispose(), and texture.dispose() before nullifying references.
-  severity: CRITICAL
-  source_task_id: task_threejs_vram_audit
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: WebGL renderer memory tracker confirmed 0 active geometries/textures
-    after teardown
-- antibody_id: ab_design_animation_loop_gc_freeze
-  domain: design_3d
-  trigger_condition: Instantiating new Vector3 or Color objects inside animate() render
-    callback
-  lethal_anti_pattern: function animate() { const pos = new THREE.Vector3(); mesh.position.copy(pos);
+{
+  "name": "design_3d",
+  "description": "Haute aesthetics, WebGPU TSL shaders, and responsive UI motion",
+  "domain": "design_3d",
+  "activation_count": 18,
+  "synaptic_weights": {
+    "webgpu_tsl": 0.95,
+    "render_vector": 0.95,
+    "perceptual_diff": 0.92,
+    "fps_budget_profiler": 0.92,
+    "spring_motion_physics": 0.9,
+    "run_command": 0.9,
+    "fluid_typography": 0.88,
+    "ast_diagnostics": 0.88
+  },
+  "antibodies": [
+    {
+      "antibody_id": "ab_design_threejs_memory_leak",
+      "domain": "design_3d",
+      "trigger_condition": "Removing Three.js meshes from scene graph without recursively disposing geometry, materials, and textures",
+      "lethal_anti_pattern": "scene.remove(mesh); # Leaves GPU buffers and VRAM allocations leaked indefinitely",
+      "prescribed_defense": "Implement recursive traversal disposing mesh.geometry.dispose(), material.dispose(), and texture.dispose() before nullifying references.",
+      "severity": "CRITICAL",
+      "source_task_id": "task_threejs_vram_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "WebGL renderer memory tracker confirmed 0 active geometries/textures after teardown"
+    },
+    {
+      "antibody_id": "ab_design_animation_loop_gc_freeze",
+      "domain": "design_3d",
+      "trigger_condition": "Instantiating new Vector3 or Color objects inside animate() render callback",
+      "lethal_anti_pattern": "function animate() { const pos = new THREE.Vector3(); mesh.position.copy(pos); }",
+      "prescribed_defense": "Pre-allocate scratch variables in file/class closure scope outside animate loop.",
+      "severity": "HIGH",
+      "source_task_id": "task_webgl_fps_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Frame profiler confirmed zero GC pause pauses > 1.2ms over 60 seconds"
+    },
+    {
+      "antibody_id": "ab_design_unconstrained_canvas_cls",
+      "domain": "design_3d",
+      "trigger_condition": "Embedding WebGL canvas without explicit aspect-ratio or CSS width/height container constraints",
+      "lethal_anti_pattern": "<canvas id='webgl'></canvas> with dynamic JS resize causing Cumulative Layout Shift (CLS > 0.25)",
+      "prescribed_defense": "Wrap in fixed aspect-ratio container with CSS contain: strict and pre-sized dimensions.",
+      "severity": "MEDIUM",
+      "source_task_id": "task_web_vitals_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Lighthouse audit confirmed CLS = 0.00 across mobile and desktop viewports"
+    },
+    {
+      "antibody_id": "ab_design_threejs_black_screen_void",
+      "domain": "design_3d",
+      "trigger_condition": "Instantiating MeshStandardMaterial or MeshPhysicalMaterial without light sources or unpositioned camera",
+      "lethal_anti_pattern": "const mat = new THREE.MeshStandardMaterial(); const cam = new THREE.PerspectiveCamera(); // cam at 0,0,0 with no lights",
+      "prescribed_defense": "Enforce mandatory baseline AmbientLight(0.6) + DirectionalLight(1.8) and place camera outside bounding volume.",
+      "severity": "CRITICAL",
+      "source_task_id": "task_threejs_grounding_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Scene luminance probe confirmed non-zero RGB pixel readings and visible meshes across viewports"
+    },
+    {
+      "antibody_id": "ab_design_threejs_backend_composer_collision",
+      "domain": "design_3d",
+      "trigger_condition": "Passing WebGPURenderer into legacy EffectComposer",
+      "lethal_anti_pattern": "const renderer = new WebGPURenderer(); const composer = new EffectComposer(renderer);",
+      "prescribed_defense": "Use WebGLRenderer with EffectComposer; use WebGPURenderer (awaited .init()) with PostProcessing from 'three/webgpu'. Never cross backends.",
+      "severity": "CRITICAL",
+      "source_task_id": "task_threejs_backend_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Zero TypeError getContext crashes in node-based postprocessing and webgl tests"
+    },
+    {
+      "antibody_id": "ab_design_threejs_r3f_state_render_loop",
+      "domain": "design_3d",
+      "trigger_condition": "Calling useState or parent state dispatch inside useFrame()",
+      "lethal_anti_pattern": "useFrame(() => { setRotation(r => r + 0.01); });",
+      "prescribed_defense": "Mutate object ref directly: useFrame((_, delta) => { ref.current.rotation.y += delta; })",
+      "severity": "HIGH",
+      "source_task_id": "task_r3f_render_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "React render profiler verified 60 FPS locked with zero component re-renders during animation"
+    },
+    {
+      "antibody_id": "ab_design_threejs_texture_colorspace_distortion",
+      "domain": "design_3d",
+      "trigger_condition": "Assigning THREE.SRGBColorSpace to data textures (normal, roughness, metalness, ao) or failing to set SRGBColorSpace on diffuse maps",
+      "lethal_anti_pattern": "normalTexture.colorSpace = THREE.SRGBColorSpace;",
+      "prescribed_defense": "Diffuse maps MUST be THREE.SRGBColorSpace; normal/roughness/metalness/ao maps MUST be THREE.NoColorSpace.",
+      "severity": "HIGH",
+      "source_task_id": "task_pbr_colorspace_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Visual difference analyzer confirmed accurate PBR reflectance and normal perturbation without gamma warping"
+    },
+    {
+      "antibody_id": "ab_design_threejs_hypertrophic_overkill",
+      "domain": "design_3d",
+      "trigger_condition": "Implementing a 120Hz physics accumulator, post-processing composer, or instanced fleet for simple ambient UI, hero badges, or decorative 3D cards",
+      "lethal_anti_pattern": "const loop = new DeterministicGameLoop(updatePhysics, render); const composer = new EffectComposer(renderer); // Hypertrophic overkill for simple hero badge",
+      "prescribed_defense": "Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple PBR, zero physics accumulators, no post-processing).",
+      "severity": "HIGH",
+      "source_task_id": "task_threejs_triage_audit",
+      "created_at": "2026-09-05T12:00:00+00:00",
+      "verified_counterfactual": "Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator overhead on ambient UI components"
     }
-  prescribed_defense: Pre-allocate scratch variables in file/class closure scope outside
-    animate loop.
-  severity: HIGH
-  source_task_id: task_webgl_fps_audit
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: Frame profiler confirmed zero GC pause pauses > 1.2ms over
-    60 seconds
-- antibody_id: ab_design_unconstrained_canvas_cls
-  domain: design_3d
-  trigger_condition: Embedding WebGL canvas without explicit aspect-ratio or CSS width/height
-    container constraints
-  lethal_anti_pattern: <canvas id='webgl'></canvas> with dynamic JS resize causing
-    Cumulative Layout Shift (CLS > 0.25)
-  prescribed_defense: 'Wrap in fixed aspect-ratio container with CSS contain: strict
-    and pre-sized dimensions.'
-  severity: MEDIUM
-  source_task_id: task_web_vitals_audit
-  created_at: '2026-09-04T12:00:00+00:00'
-  verified_counterfactual: Lighthouse audit confirmed CLS = 0.00 across mobile and
-    desktop viewports
-- antibody_id: ab_design_threejs_black_screen_void
-  domain: design_3d
-  trigger_condition: Instantiating MeshStandardMaterial or MeshPhysicalMaterial without
-    light sources or unpositioned camera
-  lethal_anti_pattern: const mat = new THREE.MeshStandardMaterial(); const cam = new
-    THREE.PerspectiveCamera(); // cam at 0,0,0 with no lights
-  prescribed_defense: Enforce mandatory baseline AmbientLight(0.6) + DirectionalLight(1.8)
-    and place camera outside bounding volume.
-  severity: CRITICAL
-  source_task_id: task_threejs_grounding_audit
-  created_at: '2026-09-05T12:00:00+00:00'
-  verified_counterfactual: Scene luminance probe confirmed non-zero RGB pixel readings
-    and visible meshes across viewports
-- antibody_id: ab_design_threejs_backend_composer_collision
-  domain: design_3d
-  trigger_condition: Passing WebGPURenderer into legacy EffectComposer
-  lethal_anti_pattern: const renderer = new WebGPURenderer(); const composer = new
-    EffectComposer(renderer);
-  prescribed_defense: Use WebGLRenderer with EffectComposer; use WebGPURenderer (awaited
-    .init()) with PostProcessing from 'three/webgpu'. Never cross backends.
-  severity: CRITICAL
-  source_task_id: task_threejs_backend_audit
-  created_at: '2026-09-05T12:00:00+00:00'
-  verified_counterfactual: Zero TypeError getContext crashes in node-based postprocessing
-    and webgl tests
-- antibody_id: ab_design_threejs_r3f_state_render_loop
-  domain: design_3d
-  trigger_condition: Calling useState or parent state dispatch inside useFrame()
-  lethal_anti_pattern: useFrame(() => { setRotation(r => r + 0.01); });
-  prescribed_defense: 'Mutate object ref directly: useFrame((_, delta) => { ref.current.rotation.y
-    += delta; })'
-  severity: HIGH
-  source_task_id: task_r3f_render_audit
-  created_at: '2026-09-05T12:00:00+00:00'
-  verified_counterfactual: React render profiler verified 60 FPS locked with zero
-    component re-renders during animation
-- antibody_id: ab_design_threejs_texture_colorspace_distortion
-  domain: design_3d
-  trigger_condition: Assigning THREE.SRGBColorSpace to data textures (normal, roughness,
-    metalness, ao) or failing to set SRGBColorSpace on diffuse maps
-  lethal_anti_pattern: normalTexture.colorSpace = THREE.SRGBColorSpace;
-  prescribed_defense: Diffuse maps MUST be THREE.SRGBColorSpace; normal/roughness/metalness/ao
-    maps MUST be THREE.NoColorSpace.
-  severity: HIGH
-  source_task_id: task_pbr_colorspace_audit
-  created_at: '2026-09-05T12:00:00+00:00'
-  verified_counterfactual: Visual difference analyzer confirmed accurate PBR reflectance
-    and normal perturbation without gamma warping
-- antibody_id: ab_design_threejs_hypertrophic_overkill
-  domain: design_3d
-  trigger_condition: Implementing a 120Hz physics accumulator, post-processing composer,
-    or instanced fleet for simple ambient UI, hero badges, or decorative 3D cards
-  lethal_anti_pattern: 'const loop = new DeterministicGameLoop(updatePhysics, render);
-    const composer = new EffectComposer(renderer); # Hypertrophic overkill for simple
-    hero badge'
-  prescribed_defense: Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple
-    PBR, zero physics accumulators, no post-processing).
-  severity: HIGH
-  source_task_id: task_threejs_triage_audit
-  created_at: '2026-09-05T12:00:00+00:00'
-  verified_counterfactual: Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator
-    overhead on ambient UI components
-- antibody_id: ab_design_purple_glow_slop
-  domain: design_3d
-  trigger_condition: Using generic purple/violet glowing radial or gradient blobs (bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl)
-  lethal_anti_pattern: '<div class="absolute -top-40 right-0 h-96 w-96 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 blur-3xl opacity-30"></div>'
-  prescribed_defense: Eliminate generic purple blobs. Use a single curated OKLCH accent colorway anchored on a neutral base with inverse-square volumetric lighting.
-  severity: CRITICAL
-  source_task_id: task_anti_slop_audit_01
-  created_at: '2026-09-06T12:00:00+00:00'
-  verified_counterfactual: Visual difference probe verified zero purple gradient artifacts; clean monochromatic OKLCH substrate confirmed.
-- antibody_id: ab_design_centered_three_card_cliche
-  domain: design_3d
-  trigger_condition: Generating centered hero followed by 3 equal feature cards with icons in colored rounded boxes
-  lethal_anti_pattern: '<div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center"><div class="p-6 rounded-xl shadow"><h3>Feature 1</h3></div>...</div>'
-  prescribed_defense: Enforce dynamic asymmetric Bento Grid layout with mixed cell spans (2x2 hero cell, 2x1 telemetry ribbon, 1x1 sandboxes) and contrasting visual surfaces.
-  severity: HIGH
-  source_task_id: task_bento_layout_audit
-  created_at: '2026-09-06T12:00:00+00:00'
-  verified_counterfactual: Layout inspector confirmed asymmetric 50/50 split and 8/4 bento grid with zero identical centered cards.
-- antibody_id: ab_design_div_screenshot_mockup
-  domain: design_3d
-  trigger_condition: Rendering fake browser or macOS preview windows with 3 colored circle dots in CSS
-  lethal_anti_pattern: '<div class="flex gap-2"><span class="w-3 h-3 rounded-full bg-red-500"></span><span class="w-3 h-3 rounded-full bg-yellow-500"></span><span class="w-3 h-3 rounded-full bg-green-500"></span></div>'
-  prescribed_defense: Prohibit fake div screenshot window bars. Render authentic interactive component sandboxes or real high-resolution imagery.
-  severity: CRITICAL
-  source_task_id: task_materiality_audit
-  created_at: '2026-09-06T12:00:00+00:00'
-  verified_counterfactual: DOM scanner verified complete absence of fake colored window dots; real telemetry widgets rendered.
-- antibody_id: ab_design_llm_marketing_fluff
-  domain: design_3d
-  trigger_condition: Injecting generic LLM buzzwords ('supercharge', 'unleash', 'next-gen AI', 'delve into', 'seamlessly integrate')
-  lethal_anti_pattern: '<h1>Supercharge your workflow with our next-gen AI platform</h1>'
-  prescribed_defense: Replace marketing buzzwords with concrete, functional, measurable engineering copy ('Deterministic execution brokers delivering sub-60ms state transitions').
-  severity: HIGH
-  source_task_id: task_copywriting_audit
-  created_at: '2026-09-06T12:00:00+00:00'
-  verified_counterfactual: AST copy auditor confirmed zero regex matches for banned LLM marketing marker phrases.
-- antibody_id: ab_design_viewport_instability_h_screen
-  domain: design_3d
-  trigger_condition: Using h-screen or height: 100vh causing mobile address-bar resize jumping
-  lethal_anti_pattern: '<section class="h-screen w-full flex items-center justify-center">'
-  prescribed_defense: Strictly use min-h-[100dvh] with desktop top padding capped at pt-24 (6rem) for rock-solid mobile stability.
-  severity: MEDIUM
-  source_task_id: task_viewport_fit_audit
-  created_at: '2026-09-06T12:00:00+00:00'
-  verified_counterfactual: Mobile emulator verified zero Cumulative Layout Shift (CLS = 0.00) during mobile URL bar collapse.
-specialized_heuristics:
-- 'Three.js / WebGPU Standards: Prefer Three Shading Language (TSL) node shaders and
-  WebGPURenderer over legacy raw WebGL1 strings; verify hardware fallback.'
-- 'Deterministic Physics Accumulator: Decouple render tick from physics loop using
-  fixed 120Hz accumulator with alpha interpolation to eliminate frame jitter.'
-- 'Fluid Typography Math: Use CSS clamp with golden ratio step factors clamp(1.25rem,
-  2.5vw + 0.5rem, 3.5rem) to ensure zero layout shift across viewports.'
-- 'Newtonian Spring Motion: Animate interactive states using spring physics parameters
-  (stiffness k=170, damping c=26, mass m=1.0) rather than abrupt cubic-bezier presets.'
-- 'Locked 60/120 FPS Budget: Zero heap allocation in requestAnimationFrame render
-  loops; preallocate Vector3/Matrix4 scratch instances.'
-- 'Three.js Dual-Backend Standard: Use WebGL2 for universal stability with EffectComposer;
-  use WebGPURenderer with await renderer.init() and TSL PostProcessing for next-gen
-  features. Never mix backends.'
-- 'Mandatory Scene Grounding Contract: Never render PBR materials without AmbientLight
-  + DirectionalLight; always place camera outside object bounds and attach ResizeObserver.'
-- 'React Three Fiber (R3F) Direct Mutation: Never call useState inside useFrame();
-  mutate object refs directly. Wrap async loaders (useGLTF) in <Suspense>.'
-- 'Strict Color Space Separation: Set SRGBColorSpace on diffuse/color textures; set
-  NoColorSpace on normal/roughness/metalness/AO textures.'
-- 'Universal Recursive Teardown: Recursively dispose all geometries, texture slots,
-  buffer attributes, and call renderer.forceContextLoss().'
-- '3D Complexity Triage: Classify task into Tier 1 (Ambient UI), Tier 2 (Configurator/HUD),
-  or Tier 3 (Real-Time Game) before coding; never apply Tier 3 game-engine loops to
-  Tier 1 decorative widgets.'
-- 'Anti-Slop Strict Invariant: Zero purple glowing gradients, zero 3-card centered boilerplates, zero LLM marketing fluff, zero fake macOS window dots.'
-- 'Brief Inference & Dials Calibration: Infer page kind and audience; calibrate Variance, Motion, and Density before layout synthesis.'
-- '7-Layer Optical Depth Staging: Build UI depth via Atmospheric Void, Micro-Grain, Volumetric Lighting, Refractive Substrate, Hairline Rims, Fluid Typography, Micro-Physics.'
-last_consolidated_at: '2026-09-06T12:00:00+00:00'
+  ],
+  "specialized_heuristics": [
+    "Three.js / WebGPU Standards: Prefer Three Shading Language (TSL) node shaders and WebGPURenderer over legacy raw WebGL1 strings; verify hardware fallback.",
+    "Deterministic Physics Accumulator: Decouple render tick from physics loop using fixed 120Hz accumulator with alpha interpolation to eliminate frame jitter.",
+    "Fluid Typography Math: Use CSS clamp with golden ratio step factors clamp(1.25rem, 2.5vw + 0.5rem, 3.5rem) to ensure zero layout shift across viewports.",
+    "Newtonian Spring Motion: Animate interactive states using spring physics parameters (stiffness k=170, damping c=26, mass m=1.0) rather than abrupt cubic-bezier presets.",
+    "Locked 60/120 FPS Budget: Zero heap allocation in requestAnimationFrame render loops; preallocate Vector3/Matrix4 scratch instances.",
+    "Three.js Dual-Backend Standard: Use WebGL2 for universal stability with EffectComposer; use WebGPURenderer with await renderer.init() and TSL PostProcessing for next-gen features. Never mix backends.",
+    "Mandatory Scene Grounding Contract: Never render PBR materials without AmbientLight + DirectionalLight; always place camera outside object bounds and attach ResizeObserver.",
+    "React Three Fiber (R3F) Direct Mutation: Never call useState inside useFrame(); mutate object refs directly. Wrap async loaders (useGLTF) in <Suspense>.",
+    "Strict Color Space Separation: Set SRGBColorSpace on diffuse/color textures; set NoColorSpace on normal/roughness/metalness/AO textures.",
+    "Universal Recursive Teardown: Recursively dispose all geometries, texture slots, buffer attributes, and call renderer.forceContextLoss().",
+    "3D Complexity Triage: Classify task into Tier 1 (Ambient UI), Tier 2 (Configurator/HUD), or Tier 3 (Real-Time Game) before coding; never apply Tier 3 game-engine loops to Tier 1 decorative widgets."
+  ],
+  "last_consolidated_at": "2026-09-05T12:00:00+00:00"
+}
 ---
 
 # Cortical Lobe: `design_3d`
@@ -294,4 +225,3 @@ last_consolidated_at: '2026-09-06T12:00:00+00:00'
 - **Prescribed Defense**: Enforce Tier 1 Ambient UI profile (< 15 draw calls, MatCap/simple PBR, zero physics accumulators, no post-processing).
 - **Verified Counterfactual**: `Profiler confirmed < 25MB VRAM and 60 FPS with zero accumulator overhead on ambient UI components`
 - **Source Task ID**: `task_threejs_triage_audit`
-
