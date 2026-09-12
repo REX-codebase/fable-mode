@@ -8,7 +8,7 @@
     "process": 0.416,
     "property_oracle": 0.879,
     "red_team_swarm": 1.0,
-    "security": 0.881,
+    "security": 0.7983,
     "target": 0.632,
     "test_harness": 1.0
   },
@@ -22,7 +22,7 @@
     "mutation": 0.879,
     "process": 0.3944,
     "red_team_swarm": 0.83,
-    "security": 0.2648,
+    "security": 0.3648,
     "target": 0.5888,
     "test_harness": 0.855
   },
@@ -34,16 +34,16 @@
     "mutation": 1.0,
     "process": 0.4016,
     "property_oracle": 0.83,
-    "security": 0.8972,
+    "security": 0.8082,
     "system": 0.6263,
     "target": 0.6032,
     "test_harness": 1.0
   },
   "security": {
-    "mutation": 0.881,
-    "property_oracle": 0.2648,
-    "red_team_swarm": 0.8972,
-    "test_harness": 0.8576
+    "mutation": 0.7983,
+    "property_oracle": 0.3648,
+    "red_team_swarm": 0.8082,
+    "test_harness": 0.7812
   },
   "system": {
     "diagnostics": 0.6116,
@@ -65,7 +65,7 @@
     "process": 0.4088,
     "property_oracle": 0.855,
     "red_team_swarm": 1.0,
-    "security": 0.8576,
+    "security": 0.7812,
     "system": 0.641,
     "target": 0.6176
   }

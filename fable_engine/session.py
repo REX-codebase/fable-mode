@@ -1241,6 +1241,16 @@ class FableSession:
 
     def record_breakage_report(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and record a report, enforcing durable remediation bounds."""
+        if self.current_state in (
+            SessionState.INIT,
+            SessionState.DEEPTHINK_TIMELOCK,
+            SessionState.SEALED,
+            SessionState.EVOLVED,
+        ):
+            raise ValueError(f"Breakage report cannot be recorded from {self.current_state.value}.")
+        if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
+            raise ValueError("Session is already escalated for unresolved breakages.")
+
         broken_count = self._validate_breakage_report(report_data)
         now = self._wall_clock()
         if broken_count == 0:
@@ -1261,9 +1271,6 @@ class FableSession:
             finally:
                 self._sealing_authorized = False
             return report_data
-
-        if self.current_state == SessionState.ESCALATION_UNRESOLVED_BREAKAGES:
-            raise ValueError("Session is already escalated for unresolved breakages.")
 
         started_at = self.remediation_started_at if self.remediation_started_at is not None else now
         attempt = self.remediation_attempt_count + 1
