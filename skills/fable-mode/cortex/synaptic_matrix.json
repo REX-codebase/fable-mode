@@ -1,7 +1,7 @@
 {
   "diagnostics": {
     "red_team_swarm": 0.6617,
-    "system": 0.6116,
+    "system": 0.7116,
     "test_harness": 0.6792
   },
   "mutation": {
@@ -35,7 +35,7 @@
     "process": 0.4016,
     "property_oracle": 0.83,
     "security": 0.8082,
-    "system": 0.6263,
+    "system": 0.7263,
     "target": 0.6032,
     "test_harness": 1.0
   },
@@ -46,9 +46,9 @@
     "test_harness": 0.7812
   },
   "system": {
-    "diagnostics": 0.6116,
-    "red_team_swarm": 0.6263,
-    "test_harness": 0.641
+    "diagnostics": 0.7116,
+    "red_team_swarm": 0.7263,
+    "test_harness": 0.741
   },
   "target": {
     "mutation": 0.632,
@@ -66,7 +66,7 @@
     "property_oracle": 0.855,
     "red_team_swarm": 1.0,
     "security": 0.7812,
-    "system": 0.641,
+    "system": 0.741,
     "target": 0.6176
   }
 }

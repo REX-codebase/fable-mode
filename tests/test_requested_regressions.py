@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -159,6 +160,23 @@ class SessionRegressionTests(unittest.TestCase):
                     ),
                     before,
                 )
+
+    def test_breakage_report_requires_file_change_before_mutation(self) -> None:
+        session = FableSession("implementation_without_changes", "bounds", 5.0)
+        session.current_state = SessionState.IMPLEMENTATION
+        report = {
+            "report_id": "missing-file-change",
+            "total_probes": 1,
+            "broken_count": 1,
+            "passed": False,
+            "findings": [{"scenario_id": "state", "broken": True}],
+        }
+        before = session.to_dict()
+
+        with self.assertRaisesRegex(ValueError, "requires code written / file changes logged"):
+            session.record_breakage_report(report)
+
+        self.assertEqual(session.to_dict(), before)
 
     def test_clean_stage_rubric_requires_positive_target_and_satisfied_item(self) -> None:
         session = FableSession("rubric_acceptance", "clean-stage evidence", 5.0)
@@ -336,6 +354,11 @@ class CorticalRegressionTests(unittest.TestCase):
                 (bundled_cortex / artifact_name).read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
+
+        matrix_path = self.cortex_dir / "synaptic_matrix.json"
+        copied_matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+        copied_matrix["security"]["mutation"] = 0.05
+        matrix_path.write_text(json.dumps(copied_matrix, indent=2), encoding="utf-8")
 
         engine = HebbianPlasticityEngine(cortex_dir=self.cortex_dir)
         security = engine.activate_lobe("security")

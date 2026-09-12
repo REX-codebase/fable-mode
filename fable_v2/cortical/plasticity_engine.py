@@ -882,6 +882,7 @@ class HebbianPlasticityEngine:
         # 6. Save lobe and synaptic matrix to disk
         timestamp = datetime.now(timezone.utc).isoformat()
         lobe.last_consolidated_at = timestamp
+        self._sync_lobe_to_matrix(lobe)
         lobe.save_to_disk(self._get_lobe_path(slug))
         self._save_synaptic_matrix()
 

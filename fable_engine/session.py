@@ -1272,6 +1272,9 @@ class FableSession:
                 self._sealing_authorized = False
             return report_data
 
+        if self.current_state == SessionState.IMPLEMENTATION:
+            self.transition_to(SessionState.RED_TEAM_GATE)
+
         started_at = self.remediation_started_at if self.remediation_started_at is not None else now
         attempt = self.remediation_attempt_count + 1
         elapsed = max(0.0, now - started_at)
@@ -1314,8 +1317,6 @@ class FableSession:
             "breakages": list(active),
             "remediation_directives": report_data.get("remediation_directives", []),
         })
-        if self.current_state == SessionState.IMPLEMENTATION:
-            self.transition_to(SessionState.RED_TEAM_GATE, "Breakage report submitted")
         if self.current_state == SessionState.RED_TEAM_GATE:
             self.transition_to(SessionState.ARBITRATION, "Arbitration of breakages")
         if self.current_state == SessionState.ARBITRATION:
