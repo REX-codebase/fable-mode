@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fable_engine.cas import DATA_DIR
 from fable_engine.session import FableSession, RED_TEAM_ATTACK_VECTORS, SessionState
 from fable_v2.cortical.plasticity_engine import (
     MAX_ACTIVE_NODES,
@@ -119,6 +120,60 @@ class SessionRegressionTests(unittest.TestCase):
         session.record_breakage_report(dict(report, report_id="elapsed"))
         self.assertEqual(session.current_state, SessionState.ESCALATION_UNRESOLVED_BREAKAGES)
 
+    def test_clean_stage_rubric_requires_positive_target_and_satisfied_item(self) -> None:
+        session = FableSession("rubric_acceptance", "clean-stage evidence", 5.0)
+        session.epistemic_ledger = [
+            {"tag": "PROVEN", "evidence": "one"},
+            {"tag": "PROVEN", "evidence": "two"},
+        ]
+        session.refinement_cycles = [{}]
+        session.file_changes = [{}]
+        session.proof_receipts = [{"receipt_id": "valid", "verified": True}]
+        valid_item = {"satisfied": True, "evidence_receipt_id": "valid"}
+
+        session.goal_rubrics = [{
+            "status": "achieved",
+            "current_score": 0.0,
+            "target_score": 0.0,
+            "items": [valid_item],
+        }]
+        with self.assertRaisesRegex(ValueError, "lacks an achieved rubric"):
+            session._validate_clean_stage_evidence()
+
+        session.goal_rubrics = [{
+            "status": "achieved",
+            "current_score": 1.0,
+            "target_score": 0.95,
+            "items": [{"satisfied": False}],
+        }]
+        with self.assertRaisesRegex(ValueError, "lacks an achieved rubric"):
+            session._validate_clean_stage_evidence()
+
+        session.goal_rubrics[0]["items"] = [
+            {"satisfied": False, "evidence_receipt_id": "missing"},
+            valid_item,
+        ]
+        session._validate_clean_stage_evidence()
+
+    def test_missing_broken_defaults_true_without_overriding_explicit_false(self) -> None:
+        session = FableSession("missing_broken", "breakage defaults", 5.0)
+        session.current_state = SessionState.RED_TEAM_GATE
+        session.record_breakage_report({
+            "report_id": "mixed-findings",
+            "total_probes": 2,
+            "broken_count": 1,
+            "passed": False,
+            "findings": [
+                {"scenario_id": "missing-is-broken"},
+                {"scenario_id": "explicitly-clean", "broken": False},
+            ],
+        })
+
+        self.assertEqual(
+            [item["scenario_id"] for item in session.active_breakages],
+            ["missing-is-broken"],
+        )
+
 
 class CorticalRegressionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -205,6 +260,17 @@ class CorticalRegressionTests(unittest.TestCase):
         self.assertTrue(
             any("Fable's zero-cost research scrapers" in item for item in research.specialized_heuristics)
         )
+
+    def test_shared_default_engine_uses_data_directory(self) -> None:
+        import fable_engine.session as session_module
+
+        previous = session_module._GLOBAL_PLASTICITY_ENGINE
+        session_module._GLOBAL_PLASTICITY_ENGINE = None
+        try:
+            engine = session_module.get_plasticity_engine()
+            self.assertEqual(engine.cortex_dir, DATA_DIR / "cortex")
+        finally:
+            session_module._GLOBAL_PLASTICITY_ENGINE = previous
 
 
 if __name__ == "__main__":

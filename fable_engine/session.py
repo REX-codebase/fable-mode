@@ -55,7 +55,7 @@ def get_plasticity_engine():
     global _GLOBAL_PLASTICITY_ENGINE
     if _GLOBAL_PLASTICITY_ENGINE is None:
         from fable_v2.cortical import HebbianPlasticityEngine
-        _GLOBAL_PLASTICITY_ENGINE = HebbianPlasticityEngine()
+        _GLOBAL_PLASTICITY_ENGINE = HebbianPlasticityEngine(cortex_dir=DATA_DIR / "cortex")
     return _GLOBAL_PLASTICITY_ENGINE
 
 def __getattr__(name: str) -> Any:
@@ -1206,8 +1206,14 @@ class FableSession:
         if len(proven) < 2 or not refinements or not files:
             raise ValueError("Clean report lacks current-process epistemic, refinement, and file-change evidence.")
         for rubric in rubrics:
-            if rubric.get("status") == "achieved" or float(rubric.get("current_score", 0.0)) >= float(rubric.get("target_score", 0.95)):
-                for item in rubric.get("items", []):
+            target_score = float(rubric.get("target_score", 0.95))
+            if target_score <= 0:
+                continue
+            if rubric.get("status") == "achieved" or float(rubric.get("current_score", 0.0)) >= target_score:
+                satisfied_items = [item for item in rubric.get("items", []) if item.get("satisfied")]
+                if not satisfied_items:
+                    continue
+                for item in satisfied_items:
                     self._validate_satisfied_rubric_item(item)
                 return
         raise ValueError("Clean report lacks an achieved rubric with validated criteria evidence.")
@@ -1222,7 +1228,7 @@ class FableSession:
         total_probes = int(report_data.get("total_probes", len(findings)))
         actual_broken = sum(
             1 for finding in findings
-            if bool(finding.get("broken", False) if isinstance(finding, dict) else getattr(finding, "broken", False))
+            if bool(finding.get("broken", True) if isinstance(finding, dict) else getattr(finding, "broken", True))
         )
         if broken_count < 0 or total_probes < len(findings) or broken_count != actual_broken:
             raise ValueError("Breakage report counts do not match its findings.")
@@ -1264,7 +1270,7 @@ class FableSession:
         elapsed = max(0.0, now - started_at)
         active: List[Dict[str, Any]] = []
         for finding in report_data.get("findings", []):
-            if bool(finding.get("broken", False) if isinstance(finding, dict) else getattr(finding, "broken", False)):
+            if bool(finding.get("broken", True) if isinstance(finding, dict) else getattr(finding, "broken", True)):
                 active.append({
                     "scenario_id": finding.get("scenario_id", "") if isinstance(finding, dict) else getattr(finding, "scenario_id", ""),
                     "hypothesis": finding.get("hypothesis", "") if isinstance(finding, dict) else getattr(finding, "hypothesis", ""),

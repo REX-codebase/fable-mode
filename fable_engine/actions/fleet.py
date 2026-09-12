@@ -434,13 +434,15 @@ def _handle_evolve_cortex(arguments: Dict[str, Any]) -> str:
 
     co_activated_nodes = arguments.get("co_activated_nodes") or ["mutation", "test_harness", "red_team_swarm", "property_oracle"]
 
-    evo_receipt = _get_cortex().consolidate_task(
+    cortex = _get_cortex()
+    evo_receipt = cortex.consolidate_task(
         task_id=task_id,
         success=True,
         domain=domain,
         broken_scenarios=neutralized_scenarios,
         co_activated_nodes=co_activated_nodes,
     )
+    lobe_path = cortex._get_lobe_path(domain).resolve()
 
     session.transition_to(SessionState.EVOLVED, "Cortical evolution consolidation completed")
     session.save()
@@ -452,7 +454,7 @@ def _handle_evolve_cortex(arguments: Dict[str, Any]) -> str:
         f"### 🧬 Cortical Evolution Receipt: EVOLVED\n\n"
         f"- **Session**: `{session.session_name}`\n"
         f"- **Current State**: `EVOLVED` 🌟\n"
-        f"- **Domain Lobe**: `{domain}` (`skills/fable-mode/cortex/{domain}.md`)\n"
+        f"- **Domain Lobe**: `{domain}` (`{lobe_path}`)\n"
         f"- **Task ID**: `{task_id}`\n"
         f"- **Plasticity Mode**: `LTP (Long-Term Potentiation)` (Score: +1.0)\n"
         f"- **Antibodies Added**: `{evo_receipt.get('antibodies_added', 0)}`\n"
@@ -464,7 +466,7 @@ def _handle_evolve_cortex(arguments: Dict[str, Any]) -> str:
         f"| :--- | :---: | :--- |\n"
         f"{weights_table}\n\n"
         f"> [!TIP]\n"
-        f"> Cortical lobe `skills/fable-mode/cortex/{domain}.md` successfully evolved and persisted to disk."
+        f"> Cortical lobe `{lobe_path}` successfully evolved and persisted to disk."
         f"{SILENT_DELIBERATION_REMINDER if session.execution_locked else ''}"
     )
 
