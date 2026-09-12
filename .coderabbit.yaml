@@ -1,0 +1,164 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit configuration for fable-mode — ASSERTIVE + MOST STRICT + ADVANCED
+# https://docs.coderabbit.ai/reference/configuration
+# Profiles available: quiet | chill | assertive  → we lock to assertive (max feedback)
+
+language: en-US
+
+tone_instructions: >-
+  You are a principal systems engineer reviewing a deterministic System-2 cognitive
+  engine (fable-mode / fable-engine). Be ruthless, precise, and uncompromising.
+  Flag every violation of invariants, time-lock semantics, CAS integrity, epistemic
+  hygiene, subagent isolation, or concurrency safety. Prefer formal reasoning over
+  style nitpicks only when the style itself threatens correctness or maintainability.
+  Never soft-pedal; request changes when invariants are at risk.
+
+early_access: false
+enable_free_tier: true
+
+reviews:
+  # Most comprehensive / nitpicky profile available
+  profile: assertive
+
+  # Strictest workflow: CodeRabbit can request changes and block merge until resolved
+  request_changes_workflow: true
+
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  high_level_summary_instructions: |
+    Produce a high-signal summary that explicitly calls out:
+    1. Impact on Mechanical Time-Lock / authority deadline semantics
+    2. Any change to Main-Agent vs Subagent cognitive separation
+    3. CAS / token-compression / FableGrammar333 integrity risks
+    4. Epistemic grounding ([PROVEN]/[HYPOTHESIS]/[UNKNOWN]) violations
+    5. Concurrency, lock-freedom, or session WAL hazards
+
+  auto_title_placeholder: "@coderabbitai"
+  auto_title_instructions: "Use conventional commits: <type>[optional scope]: <description>. Prefer feat/fix/refactor/docs/test/ci for this cognitive engine."
+
+  review_status: true
+  review_details: true
+  review_progress: true
+  commit_status: true
+  fail_commit_status: true   # Fail the check on review errors — no silent green
+
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+
+  poem: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: true
+
+  # Anti-slop for public repo hygiene
+  slop_detection:
+    enabled: true
+    include_all_authors: false
+    label: "slop"
+
+  path_filters:
+    - "!**/__pycache__/**"
+    - "!**/.pytest_cache/**"
+    - "!**/*.pyc"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/.eggs/**"
+    - "!**/*.egg-info/**"
+    - "!assets/**"
+    - "!marketing/**"
+
+  path_instructions:
+    - path: "fable_engine/**/*.py"
+      instructions: |
+        CRITICAL domain: fable-engine is the Mechanical Time-Lock + Session MCP core.
+        Enforce:
+        - Immutable authority deadline must never be bypassable (hard error on premature unlock_execution).
+        - Main Agent MUST NOT write project code; only subagents may mutate workspace files.
+        - All epistemic claims must be classified [PROVEN] / [HYPOTHESIS] / [UNKNOWN] with evidence pointers.
+        - CAS writes must be atomic (tmp + rename) + SHA-256 verified; never partial or racy.
+        - Session WAL / checkpoint_session must remain crash-safe and monotonic.
+        - Concurrency: prefer lock-free or carefully ordered locking; document memory model assumptions.
+        Flag any weakening of these invariants as blocking.
+
+    - path: "fable_v2/**/*.py"
+      instructions: |
+        fable_v2 houses the System-3 meta-cognition, proof engine, coder fleet, and design engine.
+        Enforce:
+        - Subagent contracts (compile_delegation_contract) must remain complete and non-bypassable.
+        - Red-team / property-oracle / mutation testing paths must stay adversarial.
+        - Design engine (domain: "design") must preserve 7-layer optical depth, Haute archetypes, and anti-slop rules.
+        - Vector / plasticity / causal (do-calculus) modules: formal correctness over convenience.
+        Request changes on any regression of verification tiers or TRIZ contradiction handling.
+
+    - path: "fable_mode/**/*.py"
+      instructions: |
+        Installer / launcher / adapters layer. Keep it portable, zero-dependency where possible,
+        and never leak secrets or weaken safety.py guards. Prefer pure functions and explicit error paths.
+
+    - path: "tests/**/*.py"
+      instructions: |
+        Tests must exercise time-lock rejection, CAS integrity, session recovery, and subagent isolation.
+        Prefer property-based / adversarial tests. Flag missing coverage of authority-deadline paths
+        or epistemic misclassification as high severity.
+
+    - path: "**/*.md"
+      instructions: |
+        Documentation must stay consistent with the 10 Core Pillars and 6-Phase lifecycle.
+        Flag any claim that contradicts the mechanical time-lock or cognitive-separation rules.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        CI must not skip the mechanical guarantees. Prefer fail-closed behavior.
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0   # never auto-pause — keep the pressure on
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "[WIP]"
+      - "do-not-merge"
+      - "work-in-progress"
+      - "skip review"
+    labels:
+      - "!wip"
+      - "!do-not-review"
+    base_branches: []   # default branch + any configured
+
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+
+  tools:
+    ruff:
+      enabled: true
+    gitleaks:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    github-checks:
+      timeout_ms: 600000
+
+chat:
+  auto_reply: true
+  art: false
+
+knowledge_base:
+  opt_out: false
