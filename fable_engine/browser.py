@@ -31,6 +31,8 @@ DEFAULT_PROFILE_DIR = pathlib.Path.home() / ".fable" / "browser-profile"
 DEFAULT_VIEWPORT_WIDTH = 1280
 DEFAULT_VIEWPORT_HEIGHT = 800
 DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS = 15.0
+MAX_BROWSER_OPEN_TIMEOUT_SECONDS = 30.0
 MAX_SCREENSHOT_LAYERS = 10
 MAX_BROWSER_SESSIONS = 32
 
@@ -119,18 +121,10 @@ def generate_minimal_png(width: int, height: int, elements: List[DOMElement], bg
 
     # 3 bytes per pixel RGB
     row_bytes = w * 3
-    # Allocate bytearray for raw uncompressed bitmap + scanline filter byte (0x00 None filter per row)
-    raw_data = bytearray((row_bytes + 1) * h)
-
     bg_r, bg_g, bg_b = bg_color
-    for y in range(h):
-        row_offset = y * (row_bytes + 1)
-        raw_data[row_offset] = 0  # Filter type 0
-        for x in range(w):
-            px = row_offset + 1 + x * 3
-            raw_data[px] = bg_r
-            raw_data[px + 1] = bg_g
-            raw_data[px + 2] = bg_b
+    # Prefix each scanline with filter type 0, then repeat the RGB background.
+    scanline = b"\x00" + bytes((bg_r, bg_g, bg_b)) * w
+    raw_data = bytearray(scanline * h)
 
     # Simple element box rasterization
     for elem in elements:
@@ -282,7 +276,7 @@ class StealthBrowserSession:
     def open(
         self,
         url: str,
-        timeout: float = 15.0,
+        timeout: float = DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
         *,
         record_history: bool = True,
     ) -> Dict[str, Any]:
