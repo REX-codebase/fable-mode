@@ -58,6 +58,8 @@ def get_plasticity_engine():
         _GLOBAL_PLASTICITY_ENGINE = HebbianPlasticityEngine(cortex_dir=DATA_DIR / "cortex")
     return _GLOBAL_PLASTICITY_ENGINE
 
+get_default_plasticity_engine = get_plasticity_engine
+
 def __getattr__(name: str) -> Any:
     if name == "GLOBAL_RED_TEAM_SWARM":
         return get_red_team_swarm()

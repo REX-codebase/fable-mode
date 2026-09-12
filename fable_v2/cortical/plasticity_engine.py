@@ -730,6 +730,7 @@ class HebbianPlasticityEngine:
                 node_activations[node] = round(A_j, 4)
 
         # 1. Update lobe synaptic weights via directional BCM rule
+        new_weights: dict[str, float] = {}
         for node in active_nodes:
             old_w = lobe.synaptic_weights.get(node, 0.30)
             A_node = node_activations.get(node, 0.80)
@@ -738,7 +739,8 @@ class HebbianPlasticityEngine:
             else:
                 delta_w = - depression_rate * A_domain * A_node
             new_w = min(1.0, max(0.05, old_w + delta_w))
-            lobe.synaptic_weights[node] = round(new_w, 4)
+            new_weights[node] = round(new_w, 4)
+        lobe.synaptic_weights = new_weights
 
         # 2. Homeostatic normalization across lobe weights
         # If total synaptic weight exceeds capacity, apply soft scaling while preserving [0.05, 1.0]
