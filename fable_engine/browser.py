@@ -198,21 +198,28 @@ class ProfileManager:
     def _ensure_private_file(path: pathlib.Path) -> None:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
         try:
-            os.fchmod(fd, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
         finally:
             os.close(fd)
 
     def _load(self):
         if self.cookie_file.exists():
             try:
-                self.cookie_file.chmod(0o600)
+                try:
+                    self.cookie_file.chmod(0o600)
+                except OSError:
+                    pass
                 self.cookies.load(ignore_discard=True, ignore_expires=True)
             except Exception as e:
                 logger.warning(f"Could not load cookies from {self.cookie_file}: {e}")
                 self.cookies.clear()
         if self.storage_file.exists():
             try:
-                self.storage_file.chmod(0o600)
+                try:
+                    self.storage_file.chmod(0o600)
+                except OSError:
+                    pass
                 with open(self.storage_file, "r", encoding="utf-8") as f:
                     self.local_storage = json.load(f)
             except Exception as e:
@@ -223,11 +230,19 @@ class ProfileManager:
         try:
             self._ensure_private_file(self.cookie_file)
             self.cookies.save(ignore_discard=True, ignore_expires=True)
-            self.cookie_file.chmod(0o600)
+            try:
+                self.cookie_file.chmod(0o600)
+            except OSError:
+                pass
             storage_fd = os.open(self.storage_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            os.fchmod(storage_fd, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(storage_fd, 0o600)
             with os.fdopen(storage_fd, "w", encoding="utf-8") as f:
                 json.dump(self.local_storage, f, indent=2)
+            try:
+                self.storage_file.chmod(0o600)
+            except OSError:
+                pass
         except Exception as e:
             logger.warning(f"Failed to save profile state: {e}")
 

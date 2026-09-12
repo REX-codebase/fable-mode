@@ -133,9 +133,10 @@ class TestStealthAgentBrowser(unittest.TestCase):
         finally:
             os.umask(old_umask)
 
-        self.assertEqual(stat.S_IMODE(os.stat(self.profile_dir).st_mode), 0o700)
-        self.assertEqual(stat.S_IMODE(os.stat(pm.cookie_file).st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE(os.stat(pm.storage_file).st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(self.profile_dir).st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(os.stat(pm.cookie_file).st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(os.stat(pm.storage_file).st_mode), 0o600)
 
     def test_cookie_jar_does_not_send_cookie_to_another_origin(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -300,9 +301,13 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
     import fable_engine.browser as browser
     assert browser.GLOBAL_BROWSER_ENGINE._engine is None
 """
+        env = os.environ.copy()
+        repo_root = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        env["PYTHONPATH"] = repo_root + os.pathsep + env.get("PYTHONPATH", "")
         result = subprocess.run(
             [sys.executable, "-c", script],
             cwd=self.tmp_dir,
+            env=env,
             text=True,
             capture_output=True,
             check=False,
