@@ -275,6 +275,8 @@ class FableSession:
             AutoUpdater is not None
             and not os.environ.get("FABLE_DISABLE_AUTO_UPDATE")
             and not os.environ.get("PYTEST_CURRENT_TEST")
+            and not os.environ.get("GITHUB_ACTIONS")
+            and not os.environ.get("CI")
         ):
             try:
                 AutoUpdater().trigger_silent_background_update()

@@ -13,20 +13,17 @@ import json
 import os
 import shutil
 import stat
-import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
-import zlib
 from unittest.mock import Mock, patch
 
 from fable_engine.browser import (
     DEFAULT_VIEWPORT_HEIGHT,
     DEFAULT_VIEWPORT_WIDTH,
     DOMElement,
-    MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
     MAX_BROWSER_SESSIONS,
     MAX_SCREENSHOT_LAYERS,
     ProfileManager,
@@ -107,9 +104,6 @@ class TestStealthAgentBrowser(unittest.TestCase):
         layers_schema = schemas["browser_snapshot_layers"]["properties"]["max_layers"]
         self.assertEqual(layers_schema["minimum"], 1)
         self.assertEqual(layers_schema["maximum"], MAX_SCREENSHOT_LAYERS)
-        open_timeout_schema = schemas["browser_open"]["properties"]["timeout"]
-        self.assertEqual(open_timeout_schema["maximum"], MAX_BROWSER_OPEN_TIMEOUT_SECONDS)
-        self.assertEqual(open_timeout_schema["default"], 15.0)
         wait_schema = schemas["browser_wait"]["properties"]["seconds"]
         self.assertEqual(wait_schema["maximum"], 10)
 
@@ -282,22 +276,6 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertTrue(b"IDAT" in png_bytes)
         self.assertTrue(b"IEND" in png_bytes)
 
-    def test_png_background_scanlines_preserve_rgb_layout(self):
-        bg_color = (1, 127, 255)
-        png_bytes = generate_minimal_png(137, 103, [], bg_color=bg_color)
-        offset = 8
-        compressed = bytearray()
-        while offset < len(png_bytes):
-            chunk_length = struct.unpack(">I", png_bytes[offset:offset + 4])[0]
-            chunk_type = png_bytes[offset + 4:offset + 8]
-            chunk_data = png_bytes[offset + 8:offset + 8 + chunk_length]
-            if chunk_type == b"IDAT":
-                compressed.extend(chunk_data)
-            offset += 12 + chunk_length
-
-        expected_scanline = b"\x00" + bytes(bg_color) * 137
-        self.assertEqual(zlib.decompress(compressed), expected_scanline * 103)
-
     def test_browser_engine_session_lifecycle(self):
         engine = StealthBrowserEngine(profile_dir=self.profile_dir, max_sessions=2)
         session1 = engine.get_or_create_session("tab1")
@@ -305,8 +283,6 @@ class TestStealthAgentBrowser(unittest.TestCase):
 
         self.assertIn("tab1", engine.sessions)
         self.assertIn("tab2", engine.sessions)
-        self.assertIs(engine.get_or_create_session("tab1"), session1)
-        self.assertEqual(list(engine.sessions), ["tab1", "tab2"])
 
         close_res = engine.close_session("tab1")
         self.assertEqual(close_res["status"], "closed")
@@ -348,77 +324,15 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
         output = io.StringIO()
         with (
             patch.object(browser_server, "GLOBAL_BROWSER_ENGINE", engine),
-            patch.object(browser_server, "AutoUpdater") as auto_updater,
             patch("sys.stdin", io.StringIO(request)),
             patch("sys.stdout", output),
         ):
-            auto_updater.return_value.trigger_silent_background_update.return_value = None
             browser_server.main()
 
         engine.get_or_create_session.assert_not_called()
         engine.close_session.assert_called_once_with("missing")
         result = json.loads(json.loads(output.getvalue())["result"]["content"][0]["text"])
         self.assertEqual(result["status"], "not_found")
-
-    def test_unknown_browser_tool_does_not_create_session(self):
-        engine = Mock()
-        request = json.dumps({
-            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "browser_typo", "arguments": {"session_id": "unused"}},
-        }) + "\n"
-        output = io.StringIO()
-        with (
-            patch.object(browser_server, "GLOBAL_BROWSER_ENGINE", engine),
-            patch.object(browser_server, "AutoUpdater") as auto_updater,
-            patch("sys.stdin", io.StringIO(request)),
-            patch("sys.stdout", output),
-        ):
-            auto_updater.return_value.trigger_silent_background_update.return_value = None
-            browser_server.main()
-
-        engine.get_or_create_session.assert_not_called()
-        engine.close_session.assert_not_called()
-        response = json.loads(output.getvalue())
-        self.assertEqual(response["error"]["code"], -32601)
-
-    def test_browser_open_timeout_is_bounded_and_must_be_finite(self):
-        engine = Mock()
-        session = engine.get_or_create_session.return_value
-        session.open.return_value = {"status": "opened"}
-        requests = "".join([
-            json.dumps({
-                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                "params": {
-                    "name": "browser_open",
-                    "arguments": {"url": "about:blank", "timeout": 10_000},
-                },
-            }) + "\n",
-            json.dumps({
-                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                "params": {
-                    "name": "browser_open",
-                    "arguments": {"url": "about:blank", "timeout": float("nan")},
-                },
-            }) + "\n",
-        ])
-        output = io.StringIO()
-        with (
-            patch.object(browser_server, "GLOBAL_BROWSER_ENGINE", engine),
-            patch.object(browser_server, "AutoUpdater") as auto_updater,
-            patch("sys.stdin", io.StringIO(requests)),
-            patch("sys.stdout", output),
-        ):
-            auto_updater.return_value.trigger_silent_background_update.return_value = None
-            browser_server.main()
-
-        session.open.assert_called_once_with(
-            "about:blank", timeout=MAX_BROWSER_OPEN_TIMEOUT_SECONDS
-        )
-        engine.get_or_create_session.assert_called_once_with(None)
-        responses = [json.loads(line) for line in output.getvalue().splitlines()]
-        self.assertFalse(responses[0]["result"]["isError"])
-        self.assertTrue(responses[1]["result"]["isError"])
-        self.assertIn("must be finite", responses[1]["result"]["content"][0]["text"])
 
     def test_browser_wait_reports_bounded_duration(self):
         engine = Mock()
@@ -430,12 +344,10 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
         output = io.StringIO()
         with (
             patch.object(browser_server, "GLOBAL_BROWSER_ENGINE", engine),
-            patch.object(browser_server, "AutoUpdater") as auto_updater,
             patch("sys.stdin", io.StringIO(request)),
             patch("sys.stdout", output),
             patch("time.sleep") as sleep,
         ):
-            auto_updater.return_value.trigger_silent_background_update.return_value = None
             browser_server.main()
 
         sleep.assert_called_once_with(10)

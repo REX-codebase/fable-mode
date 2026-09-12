@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import math
 import os
 import sys
 from pathlib import Path
@@ -69,11 +68,7 @@ from fable_engine.guards import (
     EpistemicEvidenceValidator,
     ModelVelocityProfiler,
 )
-from fable_engine.browser import (
-    DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
-    GLOBAL_BROWSER_ENGINE,
-    MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
-)
+from fable_engine.browser import GLOBAL_BROWSER_ENGINE
 from fable_engine.schema import BROWSER_TOOL_SCHEMAS, TOOL_SCHEMA
 from fable_engine.session import (
     ACTIVE_SESSIONS,
@@ -116,7 +111,6 @@ except ImportError:
 
 MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
 MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
-BROWSER_TOOL_NAMES = frozenset(tool["name"] for tool in BROWSER_TOOL_SCHEMAS)
 
 
 def send_response(response_dict: Dict[str, Any]):
@@ -179,7 +173,13 @@ def _bounded_lines(stream, limit: int):
 
 def main():
     logger.info("Starting Fable-Engine MCP Server on stdio...")
-    if AutoUpdater is not None:
+    if (
+        AutoUpdater is not None
+        and not os.environ.get("FABLE_DISABLE_AUTO_UPDATE")
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and not os.environ.get("GITHUB_ACTIONS")
+        and not os.environ.get("CI")
+    ):
         try:
             AutoUpdater().trigger_silent_background_update()
         except Exception as e:
@@ -295,16 +295,10 @@ def main():
                             "isError": True
                         }
                     })
-            elif tool_name in BROWSER_TOOL_NAMES:
+            elif tool_name.startswith("browser_"):
                 try:
                     sid = arguments.get("session_id")
                     res: Any = None
-
-                    if tool_name in ("browser_open", "browser_navigate"):
-                        timeout = float(arguments.get("timeout", DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS))
-                        if not math.isfinite(timeout):
-                            raise ValueError("Browser timeout must be finite")
-                        timeout = min(max(timeout, 0.0), MAX_BROWSER_OPEN_TIMEOUT_SECONDS)
 
                     if tool_name == "browser_close":
                         res = GLOBAL_BROWSER_ENGINE.close_session(sid)
@@ -313,6 +307,7 @@ def main():
 
                     if tool_name in ("browser_open", "browser_navigate"):
                         url = str(arguments.get("url", ""))
+                        timeout = float(arguments.get("timeout", 15.0))
                         res = session.open(url, timeout=timeout)
                     elif tool_name == "browser_click":
                         elem_id = str(arguments.get("element_id", ""))
