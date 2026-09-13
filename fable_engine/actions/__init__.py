@@ -78,6 +78,12 @@ from fable_engine.actions.scrapers import (
     _handle_scrape_github,
     _handle_scrape_arxiv,
 )
+from fable_engine.actions.figma import _handle_figma_design
+from fable_engine.actions.after_effects import _handle_ae_render_video
+from fable_engine.actions.agent_computer import (
+    _handle_editor_stage_diff,
+    _handle_vm_test_and_commit,
+)
 
 ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "create_session": _handle_create_session,
@@ -257,6 +263,17 @@ ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "github_scrape": _handle_scrape_github,
     "scrape_arxiv": _handle_scrape_arxiv,
     "arxiv_scrape": _handle_scrape_arxiv,
+    "figma_design": _handle_figma_design,
+    "figma": _handle_figma_design,
+    "ae_render_video": _handle_ae_render_video,
+    "after_effects": _handle_ae_render_video,
+    "ae": _handle_ae_render_video,
+    "editor_stage_diff": _handle_editor_stage_diff,
+    "agent_editor": _handle_editor_stage_diff,
+    "stage_diff": _handle_editor_stage_diff,
+    "vm_test_and_commit": _handle_vm_test_and_commit,
+    "agent_vm": _handle_vm_test_and_commit,
+    "vm_commit": _handle_vm_test_and_commit,
 }
 
 
