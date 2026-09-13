@@ -68,7 +68,11 @@ from fable_engine.guards import (
     EpistemicEvidenceValidator,
     ModelVelocityProfiler,
 )
-from fable_engine.browser import GLOBAL_BROWSER_ENGINE
+from fable_engine.browser import (
+    DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+    GLOBAL_BROWSER_ENGINE,
+    bound_browser_timeout,
+)
 from fable_engine.schema import BROWSER_TOOL_SCHEMAS, TOOL_SCHEMA
 from fable_engine.session import (
     ACTIVE_SESSIONS,
@@ -111,6 +115,7 @@ except ImportError:
 
 MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
 MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
+BROWSER_TOOL_NAMES = frozenset(tool["name"] for tool in BROWSER_TOOL_SCHEMAS)
 
 
 def send_response(response_dict: Dict[str, Any]):
@@ -295,10 +300,15 @@ def main():
                             "isError": True
                         }
                     })
-            elif tool_name.startswith("browser_"):
+            elif tool_name in BROWSER_TOOL_NAMES:
                 try:
                     sid = arguments.get("session_id")
                     res: Any = None
+
+                    if tool_name in ("browser_open", "browser_navigate"):
+                        timeout = bound_browser_timeout(
+                            arguments.get("timeout", DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS)
+                        )
 
                     if tool_name == "browser_close":
                         res = GLOBAL_BROWSER_ENGINE.close_session(sid)
@@ -307,7 +317,6 @@ def main():
 
                     if tool_name in ("browser_open", "browser_navigate"):
                         url = str(arguments.get("url", ""))
-                        timeout = float(arguments.get("timeout", 15.0))
                         res = session.open(url, timeout=timeout)
                     elif tool_name == "browser_click":
                         elem_id = str(arguments.get("element_id", ""))

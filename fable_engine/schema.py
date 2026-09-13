@@ -5,6 +5,10 @@ Defines the JSON Schema contract for the fable_session tool.
 
 from __future__ import annotations
 
+from fable_engine.browser import (
+    DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+    MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+)
 from fable_engine.session import PHASES
 
 TOOL_SCHEMA = {
@@ -554,7 +558,13 @@ BROWSER_TOOL_SCHEMAS = [
             "properties": {
                 "url": {"type": "string", "description": "Target URL or localhost address to open."},
                 "session_id": {"type": "string", "description": "Optional browser tab/session identifier."},
-                "timeout": {"type": "number", "description": "Timeout in seconds for page load."}
+                "timeout": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "default": DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "description": "Timeout in seconds for page load (maximum 30 seconds).",
+                }
             },
             "required": ["url"]
         }
@@ -566,7 +576,14 @@ BROWSER_TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Target URL to navigate to."},
-                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."},
+                "timeout": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "default": DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "description": "Timeout in seconds for page load (maximum 30 seconds).",
+                }
             },
             "required": ["url"]
         }

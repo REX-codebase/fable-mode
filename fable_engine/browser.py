@@ -13,6 +13,7 @@ import html
 from html.parser import HTMLParser
 import json
 import logging
+import math
 import os
 import pathlib
 import re
@@ -31,8 +32,20 @@ DEFAULT_PROFILE_DIR = pathlib.Path.home() / ".fable" / "browser-profile"
 DEFAULT_VIEWPORT_WIDTH = 1280
 DEFAULT_VIEWPORT_HEIGHT = 800
 DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS = 15.0
+MAX_BROWSER_OPEN_TIMEOUT_SECONDS = 30.0
 MAX_SCREENSHOT_LAYERS = 10
 MAX_BROWSER_SESSIONS = 32
+
+
+def bound_browser_timeout(timeout: float) -> float:
+    """Return a finite, non-negative browser timeout capped at the server limit."""
+    value = float(timeout)
+    if not math.isfinite(value):
+        raise ValueError("Browser timeout must be finite")
+    if value < 0:
+        raise ValueError("Browser timeout must be non-negative")
+    return min(value, MAX_BROWSER_OPEN_TIMEOUT_SECONDS)
 
 
 class DOMElement:
@@ -119,18 +132,10 @@ def generate_minimal_png(width: int, height: int, elements: List[DOMElement], bg
 
     # 3 bytes per pixel RGB
     row_bytes = w * 3
-    # Allocate bytearray for raw uncompressed bitmap + scanline filter byte (0x00 None filter per row)
-    raw_data = bytearray((row_bytes + 1) * h)
-
     bg_r, bg_g, bg_b = bg_color
-    for y in range(h):
-        row_offset = y * (row_bytes + 1)
-        raw_data[row_offset] = 0  # Filter type 0
-        for x in range(w):
-            px = row_offset + 1 + x * 3
-            raw_data[px] = bg_r
-            raw_data[px + 1] = bg_g
-            raw_data[px + 2] = bg_b
+    # Prefix each scanline with filter type 0, then repeat the RGB background.
+    scanline = b"\x00" + bytes((bg_r, bg_g, bg_b)) * w
+    raw_data = bytearray(scanline * h)
 
     # Simple element box rasterization
     for elem in elements:
@@ -282,11 +287,12 @@ class StealthBrowserSession:
     def open(
         self,
         url: str,
-        timeout: float = 15.0,
+        timeout: float = DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
         *,
         record_history: bool = True,
     ) -> Dict[str, Any]:
         """Opens a URL (including localhost) using urllib with persistent cookies and standard headers."""
+        timeout = bound_browser_timeout(timeout)
         if not url.startswith("http://") and not url.startswith("https://") and not url.startswith("about:"):
             url = "http://" + url
 
@@ -304,9 +310,13 @@ class StealthBrowserSession:
         req.add_header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         req.add_header("Accept-Language", "en-US,en;q=0.9")
 
+        deadline = time.monotonic() + timeout
         try:
-            with self.opener.open(req, timeout=timeout) as resp:
-                body_bytes = resp.read(self.max_response_bytes + 1)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Browser navigation timed out after {timeout:g} seconds")
+            with self.opener.open(req, timeout=remaining) as resp:
+                body_bytes = self._read_response_body(resp, deadline, timeout)
                 self.profile_manager.save()
                 if len(body_bytes) > self.max_response_bytes:
                     return {
@@ -326,6 +336,34 @@ class StealthBrowserSession:
             self.page_html = f"<html><body><h1>Navigation Error</h1><p>{html.escape(str(e))}</p></body></html>"
             self._parse_and_layout()
             return {"status": "error", "error": str(e), "url": url}
+
+    def _read_response_body(self, response: Any, deadline: float, timeout: float) -> bytes:
+        """Read a bounded response while enforcing the navigation's monotonic deadline."""
+        body = bytearray()
+        read_chunk = getattr(response, "read1", response.read)
+        while len(body) <= self.max_response_bytes:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Browser navigation timed out after {timeout:g} seconds")
+            self._set_response_socket_timeout(response, remaining)
+            chunk = read_chunk(min(64 * 1024, self.max_response_bytes + 1 - len(body)))
+            if not chunk:
+                break
+            body.extend(chunk)
+        return bytes(body)
+
+    @staticmethod
+    def _set_response_socket_timeout(response: Any, timeout: float) -> None:
+        """Apply the remaining deadline to urllib's underlying response socket."""
+        stream = response
+        for _ in range(4):
+            sock = getattr(stream, "_sock", None)
+            if sock is not None and hasattr(sock, "settimeout"):
+                sock.settimeout(timeout)
+                return
+            stream = getattr(stream, "raw", None) or getattr(stream, "fp", None)
+            if stream is None:
+                return
 
     def _record_history(self, url: str):
         if self.history_index >= 0 and self.history_index < len(self.history):
@@ -410,8 +448,33 @@ class StealthBrowserSession:
         elem = self.elements_by_id.get(element_id)
         if not elem:
             return {"error": f"Element '{element_id}' not found"}
+        input_type = elem.attrs.get("type", "text").lower()
+        editable_input_types = {
+            "text", "search", "email", "url", "tel", "password", "number",
+            "date", "datetime-local", "month", "time", "week",
+        }
+        if elem.tag != "textarea" and not (
+            elem.tag == "input" and input_type in editable_input_types
+        ):
+            return {
+                "status": "error",
+                "error": f"Typing is unsupported for non-editable <{elem.tag}> elements",
+                "element_id": element_id,
+            }
         elem.attrs["value"] = text
         return {"status": "typed", "element_id": element_id, "text": text}
+
+    def close(self) -> None:
+        """Release per-session resources and discard retained page state."""
+        try:
+            self.opener.close()
+        finally:
+            self.history.clear()
+            self.history_index = -1
+            self.dom_root = None
+            self.elements_by_id.clear()
+            self.page_html = ""
+            self.page_title = ""
 
     def press_key(self, key: str, element_id: Optional[str] = None) -> Dict[str, Any]:
         return {
@@ -515,7 +578,8 @@ class StealthBrowserEngine:
     def close_session(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         sid = session_id or self.active_session_id
         if sid and sid in self.sessions:
-            del self.sessions[sid]
+            session = self.sessions.pop(sid)
+            session.close()
             if self.active_session_id == sid:
                 self.active_session_id = next(iter(self.sessions.keys())) if self.sessions else None
             return {"status": "closed", "session_id": sid}
