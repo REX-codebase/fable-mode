@@ -354,6 +354,13 @@ def main():
                     else:
                         raise ValueError(f"Unknown browser tool action: {tool_name}")
 
+                    is_error = (
+                        tool_name in (
+                            "browser_open", "browser_navigate", "browser_click", "browser_type"
+                        )
+                        and isinstance(res, dict)
+                        and (res.get("status") == "error" or "error" in res)
+                    )
                     send_response({
                         "jsonrpc": "2.0",
                         "id": msg_id,
@@ -364,7 +371,7 @@ def main():
                                     "text": json.dumps(res, indent=2)
                                 }
                             ],
-                            "isError": False
+                            "isError": is_error
                         }
                     })
                 except Exception as ex:

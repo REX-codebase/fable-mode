@@ -30,6 +30,7 @@ from fable_engine.browser import (
     MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
     MAX_BROWSER_SESSIONS,
     MAX_DOM_NODES,
+    MAX_HISTORY_ENTRIES,
     MAX_RETAINED_PAGE_HTML_BYTES,
     MAX_SCREENSHOT_LAYERS,
     ProfileManager,
@@ -200,6 +201,10 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(type_res["status"], "typed")
         self.assertEqual(session.elements_by_id["username_input"].attrs.get("value"), "agent_user")
         self.assertEqual(session.type_text("notes", "editable")["status"], "typed")
+        self.assertIn(
+            "notes",
+            {element["element_id"] for element in status["interactive_elements"]},
+        )
 
         self.assertEqual(session.type_text("login_btn", "nope")["status"], "error")
         self.assertEqual(session.type_text("home_link", "nope")["status"], "error")
@@ -324,6 +329,53 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(session.history, original_history)
         self.assertEqual(session.history_index, 1)
         self.assertEqual(session.url, two)
+
+    def test_history_is_bounded_and_remains_consistent_after_branching(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        urls = [f"about:page-{index}" for index in range(MAX_HISTORY_ENTRIES + 5)]
+
+        for url in urls:
+            session._record_history(url)
+
+        self.assertEqual(session.history, urls[-MAX_HISTORY_ENTRIES:])
+        self.assertEqual(session.history_index, MAX_HISTORY_ENTRIES - 1)
+
+        session.back()
+        session.open("about:branched")
+        session.open("about:branched")
+
+        self.assertEqual(len(session.history), MAX_HISTORY_ENTRIES)
+        self.assertEqual(session.history[-1], "about:branched")
+        self.assertEqual(session.history_index, len(session.history) - 1)
+        self.assertEqual(session.forward()["url"], "about:branched")
+
+    def test_url_scheme_checks_are_case_insensitive_without_rewriting_url(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+
+        about_url = "AbOuT:blank"
+        self.assertEqual(session.open(about_url)["url"], about_url)
+
+        session.opener = Mock()
+        session.opener.open.side_effect = OSError("stop before network access")
+        with patch("fable_engine.browser.urllib.request.Request") as request:
+            session.open("HtTp://Example.test/Path")
+
+        request.assert_called_once_with("HtTp://Example.test/Path")
+
+    def test_layout_walk_handles_deep_dom_in_preorder(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.page_html = "".join(
+            f'<div id="node-{index}">' for index in range(1_500)
+        ) + "</div>" * 1_500
+
+        session._parse_and_layout()
+
+        ids = list(session.elements_by_id)
+        self.assertEqual(ids[:4], ["elem_0", "node-0", "node-1", "node-2"])
+        self.assertEqual(ids[-1], "node-1499")
 
     def test_png_generator(self):
         elems = [DOMElement("elem_1", "button", {"id": "elem_1"})]
@@ -486,6 +538,48 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
         self.assertFalse(responses[0]["result"]["isError"])
         self.assertTrue(responses[1]["result"]["isError"])
         self.assertIn("must be finite", responses[1]["result"]["content"][0]["text"])
+
+    def test_browser_operation_error_results_set_mcp_error_flag(self):
+        engine = Mock()
+        session = engine.get_or_create_session.return_value
+        session.open.side_effect = [
+            {"status": "error", "error": "navigation failed"},
+            {"status": "opened", "url": "about:blank"},
+        ]
+        session.click.return_value = {"error": "missing element"}
+        session.type_text.return_value = {
+            "status": "error",
+            "error": "not editable",
+        }
+        requests = "".join(
+            json.dumps({
+                "jsonrpc": "2.0",
+                "id": index,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            }) + "\n"
+            for index, (name, arguments) in enumerate((
+                ("browser_open", {"url": "bad.test"}),
+                ("browser_click", {"element_id": "missing"}),
+                ("browser_type", {"element_id": "readonly", "text": "value"}),
+                ("browser_open", {"url": "about:blank"}),
+            ), start=1)
+        )
+        output = io.StringIO()
+        with (
+            patch.object(browser_server, "GLOBAL_BROWSER_ENGINE", engine),
+            patch.object(browser_server, "AutoUpdater") as auto_updater,
+            patch("sys.stdin", io.StringIO(requests)),
+            patch("sys.stdout", output),
+        ):
+            auto_updater.return_value.trigger_silent_background_update.return_value = None
+            browser_server.main()
+
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [response["result"]["isError"] for response in responses],
+            [True, True, True, False],
+        )
 
     def test_browser_open_enforces_one_deadline_across_reads(self):
         class FakeSocket:

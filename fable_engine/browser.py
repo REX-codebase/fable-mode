@@ -38,6 +38,7 @@ DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS = 15.0
 MAX_BROWSER_OPEN_TIMEOUT_SECONDS = 30.0
 MAX_SCREENSHOT_LAYERS = 10
 MAX_DOM_NODES = 10_000
+MAX_HISTORY_ENTRIES = 100
 
 
 def bound_browser_timeout(timeout: float) -> float:
@@ -311,10 +312,12 @@ class StealthBrowserSession:
     ) -> Dict[str, Any]:
         """Opens a URL (including localhost) using urllib with persistent cookies and standard headers."""
         timeout = bound_browser_timeout(timeout)
-        if not url.startswith("http://") and not url.startswith("https://") and not url.startswith("about:"):
+        scheme = urllib.parse.urlsplit(url).scheme.lower()
+        if scheme not in ("http", "https", "about"):
             url = "http://" + url
+            scheme = "http"
 
-        if url.startswith("about:"):
+        if scheme == "about":
             self.url = url
             self.page_title = "Blank Page"
             self.page_html = "<html><head><title>Blank Page</title></head><body><h1>Blank Page</h1></body></html>"
@@ -393,6 +396,10 @@ class StealthBrowserSession:
             self.history = self.history[: self.history_index + 1]
         self.history.append(url)
         self.history_index = len(self.history) - 1
+        overflow = len(self.history) - MAX_HISTORY_ENTRIES
+        if overflow > 0:
+            del self.history[:overflow]
+            self.history_index -= overflow
 
     def back(self) -> Dict[str, Any]:
         if self.history_index > 0:
@@ -432,20 +439,22 @@ class StealthBrowserSession:
         current_y = 20
         all_elems: List[DOMElement] = []
 
-        def traverse(node: DOMElement):
+        def traverse(root: DOMElement):
             nonlocal current_y
-            self.elements_by_id[node.element_id] = node
-            all_elems.append(node)
+            stack = [root]
+            while stack:
+                node = stack.pop()
+                self.elements_by_id[node.element_id] = node
+                all_elems.append(node)
 
-            if node.tag in ("h1", "h2", "h3", "p", "div", "button", "input", "a", "section"):
-                node.x = 40
-                node.y = current_y
-                node.width = self.viewport_width - 80
-                node.height = 36 if node.tag in ("button", "input") else 24
-                current_y += node.height + 12
+                if node.tag in ("h1", "h2", "h3", "p", "div", "button", "input", "a", "section"):
+                    node.x = 40
+                    node.y = current_y
+                    node.width = self.viewport_width - 80
+                    node.height = 36 if node.tag in ("button", "input") else 24
+                    current_y += node.height + 12
 
-            for child in node.children:
-                traverse(child)
+                stack.extend(reversed(node.children))
 
         traverse(self.dom_root)
         self.document_height = max(self.viewport_height, current_y + 40)
@@ -608,7 +617,7 @@ class StealthBrowserSession:
     def _build_status(self) -> Dict[str, Any]:
         elements_summary = [
             elem.to_dict() for elem in self.elements_by_id.values()
-            if elem.tag in ("a", "button", "input", "h1", "h2", "h3", "form")
+            if elem.tag in ("a", "button", "input", "textarea", "h1", "h2", "h3", "form")
         ]
         return {
             "session_id": self.session_id,
