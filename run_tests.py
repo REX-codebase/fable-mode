@@ -7,10 +7,13 @@ Supports --policy-only and --suite-only flags for modular CI job execution.
 
 import argparse
 import ast
+import os
 import sys
 import subprocess
 import time
 from pathlib import Path
+
+os.environ["FABLE_DISABLE_AUTO_UPDATE"] = "1"
 
 
 # Explicitly documented allowlist for legitimate dynamic evaluation

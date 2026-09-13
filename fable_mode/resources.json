@@ -10,6 +10,7 @@
     "fable_mode/safety.py",
     "fable_mode/resources.json",
     "fable_engine/__init__.py",
+    "fable_engine/browser.py",
     "fable_engine/actions/__init__.py",
     "fable_engine/actions/cas.py",
     "fable_engine/actions/deliberation.py",
