@@ -68,7 +68,12 @@ from fable_engine.guards import (
     EpistemicEvidenceValidator,
     ModelVelocityProfiler,
 )
-from fable_engine.schema import TOOL_SCHEMA
+from fable_engine.browser import (
+    DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+    GLOBAL_BROWSER_ENGINE,
+    bound_browser_timeout,
+)
+from fable_engine.schema import BROWSER_TOOL_SCHEMAS, TOOL_SCHEMA
 from fable_engine.session import (
     ACTIVE_SESSIONS,
     FORCE_UNLOCK_ENV,
@@ -110,6 +115,7 @@ except ImportError:
 
 MAX_RPC_LINE_BYTES = 1 * 1024 * 1024
 MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024
+BROWSER_TOOL_NAMES = frozenset(tool["name"] for tool in BROWSER_TOOL_SCHEMAS)
 
 
 def send_response(response_dict: Dict[str, Any]):
@@ -172,7 +178,13 @@ def _bounded_lines(stream, limit: int):
 
 def main():
     logger.info("Starting Fable-Engine MCP Server on stdio...")
-    if AutoUpdater is not None:
+    if (
+        AutoUpdater is not None
+        and not os.environ.get("FABLE_DISABLE_AUTO_UPDATE")
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and not os.environ.get("GITHUB_ACTIONS")
+        and not os.environ.get("CI")
+    ):
         try:
             AutoUpdater().trigger_silent_background_update()
         except Exception as e:
@@ -245,7 +257,7 @@ def main():
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "tools": [TOOL_SCHEMA]
+                    "tools": [TOOL_SCHEMA] + BROWSER_TOOL_SCHEMAS
                 }
             })
 
@@ -283,6 +295,95 @@ def main():
                                 {
                                     "type": "text",
                                     "text": f"Fable Engine Error: {str(ex)}"
+                                }
+                            ],
+                            "isError": True
+                        }
+                    })
+            elif tool_name in BROWSER_TOOL_NAMES:
+                try:
+                    sid = arguments.get("session_id")
+                    res: Any = None
+
+                    if tool_name in ("browser_open", "browser_navigate"):
+                        timeout = bound_browser_timeout(
+                            arguments.get("timeout", DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS)
+                        )
+
+                    if tool_name == "browser_close":
+                        res = GLOBAL_BROWSER_ENGINE.close_session(sid)
+                    else:
+                        session = GLOBAL_BROWSER_ENGINE.get_or_create_session(sid)
+
+                    if tool_name in ("browser_open", "browser_navigate"):
+                        url = str(arguments.get("url", ""))
+                        res = session.open(url, timeout=timeout)
+                    elif tool_name == "browser_click":
+                        elem_id = str(arguments.get("element_id", ""))
+                        res = session.click(elem_id)
+                    elif tool_name == "browser_type":
+                        elem_id = str(arguments.get("element_id", ""))
+                        txt = str(arguments.get("text", ""))
+                        res = session.type_text(elem_id, txt)
+                    elif tool_name == "browser_scroll":
+                        delta_y = int(arguments.get("delta_y", 0))
+                        res = session.scroll(delta_y)
+                    elif tool_name == "browser_snapshot_layers":
+                        max_l = int(arguments.get("max_layers", 3))
+                        res = session.snapshot_layers(max_layers=max_l)
+                    elif tool_name == "browser_screenshot":
+                        res = session.snapshot_viewport()
+                    elif tool_name == "browser_close":
+                        pass
+                    elif tool_name == "browser_back":
+                        res = session.back()
+                    elif tool_name == "browser_forward":
+                        res = session.forward()
+                    elif tool_name == "browser_reload":
+                        res = session.reload()
+                    elif tool_name == "browser_wait":
+                        sec = float(arguments.get("seconds", 1.0))
+                        import time
+                        bounded_sec = min(max(sec, 0), 10)
+                        time.sleep(bounded_sec)
+                        res = {"status": "waited", "seconds": bounded_sec}
+                    elif tool_name == "browser_press":
+                        key = str(arguments.get("key", ""))
+                        elem_id = arguments.get("element_id")
+                        res = session.press_key(key, elem_id)
+                    else:
+                        raise ValueError(f"Unknown browser tool action: {tool_name}")
+
+                    is_error = (
+                        tool_name in (
+                            "browser_open", "browser_navigate", "browser_click", "browser_type"
+                        )
+                        and isinstance(res, dict)
+                        and (res.get("status") == "error" or "error" in res)
+                    )
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(res, indent=2)
+                                }
+                            ],
+                            "isError": is_error
+                        }
+                    })
+                except Exception as ex:
+                    logger.error(f"Error handling {tool_name}: {ex}", exc_info=True)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Stealth Browser Error: {str(ex)}"
                                 }
                             ],
                             "isError": True

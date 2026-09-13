@@ -780,8 +780,10 @@ class TestFableMCPStdioServer(unittest.TestCase):
         # 2. Tools List
         resp = self._rpc_call("tools/list")
         tools = resp["result"]["tools"]
-        self.assertEqual(len(tools), 1)
-        self.assertEqual(tools[0]["name"], "fable_session")
+        self.assertEqual(len(tools), 14)
+        tool_names = [t["name"] for t in tools]
+        self.assertIn("fable_session", tool_names)
+        self.assertIn("browser_open", tool_names)
         self.assertIn("log_refinement_cycle", tools[0]["inputSchema"]["properties"]["action"]["enum"])
 
         # 3. Call fable_session: create_session

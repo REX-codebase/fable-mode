@@ -5,6 +5,10 @@ Defines the JSON Schema contract for the fable_session tool.
 
 from __future__ import annotations
 
+from fable_engine.browser import (
+    DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+    MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+)
 from fable_engine.session import PHASES
 
 TOOL_SCHEMA = {
@@ -544,3 +548,167 @@ TOOL_SCHEMA = {
         "required": ["action"]
     }
 }
+
+BROWSER_TOOL_SCHEMAS = [
+    {
+        "name": "browser_open",
+        "description": "Opens a URL in the stealth agent browser using persistent local logins/profile (<=20 MB RAM ceiling). Supports local dev servers across all languages.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Target URL or localhost address to open."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."},
+                "timeout": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "default": DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "description": "Timeout in seconds for page load (maximum 30 seconds).",
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "browser_navigate",
+        "description": "Navigates the browser session to a new URL.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Target URL to navigate to."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."},
+                "timeout": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "default": DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS,
+                    "description": "Timeout in seconds for page load (maximum 30 seconds).",
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "browser_click",
+        "description": "Clicks an interactive element by its stable element ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "Stable element ID to click."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            },
+            "required": ["element_id"]
+        }
+    },
+    {
+        "name": "browser_type",
+        "description": "Types text into an input field identified by its stable element ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "Stable element ID to type into."},
+                "text": {"type": "string", "description": "Text content to enter into element."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            },
+            "required": ["element_id", "text"]
+        }
+    },
+    {
+        "name": "browser_scroll",
+        "description": "Scrolls the page vertically by delta pixels.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "delta_y": {"type": "integer", "description": "Vertical pixel scroll offset."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            },
+            "required": ["delta_y"]
+        }
+    },
+    {
+        "name": "browser_snapshot_layers",
+        "description": "Captures N sequential screen-sized viewport PNG snapshots (1 layer = 1 PC viewport height, 1280x800 px).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_layers": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum number of screen-sized viewport layers to capture (default 3)."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    },
+    {
+        "name": "browser_screenshot",
+        "description": "Captures a single viewport PNG snapshot of the current scroll position.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    },
+    {
+        "name": "browser_close",
+        "description": "Closes an active browser tab session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    },
+    {
+        "name": "browser_back",
+        "description": "Navigates back in history for the browser session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    },
+    {
+        "name": "browser_forward",
+        "description": "Navigates forward in history for the browser session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    },
+    {
+        "name": "browser_wait",
+        "description": "Waits for a specified duration in seconds.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "seconds": {"type": "number", "minimum": 0, "maximum": 10, "description": "Seconds to wait."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            },
+            "required": ["seconds"]
+        }
+    },
+    {
+        "name": "browser_press",
+        "description": "Presses a keyboard key on an element or active window.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Keyboard key to press (e.g. 'Enter', 'Tab')."},
+                "element_id": {"type": "string", "description": "Optional element ID target."},
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            },
+            "required": ["key"]
+        }
+    },
+    {
+        "name": "browser_reload",
+        "description": "Reloads the current page in the browser session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
+            }
+        }
+    }
+]
