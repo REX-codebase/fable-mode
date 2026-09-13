@@ -183,6 +183,81 @@ class TestStealthAgentBrowser(unittest.TestCase):
 
         self.assertNotIn("session_token", session.page_html)
 
+    def test_remote_http_never_receives_persistent_cookies(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        pm.cookies.set_cookie(http.cookiejar.Cookie(
+            version=0, name="session_token", value="abc123secret",
+            port=None, port_specified=False, domain="example.test",
+            domain_specified=False, domain_initial_dot=False, path="/",
+            path_specified=True, secure=False, expires=None, discard=False,
+            comment=None, comment_url=None, rest={}, rfc2109=False,
+        ))
+
+        cleartext_request = urllib.request.Request("http://example.test/path")
+        pm.cookies.add_cookie_header(cleartext_request)
+        secure_request = urllib.request.Request("https://example.test/path")
+        pm.cookies.add_cookie_header(secure_request)
+
+        self.assertIsNone(cleartext_request.get_header("Cookie"))
+        self.assertEqual(secure_request.get_header("Cookie"), "session_token=abc123secret")
+
+    def test_remote_http_uses_credential_free_opener_for_redirect_chain(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.opener = Mock()
+        session.credential_free_opener = Mock()
+        session.credential_free_opener.open.side_effect = OSError(
+            "stop before network access"
+        )
+
+        session.open("http://example.test/path")
+
+        session.opener.open.assert_not_called()
+        request = session.credential_free_opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, "http://example.test/path")
+
+    def test_http_redirect_to_remote_target_does_not_receive_cookie(self):
+        class FakeHTTPRedirectHandler(urllib.request.BaseHandler):
+            handler_order = 100
+
+            def __init__(inner_self):
+                inner_self.requests = []
+
+            def http_open(inner_self, request):
+                inner_self.requests.append(request)
+                headers = Message()
+                if request.full_url.startswith("http://localhost/"):
+                    headers.add_header("Location", "http://example.test/final")
+                    body = io.BytesIO()
+                    body.msg = headers
+                    return urllib.response.addinfourl(
+                        body, headers, request.full_url, 302
+                    )
+                body = io.BytesIO(b"redirect complete")
+                headers.add_header("Content-Type", "text/html; charset=utf-8")
+                body.msg = headers
+                return urllib.response.addinfourl(
+                    body, headers, request.full_url, 200
+                )
+
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        pm.cookies.set_cookie(http.cookiejar.Cookie(
+            version=0, name="session_token", value="abc123secret",
+            port=None, port_specified=False, domain="example.test",
+            domain_specified=False, domain_initial_dot=False, path="/",
+            path_specified=True, secure=False, expires=None, discard=False,
+            comment=None, comment_url=None, rest={}, rfc2109=False,
+        ))
+        session = StealthBrowserSession("test_tab", pm)
+        handler = FakeHTTPRedirectHandler()
+        session.opener.add_handler(handler)
+
+        result = session.open("http://localhost/start")
+
+        self.assertEqual(result["url"], "http://example.test/final")
+        self.assertEqual(len(handler.requests), 2)
+        self.assertIsNone(handler.requests[1].get_header("Cookie"))
+
     def test_https_cookie_redirect_to_http_is_not_followed(self):
         class FakeHTTPSRedirectHandler(urllib.request.BaseHandler):
             handler_order = 100
@@ -498,18 +573,30 @@ class TestStealthAgentBrowser(unittest.TestCase):
         pm = ProfileManager(profile_dir=self.profile_dir)
         session = StealthBrowserSession("test_tab", pm)
         session.opener = Mock()
+        session.credential_free_opener = Mock()
         session.opener.open.side_effect = OSError("stop before network access")
+        session.credential_free_opener.open.side_effect = OSError(
+            "stop before network access"
+        )
 
         for target, expected in (
             ("example.test/path", "https://example.test/path"),
             ("localhost:3000/path", "http://localhost:3000/path"),
+            ("service.localhost:3000/path", "https://service.localhost:3000/path"),
             ("127.0.0.1:3000/path", "http://127.0.0.1:3000/path"),
             ("[::1]:3000/path", "http://[::1]:3000/path"),
             ("http://example.test/path", "http://example.test/path"),
         ):
             with self.subTest(target=target):
+                session.opener.reset_mock()
+                session.credential_free_opener.reset_mock()
                 session.open(target)
-                self.assertEqual(session.opener.open.call_args.args[0].full_url, expected)
+                opener = (
+                    session.credential_free_opener
+                    if expected.startswith("http://example.test")
+                    else session.opener
+                )
+                self.assertEqual(opener.open.call_args.args[0].full_url, expected)
 
     def test_actionable_elements_are_not_hidden_by_summary_limit(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -585,12 +672,14 @@ class TestStealthAgentBrowser(unittest.TestCase):
 
         session2.page_html = "retained page"
         session2.opener.close = Mock()
+        session2.credential_free_opener.close = Mock()
         engine.get_or_create_session("tab3")
         engine.get_or_create_session("tab4")
         self.assertNotIn("tab2", engine.sessions)
         self.assertEqual(list(engine.sessions), ["tab3", "tab4"])
         self.assertLessEqual(len(engine.sessions), MAX_BROWSER_SESSIONS)
         session2.opener.close.assert_called_once_with()
+        session2.credential_free_opener.close.assert_called_once_with()
         self.assertEqual(session2.page_html, "")
 
     def test_default_session_page_retention_has_a_safe_aggregate_limit(self):

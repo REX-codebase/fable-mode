@@ -105,6 +105,37 @@ class NoHTTPSDowngradeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _is_loopback_target(url: str) -> bool:
+    """Return whether a URL or scheme-less target names the local machine."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme.lower() in ("http", "https"):
+            hostname = parsed.hostname
+        else:
+            hostname = urllib.parse.urlsplit(f"//{url}").hostname
+    except ValueError:
+        return False
+    if not hostname:
+        return False
+    hostname = hostname.rstrip(".").lower()
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+class NoRemoteHTTPCookiePolicy(http.cookiejar.DefaultCookiePolicy):
+    """Never return persistent cookies over remote cleartext HTTP."""
+
+    def return_ok(self, cookie, request):
+        parsed = urllib.parse.urlsplit(request.full_url)
+        if parsed.scheme.lower() == "http" and not _is_loopback_target(request.full_url):
+            return False
+        return super().return_ok(cookie, request)
+
+
 class SimpleDOMParser(HTMLParser):
     """HTML parser that constructs a clean DOM tree with stable element IDs."""
 
@@ -226,7 +257,9 @@ class ProfileManager:
         self.profile_dir.chmod(0o700)
         self.cookie_file = self.profile_dir / "cookies.txt"
         self.storage_file = self.profile_dir / "local_storage.json"
-        self.cookies = http.cookiejar.MozillaCookieJar(str(self.cookie_file))
+        self.cookies = http.cookiejar.MozillaCookieJar(
+            str(self.cookie_file), policy=NoRemoteHTTPCookiePolicy()
+        )
         self.local_storage: Dict[str, Any] = {}
         self._load()
 
@@ -306,6 +339,9 @@ class StealthBrowserSession:
             urllib.request.HTTPCookieProcessor(self.profile_manager.cookies),
             NoHTTPSDowngradeRedirectHandler(),
         )
+        self.credential_free_opener = urllib.request.build_opener(
+            NoHTTPSDowngradeRedirectHandler()
+        )
         self.url = "about:blank"
         self.history: List[str] = []
         self.history_index = -1
@@ -347,7 +383,10 @@ class StealthBrowserSession:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"Browser navigation timed out after {timeout:g} seconds")
-            with self.opener.open(req, timeout=remaining) as resp:
+            opener = self.opener
+            if scheme == "http" and not self._is_loopback_target(url):
+                opener = self.credential_free_opener
+            with opener.open(req, timeout=remaining) as resp:
                 body_bytes = self._read_response_body(resp, deadline, timeout)
                 self.profile_manager.save()
                 if len(body_bytes) > self.max_response_bytes:
@@ -366,20 +405,7 @@ class StealthBrowserSession:
 
     @staticmethod
     def _is_loopback_target(url: str) -> bool:
-        """Return whether a scheme-less URL targets the local machine."""
-        try:
-            hostname = urllib.parse.urlsplit(f"//{url}").hostname
-        except ValueError:
-            return False
-        if not hostname:
-            return False
-        hostname = hostname.rstrip(".").lower()
-        if hostname == "localhost" or hostname.endswith(".localhost"):
-            return True
-        try:
-            return ipaddress.ip_address(hostname).is_loopback
-        except ValueError:
-            return False
+        return _is_loopback_target(url)
 
     def _commit_navigation(
         self,
@@ -564,13 +590,16 @@ class StealthBrowserSession:
         try:
             self.opener.close()
         finally:
-            self.history.clear()
-            self.history_index = -1
-            self.dom_root = None
-            self.elements_by_id.clear()
-            self.page_html = ""
-            self.page_title = ""
-            self.active_element_id = None
+            try:
+                self.credential_free_opener.close()
+            finally:
+                self.history.clear()
+                self.history_index = -1
+                self.dom_root = None
+                self.elements_by_id.clear()
+                self.page_html = ""
+                self.page_title = ""
+                self.active_element_id = None
 
     def press_key(self, key: str, element_id: Optional[str] = None) -> Dict[str, Any]:
         if not key:
