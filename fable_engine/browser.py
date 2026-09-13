@@ -32,7 +32,7 @@ DEFAULT_PROFILE_DIR = pathlib.Path.home() / ".fable" / "browser-profile"
 DEFAULT_VIEWPORT_WIDTH = 1280
 DEFAULT_VIEWPORT_HEIGHT = 800
 MAX_BROWSER_SESSIONS = 32
-MAX_RETAINED_PAGE_HTML_BYTES = 32 * 1024 * 1024
+MAX_RETAINED_PAGE_HTML_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = MAX_RETAINED_PAGE_HTML_BYTES // MAX_BROWSER_SESSIONS
 DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS = 15.0
 MAX_BROWSER_OPEN_TIMEOUT_SECONDS = 30.0
@@ -90,6 +90,19 @@ class DOMElement:
 
 class BrowserDocumentTooLargeError(ValueError):
     """Raised when a page exceeds the browser's bounded DOM size."""
+
+
+class NoHTTPSDowngradeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow normal HTTP redirects except HTTPS-to-HTTP downgrades."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        source_scheme = urllib.parse.urlsplit(req.full_url).scheme.lower()
+        target_scheme = urllib.parse.urlsplit(
+            urllib.parse.urljoin(req.full_url, newurl)
+        ).scheme.lower()
+        if source_scheme == "https" and target_scheme == "http":
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class SimpleDOMParser(HTMLParser):
@@ -290,7 +303,8 @@ class StealthBrowserSession:
         self.viewport_height = viewport_height
         self.max_response_bytes = max(1, int(max_response_bytes))
         self.opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(self.profile_manager.cookies)
+            urllib.request.HTTPCookieProcessor(self.profile_manager.cookies),
+            NoHTTPSDowngradeRedirectHandler(),
         )
         self.url = "about:blank"
         self.history: List[str] = []
@@ -448,7 +462,7 @@ class StealthBrowserSession:
 
     def reload(self) -> Dict[str, Any]:
         if self.url and not self.url.startswith("about:"):
-            return self.open(self.url)
+            return self.open(self.url, record_history=False)
         return self._build_status()
 
     def _parse_and_layout(self):
@@ -511,6 +525,7 @@ class StealthBrowserSession:
         return self._build_status()
 
     def click(self, element_id: str) -> Dict[str, Any]:
+        """Follow an element's link target; non-link controls are unsupported."""
         elem = self.elements_by_id.get(element_id)
         if not elem:
             return {"error": f"Element '{element_id}' not found"}

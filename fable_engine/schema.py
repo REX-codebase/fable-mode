@@ -590,11 +590,11 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_click",
-        "description": "Clicks an interactive element by its stable element ID.",
+        "description": "Navigates to the href of a link element by its stable element ID. Elements without an href are unsupported.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "Stable element ID to click."},
+                "element_id": {"type": "string", "description": "Stable element ID of an href-bearing link."},
                 "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
             },
             "required": ["element_id"]

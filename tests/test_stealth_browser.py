@@ -19,7 +19,10 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.request
+import urllib.response
 import zlib
+from email.message import Message
 from unittest.mock import Mock, patch
 
 from fable_engine.browser import (
@@ -44,6 +47,8 @@ import fable_engine.server as browser_server
 
 class _BrowserTestHandler(http.server.BaseHTTPRequestHandler):
     redirect_history_one = False
+    downgrade_requests = 0
+    downgrade_cookie = None
 
     def do_GET(self):
         if self.path == "/set-cookie":
@@ -61,6 +66,11 @@ class _BrowserTestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/redirected")
             self.end_headers()
             return
+        elif self.path == "/downgrade-target":
+            type(self).downgrade_requests += 1
+            type(self).downgrade_cookie = self.headers.get("Cookie")
+            self.send_response(200)
+            body = b"downgrade followed"
         else:
             self.send_response(200)
             body = (self.headers.get("Cookie") or "").encode("utf-8")
@@ -79,6 +89,8 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp()
         self.profile_dir = os.path.join(self.tmp_dir, "browser-profile")
         _BrowserTestHandler.redirect_history_one = False
+        _BrowserTestHandler.downgrade_requests = 0
+        _BrowserTestHandler.downgrade_cookie = None
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _BrowserTestHandler)
         self.http_thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.http_thread.start()
@@ -121,6 +133,13 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(navigate_timeout_schema["maximum"], MAX_BROWSER_OPEN_TIMEOUT_SECONDS)
         wait_schema = schemas["browser_wait"]["properties"]["seconds"]
         self.assertEqual(wait_schema["maximum"], 10)
+        click_schema = next(
+            tool for tool in BROWSER_TOOL_SCHEMAS if tool["name"] == "browser_click"
+        )
+        self.assertIn("href", click_schema["description"])
+        self.assertIn(
+            "href", click_schema["inputSchema"]["properties"]["element_id"]["description"]
+        )
 
     def test_profile_manager_persistence(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -163,6 +182,39 @@ class TestStealthAgentBrowser(unittest.TestCase):
         session.open(f"http://127.0.0.1:{self.port}/echo")
 
         self.assertNotIn("session_token", session.page_html)
+
+    def test_https_cookie_redirect_to_http_is_not_followed(self):
+        class FakeHTTPSRedirectHandler(urllib.request.BaseHandler):
+            handler_order = 100
+
+            def https_open(inner_self, request):
+                headers = Message()
+                headers.add_header(
+                    "Location", f"http://localhost:{self.port}/downgrade-target"
+                )
+                headers.add_header(
+                    "Set-Cookie", "session_token=should-not-leak; Path=/"
+                )
+                body = io.BytesIO()
+                body.msg = headers
+                return urllib.response.addinfourl(
+                    body, headers, request.full_url, 302
+                )
+
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.opener.add_handler(FakeHTTPSRedirectHandler())
+
+        result = session.open(f"https://localhost:{self.port}/redirect")
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("HTTP Error 302", result["error"])
+        self.assertEqual(
+            {cookie.name: cookie.value for cookie in pm.cookies}["session_token"],
+            "should-not-leak",
+        )
+        self.assertEqual(_BrowserTestHandler.downgrade_requests, 0)
+        self.assertIsNone(_BrowserTestHandler.downgrade_cookie)
 
     def test_browser_session_about_blank(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -398,6 +450,11 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(session.history_index, 0)
         self.assertTrue(session.url.endswith("/redirected"))
 
+        session.reload()
+        self.assertEqual(session.history, original_history)
+        self.assertEqual(session.history_index, 0)
+        self.assertTrue(session.url.endswith("/redirected"))
+
         session.forward()
         self.assertEqual(session.history, original_history)
         self.assertEqual(session.history_index, 1)
@@ -541,7 +598,7 @@ class TestStealthAgentBrowser(unittest.TestCase):
             DEFAULT_MAX_RESPONSE_BYTES * MAX_BROWSER_SESSIONS,
             MAX_RETAINED_PAGE_HTML_BYTES,
         )
-        self.assertLess(MAX_RETAINED_PAGE_HTML_BYTES, 160 * 1024 * 1024)
+        self.assertLess(MAX_RETAINED_PAGE_HTML_BYTES, 20 * 1024 * 1024)
 
     def test_browser_module_import_does_not_create_profile(self):
         script = """
