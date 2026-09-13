@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import base64
 import http.cookiejar
-import html
 from html.parser import HTMLParser
+import ipaddress
 import json
 import logging
 import math
@@ -314,17 +314,13 @@ class StealthBrowserSession:
         timeout = bound_browser_timeout(timeout)
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in ("http", "https", "about"):
-            url = "http://" + url
-            scheme = "http"
+            default_scheme = "http" if self._is_loopback_target(url) else "https"
+            url = f"{default_scheme}://{url}"
+            scheme = default_scheme
 
         if scheme == "about":
-            self.url = url
-            self.page_title = "Blank Page"
-            self.page_html = "<html><head><title>Blank Page</title></head><body><h1>Blank Page</h1></body></html>"
-            self.scroll_y = 0
-            self._parse_and_layout()
-            if record_history:
-                self._record_history(url)
+            page_html = "<html><head><title>Blank Page</title></head><body><h1>Blank Page</h1></body></html>"
+            self._commit_navigation(url, page_html, record_history)
             return self._build_status()
 
         req = urllib.request.Request(url)
@@ -347,19 +343,50 @@ class StealthBrowserSession:
                         "url": url,
                     }
                 body = body_bytes.decode("utf-8", errors="replace")
-                self.url = resp.geturl()
-                self.page_html = body
-                if record_history:
-                    self._record_history(self.url)
-                self.scroll_y = 0
-                self._parse_and_layout()
+                response_url = resp.geturl()
+                self._commit_navigation(response_url, body, record_history)
                 return self._build_status()
         except Exception as e:
             logger.error(f"Browser navigation error to {url}: {e}")
-            self.page_html = f"<html><body><h1>Navigation Error</h1><p>{html.escape(str(e))}</p></body></html>"
-            self.scroll_y = 0
-            self._parse_and_layout()
             return {"status": "error", "error": str(e), "url": url}
+
+    @staticmethod
+    def _is_loopback_target(url: str) -> bool:
+        """Return whether a scheme-less URL targets the local machine."""
+        try:
+            hostname = urllib.parse.urlsplit(f"//{url}").hostname
+        except ValueError:
+            return False
+        if not hostname:
+            return False
+        hostname = hostname.rstrip(".").lower()
+        if hostname == "localhost" or hostname.endswith(".localhost"):
+            return True
+        try:
+            return ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            return False
+
+    def _commit_navigation(
+        self,
+        url: str,
+        page_html: str,
+        record_history: bool,
+    ) -> None:
+        """Parse a candidate document before publishing any navigation state."""
+        dom_root, elements_by_id, document_height, page_title = self._layout_document(
+            url, page_html
+        )
+        self.url = url
+        self.page_html = page_html
+        self.dom_root = dom_root
+        self.elements_by_id = elements_by_id
+        self.document_height = document_height
+        self.page_title = page_title
+        self.active_element_id = None
+        self.scroll_y = 0
+        if record_history:
+            self._record_history(url)
 
     def _read_response_body(self, response: Any, deadline: float, timeout: float) -> bytes:
         """Read a bounded response while enforcing the navigation's monotonic deadline."""
@@ -403,14 +430,20 @@ class StealthBrowserSession:
 
     def back(self) -> Dict[str, Any]:
         if self.history_index > 0:
-            self.history_index -= 1
-            return self.open(self.history[self.history_index], record_history=False)
+            target_index = self.history_index - 1
+            result = self.open(self.history[target_index], record_history=False)
+            if result.get("status") != "error":
+                self.history_index = target_index
+            return result
         return self._build_status()
 
     def forward(self) -> Dict[str, Any]:
         if self.history_index < len(self.history) - 1:
-            self.history_index += 1
-            return self.open(self.history[self.history_index], record_history=False)
+            target_index = self.history_index + 1
+            result = self.open(self.history[target_index], record_history=False)
+            if result.get("status") != "error":
+                self.history_index = target_index
+            return result
         return self._build_status()
 
     def reload(self) -> Dict[str, Any]:
@@ -419,21 +452,34 @@ class StealthBrowserSession:
         return self._build_status()
 
     def _parse_and_layout(self):
+        dom_root, elements_by_id, document_height, page_title = self._layout_document(
+            self.url, self.page_html
+        )
+        self.dom_root = dom_root
+        self.elements_by_id = elements_by_id
+        self.document_height = document_height
+        self.page_title = page_title
+        self.active_element_id = None
+
+    def _layout_document(
+        self,
+        url: str,
+        page_html: str,
+    ) -> Tuple[DOMElement, Dict[str, DOMElement], int, str]:
         parser = SimpleDOMParser()
         try:
-            parser.feed(self.page_html)
+            parser.feed(page_html)
         except BrowserDocumentTooLargeError:
             raise
         except Exception:
             pass
 
-        self.dom_root = parser.root
-        self.elements_by_id.clear()
-        self.active_element_id = None
+        dom_root = parser.root
+        elements_by_id: Dict[str, DOMElement] = {}
 
         # Extract title
-        title_match = re.search(r"<title>(.*?)</title>", self.page_html, re.IGNORECASE | re.DOTALL)
-        self.page_title = title_match.group(1).strip() if title_match else self.url
+        title_match = re.search(r"<title>(.*?)</title>", page_html, re.IGNORECASE | re.DOTALL)
+        page_title = title_match.group(1).strip() if title_match else url
 
         # Compute layout boxes
         current_y = 20
@@ -444,7 +490,7 @@ class StealthBrowserSession:
             stack = [root]
             while stack:
                 node = stack.pop()
-                self.elements_by_id[node.element_id] = node
+                elements_by_id[node.element_id] = node
                 all_elems.append(node)
 
                 if node.tag in ("h1", "h2", "h3", "p", "div", "button", "input", "a", "section"):
@@ -456,8 +502,9 @@ class StealthBrowserSession:
 
                 stack.extend(reversed(node.children))
 
-        traverse(self.dom_root)
-        self.document_height = max(self.viewport_height, current_y + 40)
+        traverse(dom_root)
+        document_height = max(self.viewport_height, current_y + 40)
+        return dom_root, elements_by_id, document_height, page_title
 
     def scroll(self, delta_y: int) -> Dict[str, Any]:
         self.scroll_y = max(0, min(self.scroll_y + delta_y, self.document_height - self.viewport_height))
@@ -615,9 +662,15 @@ class StealthBrowserSession:
         }
 
     def _build_status(self) -> Dict[str, Any]:
-        elements_summary = [
+        actionable_tags = ("a", "button", "input", "textarea")
+        informational_tags = ("h1", "h2", "h3", "form")
+        actionable_elements = [
             elem.to_dict() for elem in self.elements_by_id.values()
-            if elem.tag in ("a", "button", "input", "textarea", "h1", "h2", "h3", "form")
+            if elem.tag in actionable_tags
+        ]
+        informational_elements = [
+            elem.to_dict() for elem in self.elements_by_id.values()
+            if elem.tag in informational_tags
         ]
         return {
             "session_id": self.session_id,
@@ -626,7 +679,7 @@ class StealthBrowserSession:
             "viewport": [self.viewport_width, self.viewport_height],
             "scroll_y": self.scroll_y,
             "document_height": self.document_height,
-            "interactive_elements": elements_summary[:50],
+            "interactive_elements": (actionable_elements + informational_elements)[:50],
         }
 
 

@@ -312,6 +312,12 @@ def main():
 
                     if tool_name == "browser_close":
                         res = GLOBAL_BROWSER_ENGINE.close_session(sid)
+                    elif tool_name == "browser_wait":
+                        sec = float(arguments.get("seconds", 1.0))
+                        import time
+                        bounded_sec = min(max(sec, 0), 10)
+                        time.sleep(bounded_sec)
+                        res = {"status": "waited", "seconds": bounded_sec}
                     else:
                         session = GLOBAL_BROWSER_ENGINE.get_or_create_session(sid)
 
@@ -342,11 +348,7 @@ def main():
                     elif tool_name == "browser_reload":
                         res = session.reload()
                     elif tool_name == "browser_wait":
-                        sec = float(arguments.get("seconds", 1.0))
-                        import time
-                        bounded_sec = min(max(sec, 0), 10)
-                        time.sleep(bounded_sec)
-                        res = {"status": "waited", "seconds": bounded_sec}
+                        pass
                     elif tool_name == "browser_press":
                         key = str(arguments.get("key", ""))
                         elem_id = arguments.get("element_id")
@@ -355,10 +357,7 @@ def main():
                         raise ValueError(f"Unknown browser tool action: {tool_name}")
 
                     is_error = (
-                        tool_name in (
-                            "browser_open", "browser_navigate", "browser_click", "browser_type"
-                        )
-                        and isinstance(res, dict)
+                        isinstance(res, dict)
                         and (res.get("status") == "error" or "error" in res)
                     )
                     send_response({

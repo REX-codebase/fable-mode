@@ -246,6 +246,79 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertIn(f"{MAX_DOM_NODES} DOM node limit", result["error"])
         self.assertLess(len(session.elements_by_id), MAX_DOM_NODES)
 
+    def test_failed_navigation_preserves_previous_page_state(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.open("about:blank")
+        session.scroll_y = 275
+        previous_state = (
+            session.url,
+            session.page_html,
+            session.dom_root,
+            session.elements_by_id,
+            session.page_title,
+            session.document_height,
+            list(session.history),
+            session.history_index,
+            session.scroll_y,
+        )
+
+        session.opener = Mock()
+        session.opener.open.side_effect = OSError("navigation failed")
+        result = session.open("example.test")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["url"], "https://example.test")
+        self.assertEqual(
+            (
+                session.url,
+                session.page_html,
+                session.dom_root,
+                session.elements_by_id,
+                session.page_title,
+                session.document_height,
+                session.history,
+                session.history_index,
+                session.scroll_y,
+            ),
+            previous_state,
+        )
+
+    def test_layout_failure_preserves_previous_page_state(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.open("about:blank")
+        session.scroll_y = 275
+        previous_state = (
+            session.url,
+            session.page_html,
+            session.dom_root,
+            session.elements_by_id,
+            session.page_title,
+            session.document_height,
+            list(session.history),
+            session.history_index,
+            session.scroll_y,
+        )
+
+        result = session.open(f"http://127.0.0.1:{self.port}/oversized-dom")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(
+            (
+                session.url,
+                session.page_html,
+                session.dom_root,
+                session.elements_by_id,
+                session.page_title,
+                session.document_height,
+                session.history,
+                session.history_index,
+                session.scroll_y,
+            ),
+            previous_state,
+        )
+
     def test_navigation_resets_scroll_before_layout(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
         session = StealthBrowserSession("test_tab", pm)
@@ -363,6 +436,39 @@ class TestStealthAgentBrowser(unittest.TestCase):
             session.open("HtTp://Example.test/Path")
 
         request.assert_called_once_with("HtTp://Example.test/Path")
+
+    def test_bare_urls_use_https_except_for_loopback_targets(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.opener = Mock()
+        session.opener.open.side_effect = OSError("stop before network access")
+
+        for target, expected in (
+            ("example.test/path", "https://example.test/path"),
+            ("localhost:3000/path", "http://localhost:3000/path"),
+            ("127.0.0.1:3000/path", "http://127.0.0.1:3000/path"),
+            ("[::1]:3000/path", "http://[::1]:3000/path"),
+            ("http://example.test/path", "http://example.test/path"),
+        ):
+            with self.subTest(target=target):
+                session.open(target)
+                self.assertEqual(session.opener.open.call_args.args[0].full_url, expected)
+
+    def test_actionable_elements_are_not_hidden_by_summary_limit(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.page_html = (
+            "<html><body>"
+            + "".join(f"<h2>Heading {index}</h2>" for index in range(60))
+            + '<input id="late-input" type="text">'
+            + "</body></html>"
+        )
+        session._parse_and_layout()
+
+        elements = session._build_status()["interactive_elements"]
+
+        self.assertEqual(elements[0]["element_id"], "late-input")
+        self.assertLessEqual(len(elements), 50)
 
     def test_layout_walk_handles_deep_dom_in_preorder(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -551,6 +657,7 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
             "status": "error",
             "error": "not editable",
         }
+        session.scroll.return_value = {"error": "scroll failed"}
         requests = "".join(
             json.dumps({
                 "jsonrpc": "2.0",
@@ -562,6 +669,7 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
                 ("browser_open", {"url": "bad.test"}),
                 ("browser_click", {"element_id": "missing"}),
                 ("browser_type", {"element_id": "readonly", "text": "value"}),
+                ("browser_scroll", {"delta_y": 10}),
                 ("browser_open", {"url": "about:blank"}),
             ), start=1)
         )
@@ -578,7 +686,7 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
         responses = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [response["result"]["isError"] for response in responses],
-            [True, True, True, False],
+            [True, True, True, True, False],
         )
 
     def test_browser_open_enforces_one_deadline_across_reads(self):
@@ -626,10 +734,12 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
 
     def test_browser_wait_reports_bounded_duration(self):
         engine = Mock()
-        engine.get_or_create_session.return_value = Mock()
         request = json.dumps({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "browser_wait", "arguments": {"seconds": 25}},
+            "params": {
+                "name": "browser_wait",
+                "arguments": {"seconds": 25, "session_id": "new-session"},
+            },
         }) + "\n"
         output = io.StringIO()
         with (
@@ -643,6 +753,8 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
             browser_server.main()
 
         sleep.assert_called_once_with(10)
+        engine.get_or_create_session.assert_not_called()
+        engine.close_session.assert_not_called()
         result = json.loads(json.loads(output.getvalue())["result"]["content"][0]["text"])
         self.assertEqual(result["seconds"], 10)
 
