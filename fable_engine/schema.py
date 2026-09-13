@@ -690,7 +690,7 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_press",
-        "description": "Presses a keyboard key on an element or active window.",
+        "description": "Edits supported text controls, moves focus with Tab, or activates links with Enter.",
         "inputSchema": {
             "type": "object",
             "properties": {

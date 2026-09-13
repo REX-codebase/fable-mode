@@ -118,6 +118,12 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertIn("browser_press", tool_names)
         self.assertIn("browser_reload", tool_names)
 
+        press_schema = next(
+            schema for schema in BROWSER_TOOL_SCHEMAS
+            if schema["name"] == "browser_press"
+        )
+        self.assertNotIn("active window", press_schema["description"])
+
         for tool in BROWSER_TOOL_SCHEMAS:
             self.assertTrue(len(tool["description"]) > 0)
             self.assertIn("type", tool["inputSchema"])
@@ -258,6 +264,44 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(len(handler.requests), 2)
         self.assertIsNone(handler.requests[1].get_header("Cookie"))
 
+    def test_redirect_hops_receive_remaining_navigation_deadline(self):
+        class DelayedRedirectHandler(urllib.request.BaseHandler):
+            handler_order = 100
+
+            def __init__(inner_self):
+                inner_self.timeouts = []
+
+            def http_open(inner_self, request):
+                inner_self.timeouts.append(request.timeout)
+                headers = Message()
+                headers.add_header("Location", f"/hop-{len(inner_self.timeouts)}")
+                body = io.BytesIO()
+                body.msg = headers
+                return urllib.response.addinfourl(
+                    body, headers, request.full_url, 302
+                )
+
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        handler = DelayedRedirectHandler()
+        session.opener.add_handler(handler)
+
+        with (
+            patch(
+                "fable_engine.browser.time.monotonic",
+                side_effect=(100.0, 100.1, 100.4, 101.1),
+            ),
+            patch.object(session, "_read_response_body") as read_response_body,
+        ):
+            result = session.open("http://localhost/start", timeout=1.0)
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("timed out", result["error"])
+        self.assertEqual(len(handler.timeouts), 2)
+        self.assertAlmostEqual(handler.timeouts[0], 0.9)
+        self.assertAlmostEqual(handler.timeouts[1], 0.6)
+        read_response_body.assert_not_called()
+
     def test_https_cookie_redirect_to_http_is_not_followed(self):
         class FakeHTTPSRedirectHandler(urllib.request.BaseHandler):
             handler_order = 100
@@ -347,6 +391,10 @@ class TestStealthAgentBrowser(unittest.TestCase):
             session.elements_by_id["username_input"].attrs["value"], "agent_user"
         )
         self.assertEqual(session.press_key("Tab", "username_input")["element_id"], "remember_me")
+        self.assertEqual(session.press_key("Enter", "username_input")["status"], "error")
+        self.assertEqual(session.press_key("Enter", "login_btn")["status"], "error")
+        self.assertEqual(session.press_key("Enter", "notes")["status"], "pressed")
+        self.assertTrue(session.elements_by_id["notes"].attrs["value"].endswith("\n"))
 
         # Test click link
         click_res = session.click("home_link")
@@ -554,6 +602,19 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(session.history[-1], "about:branched")
         self.assertEqual(session.history_index, len(session.history) - 1)
         self.assertEqual(session.forward()["url"], "about:branched")
+
+    def test_same_url_navigation_clears_forward_history(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        for url in ("about:A", "about:B", "about:C"):
+            session.open(url)
+
+        session.back()
+        session.open("about:B")
+
+        self.assertEqual(session.history, ["about:A", "about:B"])
+        self.assertEqual(session.history_index, 1)
+        self.assertEqual(session.forward()["url"], "about:B")
 
     def test_url_scheme_checks_are_case_insensitive_without_rewriting_url(self):
         pm = ProfileManager(profile_dir=self.profile_dir)

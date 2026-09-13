@@ -102,7 +102,26 @@ class NoHTTPSDowngradeRedirectHandler(urllib.request.HTTPRedirectHandler):
         ).scheme.lower()
         if source_scheme == "https" and target_scheme == "http":
             return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None:
+            for attr in ("_fable_navigation_deadline", "_fable_navigation_timeout"):
+                if hasattr(req, attr):
+                    setattr(redirected, attr, getattr(req, attr))
+        return redirected
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        deadline = getattr(req, "_fable_navigation_deadline", None)
+        if deadline is not None:
+            timeout = getattr(req, "_fable_navigation_timeout", req.timeout)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Browser navigation timed out after {timeout:g} seconds"
+                )
+            req.timeout = remaining
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
 def _is_loopback_target(url: str) -> bool:
@@ -379,6 +398,8 @@ class StealthBrowserSession:
         req.add_header("Accept-Language", "en-US,en;q=0.9")
 
         deadline = time.monotonic() + timeout
+        req._fable_navigation_deadline = deadline
+        req._fable_navigation_timeout = timeout
         try:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -458,9 +479,9 @@ class StealthBrowserSession:
 
     def _record_history(self, url: str):
         if self.history_index >= 0 and self.history_index < len(self.history):
+            self.history = self.history[: self.history_index + 1]
             if self.history[self.history_index] == url:
                 return
-            self.history = self.history[: self.history_index + 1]
         self.history.append(url)
         self.history_index = len(self.history) - 1
         overflow = len(self.history) - MAX_HISTORY_ENTRIES
@@ -615,12 +636,16 @@ class StealthBrowserSession:
                 elem.element_id for elem in self.elements_by_id.values()
                 if elem.tag in ("a", "button", "input", "textarea")
             ]
-            if focusable:
-                try:
-                    current_index = focusable.index(self.active_element_id)
-                except ValueError:
-                    current_index = -1
-                self.active_element_id = focusable[(current_index + 1) % len(focusable)]
+            if not focusable:
+                return {
+                    "status": "error",
+                    "error": "Tab is unsupported because the page has no focusable elements",
+                }
+            try:
+                current_index = focusable.index(self.active_element_id)
+            except ValueError:
+                current_index = -1
+            self.active_element_id = focusable[(current_index + 1) % len(focusable)]
             return {
                 "status": "pressed",
                 "key": key,
@@ -640,18 +665,27 @@ class StealthBrowserSession:
             )
             if is_editable:
                 current_value = target.attrs.get("value", "")
+                updated_value: Optional[str] = None
                 if key == "Backspace":
-                    target.attrs["value"] = current_value[:-1]
+                    updated_value = current_value[:-1]
                 elif key == "Space":
-                    target.attrs["value"] = current_value + " "
+                    updated_value = current_value + " "
                 elif key == "Enter" and target.tag == "textarea":
-                    target.attrs["value"] = current_value + "\n"
+                    updated_value = current_value + "\n"
                 elif len(key) == 1:
-                    target.attrs["value"] = current_value + key
+                    updated_value = current_value + key
+                if updated_value is not None and updated_value != current_value:
+                    target.attrs["value"] = updated_value
+                    return {"status": "pressed", "key": key, "element_id": target_id}
             elif key == "Enter" and target.attrs.get("href") is not None:
                 return self.click(target.element_id)
 
-        return {"status": "pressed", "key": key, "element_id": target_id}
+        target_description = f"<{target.tag}>" if target is not None else "the active window"
+        return {
+            "status": "error",
+            "error": f"Key '{key}' is unsupported for {target_description}",
+            "element_id": target_id,
+        }
 
     def snapshot_layers(self, max_layers: int = 3) -> Dict[str, Any]:
         """Captures N viewport-sized sequential screenshots (1 layer = 1 viewport height)."""
