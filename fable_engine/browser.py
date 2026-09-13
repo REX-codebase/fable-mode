@@ -31,11 +31,13 @@ logger = logging.getLogger("fable-engine.browser")
 DEFAULT_PROFILE_DIR = pathlib.Path.home() / ".fable" / "browser-profile"
 DEFAULT_VIEWPORT_WIDTH = 1280
 DEFAULT_VIEWPORT_HEIGHT = 800
-DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+MAX_BROWSER_SESSIONS = 32
+MAX_RETAINED_PAGE_HTML_BYTES = 32 * 1024 * 1024
+DEFAULT_MAX_RESPONSE_BYTES = MAX_RETAINED_PAGE_HTML_BYTES // MAX_BROWSER_SESSIONS
 DEFAULT_BROWSER_OPEN_TIMEOUT_SECONDS = 15.0
 MAX_BROWSER_OPEN_TIMEOUT_SECONDS = 30.0
 MAX_SCREENSHOT_LAYERS = 10
-MAX_BROWSER_SESSIONS = 32
+MAX_DOM_NODES = 10_000
 
 
 def bound_browser_timeout(timeout: float) -> float:
@@ -71,27 +73,41 @@ class DOMElement:
         self.height = 0
 
     def to_dict(self) -> Dict[str, Any]:
+        attrs = self.attrs
+        if self.attrs.get("type", "").lower() == "password" and "value" in self.attrs:
+            attrs = dict(self.attrs)
+            attrs["value"] = "[REDACTED]"
         return {
             "element_id": self.element_id,
             "tag": self.tag,
-            "attrs": self.attrs,
+            "attrs": attrs,
             "text": self.text.strip(),
             "bbox": [self.x, self.y, self.width, self.height],
             "children_count": len(self.children),
         }
 
 
+class BrowserDocumentTooLargeError(ValueError):
+    """Raised when a page exceeds the browser's bounded DOM size."""
+
+
 class SimpleDOMParser(HTMLParser):
     """HTML parser that constructs a clean DOM tree with stable element IDs."""
 
-    def __init__(self):
+    def __init__(self, max_nodes: int = MAX_DOM_NODES):
         super().__init__()
         self.root = DOMElement("elem_0", "root", {})
         self.stack: List[DOMElement] = [self.root]
         self.counter = 1
         self.assigned_ids = {self.root.element_id}
+        self.max_nodes = max(1, min(int(max_nodes), MAX_DOM_NODES))
+        self.node_count = 0
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
+        if self.node_count >= self.max_nodes:
+            raise BrowserDocumentTooLargeError(
+                f"Document exceeds the {self.max_nodes} DOM node limit"
+            )
         attr_dict = {k: (v or "") for k, v in attrs}
         base_id = attr_dict.get("id") or f"elem_{self.counter}"
         self.counter += 1
@@ -102,6 +118,7 @@ class SimpleDOMParser(HTMLParser):
             suffix += 1
         self.assigned_ids.add(elem_id)
         elem = DOMElement(elem_id, tag, attr_dict)
+        self.node_count += 1
         elem.parent = self.stack[-1]
         self.stack[-1].children.append(elem)
         if tag.lower() not in ("img", "br", "hr", "input", "meta", "link"):
@@ -283,6 +300,7 @@ class StealthBrowserSession:
         self.document_height = DEFAULT_VIEWPORT_HEIGHT
         self.page_title = ""
         self.page_html = ""
+        self.active_element_id: Optional[str] = None
 
     def open(
         self,
@@ -300,6 +318,7 @@ class StealthBrowserSession:
             self.url = url
             self.page_title = "Blank Page"
             self.page_html = "<html><head><title>Blank Page</title></head><body><h1>Blank Page</h1></body></html>"
+            self.scroll_y = 0
             self._parse_and_layout()
             if record_history:
                 self._record_history(url)
@@ -329,11 +348,13 @@ class StealthBrowserSession:
                 self.page_html = body
                 if record_history:
                     self._record_history(self.url)
+                self.scroll_y = 0
                 self._parse_and_layout()
                 return self._build_status()
         except Exception as e:
             logger.error(f"Browser navigation error to {url}: {e}")
             self.page_html = f"<html><body><h1>Navigation Error</h1><p>{html.escape(str(e))}</p></body></html>"
+            self.scroll_y = 0
             self._parse_and_layout()
             return {"status": "error", "error": str(e), "url": url}
 
@@ -394,11 +415,14 @@ class StealthBrowserSession:
         parser = SimpleDOMParser()
         try:
             parser.feed(self.page_html)
+        except BrowserDocumentTooLargeError:
+            raise
         except Exception:
             pass
 
         self.dom_root = parser.root
         self.elements_by_id.clear()
+        self.active_element_id = None
 
         # Extract title
         title_match = re.search(r"<title>(.*?)</title>", self.page_html, re.IGNORECASE | re.DOTALL)
@@ -475,14 +499,59 @@ class StealthBrowserSession:
             self.elements_by_id.clear()
             self.page_html = ""
             self.page_title = ""
+            self.active_element_id = None
 
     def press_key(self, key: str, element_id: Optional[str] = None) -> Dict[str, Any]:
-        return {
-            "status": "error",
-            "error": f"Key press '{key}' is unsupported by the lightweight browser engine",
-            "key": key,
-            "element_id": element_id,
-        }
+        if not key:
+            return {"status": "error", "error": "Keyboard key must not be empty"}
+
+        if element_id is not None:
+            if element_id not in self.elements_by_id:
+                return {"status": "error", "error": f"Element '{element_id}' not found"}
+            self.active_element_id = element_id
+
+        if key == "Tab":
+            focusable = [
+                elem.element_id for elem in self.elements_by_id.values()
+                if elem.tag in ("a", "button", "input", "textarea")
+            ]
+            if focusable:
+                try:
+                    current_index = focusable.index(self.active_element_id)
+                except ValueError:
+                    current_index = -1
+                self.active_element_id = focusable[(current_index + 1) % len(focusable)]
+            return {
+                "status": "pressed",
+                "key": key,
+                "element_id": self.active_element_id,
+            }
+
+        target_id = element_id or self.active_element_id
+        target = self.elements_by_id.get(target_id) if target_id else None
+        if target is not None:
+            input_type = target.attrs.get("type", "text").lower()
+            is_editable = target.tag == "textarea" or (
+                target.tag == "input"
+                and input_type in {
+                    "text", "search", "email", "url", "tel", "password", "number",
+                    "date", "datetime-local", "month", "time", "week",
+                }
+            )
+            if is_editable:
+                current_value = target.attrs.get("value", "")
+                if key == "Backspace":
+                    target.attrs["value"] = current_value[:-1]
+                elif key == "Space":
+                    target.attrs["value"] = current_value + " "
+                elif key == "Enter" and target.tag == "textarea":
+                    target.attrs["value"] = current_value + "\n"
+                elif len(key) == 1:
+                    target.attrs["value"] = current_value + key
+            elif key == "Enter" and target.attrs.get("href") is not None:
+                return self.click(target.element_id)
+
+        return {"status": "pressed", "key": key, "element_id": target_id}
 
     def snapshot_layers(self, max_layers: int = 3) -> Dict[str, Any]:
         """Captures N viewport-sized sequential screenshots (1 layer = 1 viewport height)."""

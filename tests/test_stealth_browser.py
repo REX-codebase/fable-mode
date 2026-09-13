@@ -23,11 +23,14 @@ import zlib
 from unittest.mock import Mock, patch
 
 from fable_engine.browser import (
+    DEFAULT_MAX_RESPONSE_BYTES,
     DEFAULT_VIEWPORT_HEIGHT,
     DEFAULT_VIEWPORT_WIDTH,
     DOMElement,
     MAX_BROWSER_OPEN_TIMEOUT_SECONDS,
     MAX_BROWSER_SESSIONS,
+    MAX_DOM_NODES,
+    MAX_RETAINED_PAGE_HTML_BYTES,
     MAX_SCREENSHOT_LAYERS,
     ProfileManager,
     StealthBrowserEngine,
@@ -49,6 +52,9 @@ class _BrowserTestHandler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/large":
             self.send_response(200)
             body = b"01234567890"
+        elif self.path == "/oversized-dom":
+            self.send_response(200)
+            body = ("<input>" * (MAX_DOM_NODES + 1)).encode("utf-8")
         elif self.path == "/history-one" and self.redirect_history_one:
             self.send_response(302)
             self.send_header("Location", "/redirected")
@@ -200,11 +206,52 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertEqual(session.type_text("remember_me", "nope")["status"], "error")
 
         self.assertEqual(session.click("login_btn")["status"], "error")
-        self.assertEqual(session.press_key("Enter", "username_input")["status"], "error")
+        self.assertEqual(session.press_key("!", "username_input")["status"], "pressed")
+        self.assertEqual(
+            session.elements_by_id["username_input"].attrs["value"], "agent_user!"
+        )
+        self.assertEqual(session.press_key("Backspace")["status"], "pressed")
+        self.assertEqual(
+            session.elements_by_id["username_input"].attrs["value"], "agent_user"
+        )
+        self.assertEqual(session.press_key("Tab", "username_input")["element_id"], "remember_me")
 
         # Test click link
         click_res = session.click("home_link")
         self.assertEqual(click_res["url"], "about:blank")
+
+    def test_password_values_are_redacted_without_mutating_dom(self):
+        password = DOMElement(
+            "password", "input", {"type": "PASSWORD", "value": "secret", "name": "password"}
+        )
+        regular = DOMElement("username", "input", {"type": "text", "value": "agent"})
+
+        self.assertEqual(password.to_dict()["attrs"]["value"], "[REDACTED]")
+        self.assertEqual(password.to_dict()["attrs"]["name"], "password")
+        self.assertEqual(password.attrs["value"], "secret")
+        self.assertEqual(regular.to_dict()["attrs"]["value"], "agent")
+
+    def test_oversized_dom_returns_an_explicit_error(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+
+        result = session.open(f"http://127.0.0.1:{self.port}/oversized-dom")
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn(f"{MAX_DOM_NODES} DOM node limit", result["error"])
+        self.assertLess(len(session.elements_by_id), MAX_DOM_NODES)
+
+    def test_navigation_resets_scroll_before_layout(self):
+        pm = ProfileManager(profile_dir=self.profile_dir)
+        session = StealthBrowserSession("test_tab", pm)
+        session.scroll_y = 275
+
+        session.open("about:blank")
+        self.assertEqual(session.scroll_y, 0)
+
+        session.scroll_y = 275
+        session.open(f"http://127.0.0.1:{self.port}/echo")
+        self.assertEqual(session.scroll_y, 0)
 
     def test_duplicate_explicit_and_generated_element_ids_are_unique(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
@@ -330,6 +377,13 @@ class TestStealthAgentBrowser(unittest.TestCase):
         self.assertLessEqual(len(engine.sessions), MAX_BROWSER_SESSIONS)
         session2.opener.close.assert_called_once_with()
         self.assertEqual(session2.page_html, "")
+
+    def test_default_session_page_retention_has_a_safe_aggregate_limit(self):
+        self.assertEqual(
+            DEFAULT_MAX_RESPONSE_BYTES * MAX_BROWSER_SESSIONS,
+            MAX_RETAINED_PAGE_HTML_BYTES,
+        )
+        self.assertLess(MAX_RETAINED_PAGE_HTML_BYTES, 160 * 1024 * 1024)
 
     def test_browser_module_import_does_not_create_profile(self):
         script = """
