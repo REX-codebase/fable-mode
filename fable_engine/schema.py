@@ -79,6 +79,10 @@ TOOL_SCHEMA = {
                     "generate_awwwards_scaffold",
                     "validate_preflight_design",
                     "list_design_archetypes",
+                    "figma_design",
+                    "ae_render_video",
+                    "editor_stage_diff",
+                    "vm_test_and_commit",
                     "scrape_web",
                     "scrape_youtube",
                     "scrape_reddit",
@@ -87,6 +91,38 @@ TOOL_SCHEMA = {
                     "scrape_arxiv"
                 ],
                 "description": "The Fable session action to perform."
+            },
+            "figma_action": {
+                "type": "string",
+                "description": "Figma canvas operation to perform."
+            },
+            "canvas_id": {
+                "type": "string",
+                "description": "Identifier of the Figma canvas to operate on."
+            },
+            "ae_action": {
+                "type": "string",
+                "description": "After Effects composition operation to perform."
+            },
+            "comp_id": {
+                "type": "string",
+                "description": "Identifier of the After Effects composition to operate on."
+            },
+            "editor_action": {
+                "type": "string",
+                "description": "Staged editor operation to perform."
+            },
+            "filepath": {
+                "type": "string",
+                "description": "Normalized workspace-relative path for staged editor content."
+            },
+            "test_command": {
+                "type": "string",
+                "description": "Optional command executed inside the resource-limited VM sandbox."
+            },
+            "host_root": {
+                "type": "string",
+                "description": "Reserved host configuration field; action callers cannot override the trusted host root."
             },
             "session_name": {
                 "type": "string",
