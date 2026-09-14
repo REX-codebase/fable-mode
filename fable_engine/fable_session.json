@@ -74,38 +74,6 @@
         ],
         "type": "string"
       },
-      "figma_action": {
-        "description": "Figma canvas operation to perform.",
-        "type": "string"
-      },
-      "canvas_id": {
-        "description": "Identifier of the Figma canvas to operate on.",
-        "type": "string"
-      },
-      "ae_action": {
-        "description": "After Effects composition operation to perform.",
-        "type": "string"
-      },
-      "comp_id": {
-        "description": "Identifier of the After Effects composition to operate on.",
-        "type": "string"
-      },
-      "editor_action": {
-        "description": "Staged editor operation to perform.",
-        "type": "string"
-      },
-      "filepath": {
-        "description": "Normalized workspace-relative path for staged editor content.",
-        "type": "string"
-      },
-      "test_command": {
-        "description": "Optional command executed inside the resource-limited VM sandbox.",
-        "type": "string"
-      },
-      "host_root": {
-        "description": "Reserved host configuration field; action callers cannot override the trusted host root.",
-        "type": "string"
-      },
       "accumulate_payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"

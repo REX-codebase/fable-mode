@@ -9,15 +9,6 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
-from xml.sax.saxutils import escape, quoteattr
-
-
-MAX_RENDERED_FRAMES = 10_000
-
-
-def _xml_attr(value: Any) -> str:
-    """Serialize a dynamic SVG attribute value safely."""
-    return quoteattr(str(value))
 
 
 class Keyframe:
@@ -113,20 +104,13 @@ class AELayer:
         if opacity <= 0.0:
             return ""
 
-        transform_attr = f'transform={_xml_attr(f"translate({x}, {y}) rotate({rot}) scale({scale})")}'
-        opacity_attr = f" opacity={_xml_attr(opacity)}" if opacity < 1.0 else ""
+        transform_attr = f'transform="translate({x}, {y}) rotate({rot}) scale({scale})"'
+        opacity_attr = f' opacity="{opacity}"' if opacity < 1.0 else ""
 
         if self.layer_type in ("SHAPE", "SOLID"):
-            return (
-                f'<rect x={_xml_attr(0)} y={_xml_attr(0)} width={_xml_attr(self.width)} '
-                f'height={_xml_attr(self.height)} fill={_xml_attr(self.fill)} {transform_attr}{opacity_attr}/>'
-            )
+            return f'<rect x="0" y="0" width="{self.width}" height="{self.height}" fill="{self.fill}" {transform_attr}{opacity_attr}/>'
         elif self.layer_type == "TEXT" and self.text_content:
-            return (
-                f'<text x={_xml_attr(0)} y={_xml_attr(self.font_size)} font-size={_xml_attr(self.font_size)} '
-                f'font-family={_xml_attr("sans-serif")} fill={_xml_attr(self.fill)} '
-                f'{transform_attr}{opacity_attr}>{escape(str(self.text_content))}</text>'
-            )
+            return f'<text x="0" y="{self.font_size}" font-size="{self.font_size}" font-family="sans-serif" fill="{self.fill}" {transform_attr}{opacity_attr}>{self.text_content}</text>'
         return ""
 
 
@@ -164,16 +148,7 @@ class AEComposition:
 
     def render_video_sequence(self) -> List[Dict[str, Any]]:
         """Renders frames across the video composition timeline."""
-        if not math.isfinite(self.duration_sec) or not math.isfinite(self.fps):
-            raise ValueError("duration_sec and fps must be finite")
-        if self.duration_sec <= 0 or self.fps <= 0:
-            raise ValueError("duration_sec and fps must be positive")
-        frame_count = self.duration_sec * self.fps
-        if not math.isfinite(frame_count):
-            raise ValueError("duration_sec multiplied by fps must be finite")
-        total_frames = int(frame_count)
-        if total_frames > MAX_RENDERED_FRAMES:
-            raise ValueError(f"video sequence exceeds the {MAX_RENDERED_FRAMES}-frame limit")
+        total_frames = int(self.duration_sec * self.fps)
         frames: List[Dict[str, Any]] = []
 
         for f in range(total_frames):

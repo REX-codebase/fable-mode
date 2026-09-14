@@ -10,47 +10,6 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
-from xml.sax.saxutils import escape, quoteattr
-
-
-MAX_CANVAS_DIMENSION = 8192
-MAX_CANVAS_PIXELS = 4_000_000
-
-
-def _xml_attr(value: Any) -> str:
-    """Serialize a dynamic SVG attribute value safely."""
-    return quoteattr(str(value))
-
-
-def _validate_dimensions(width: Any, height: Any) -> Tuple[float, float]:
-    """Return finite, positive canvas dimensions within allocation limits."""
-    try:
-        validated_width = float(width)
-        validated_height = float(height)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("width and height must be numeric") from exc
-    if not math.isfinite(validated_width) or not math.isfinite(validated_height):
-        raise ValueError("width and height must be finite")
-    if validated_width < 1 or validated_height < 1:
-        raise ValueError("width and height must be positive pixel dimensions")
-    if validated_width > MAX_CANVAS_DIMENSION or validated_height > MAX_CANVAS_DIMENSION:
-        raise ValueError(f"width and height cannot exceed {MAX_CANVAS_DIMENSION}")
-    if validated_width * validated_height > MAX_CANVAS_PIXELS:
-        raise ValueError(f"canvas cannot exceed {MAX_CANVAS_PIXELS} pixels")
-    return validated_width, validated_height
-
-
-def _validate_padding(value: Any) -> Tuple[float, float, float, float]:
-    """Validate and normalize CSS-style top/right/bottom/left padding."""
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        raise ValueError("padding must be a list or tuple of exactly four values")
-    try:
-        padding = tuple(float(item) for item in value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("padding values must be numeric") from exc
-    if not all(math.isfinite(item) for item in padding):
-        raise ValueError("padding values must be finite")
-    return padding[0], padding[1], padding[2], padding[3]
 
 
 class FigmaNode:
@@ -188,18 +147,14 @@ class FigmaNode:
         curr_y = abs_y + self.y
         parts: List[str] = []
 
-        opacity_attr = f" opacity={_xml_attr(self.opacity)}" if self.opacity < 1.0 else ""
-        fill_attr = f" fill={_xml_attr(self.fill)}" if self.fill else f" fill={_xml_attr('none')}"
-        stroke_attr = (
-            f" stroke={_xml_attr(self.stroke)} stroke-width={_xml_attr(self.stroke_width)}"
-            if self.stroke else ""
-        )
+        opacity_attr = f' opacity="{self.opacity}"' if self.opacity < 1.0 else ""
+        fill_attr = f' fill="{self.fill}"' if self.fill else ' fill="none"'
+        stroke_attr = f' stroke="{self.stroke}" stroke-width="{self.stroke_width}"' if self.stroke else ""
 
         if self.node_type in ("FRAME", "RECTANGLE", "COMPONENT"):
-            rx_attr = f" rx={_xml_attr(self.corner_radius)}" if self.corner_radius > 0 else ""
+            rx_attr = f' rx="{self.corner_radius}"' if self.corner_radius > 0 else ""
             parts.append(
-                f'<rect x={_xml_attr(curr_x)} y={_xml_attr(curr_y)} width={_xml_attr(self.width)} '
-                f'height={_xml_attr(self.height)}{rx_attr}{fill_attr}{stroke_attr}{opacity_attr}/>'
+                f'<rect x="{curr_x}" y="{curr_y}" width="{self.width}" height="{self.height}"{rx_attr}{fill_attr}{stroke_attr}{opacity_attr}/>'
             )
         elif self.node_type == "ELLIPSE":
             cx = curr_x + self.width / 2.0
@@ -207,23 +162,17 @@ class FigmaNode:
             rx = self.width / 2.0
             ry = self.height / 2.0
             parts.append(
-                f'<ellipse cx={_xml_attr(cx)} cy={_xml_attr(cy)} rx={_xml_attr(rx)} ry={_xml_attr(ry)}'
-                f'{fill_attr}{stroke_attr}{opacity_attr}/>'
+                f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"{fill_attr}{stroke_attr}{opacity_attr}/>'
             )
         elif self.node_type == "TEXT" and self.text_content:
             tx = curr_x
             ty = curr_y + self.font_size
             parts.append(
-                f'<text x={_xml_attr(tx)} y={_xml_attr(ty)} font-family={_xml_attr(self.font_family)} '
-                f'font-size={_xml_attr(self.font_size)} font-weight={_xml_attr(self.font_weight)} '
-                f'fill={_xml_attr(self.fill or "#000000")}{opacity_attr}>'
-                f'{escape(str(self.text_content))}</text>'
+                f'<text x="{tx}" y="{ty}" font-family="{self.font_family}" font-size="{self.font_size}" font-weight="{self.font_weight}" fill="{self.fill or "#000000"}"{opacity_attr}>{self.text_content}</text>'
             )
         elif self.node_type == "VECTOR" and self.vector_path:
             parts.append(
-                f'<path d={_xml_attr(self.vector_path)} '
-                f'transform={_xml_attr(f"translate({curr_x}, {curr_y})")}'
-                f'{fill_attr}{stroke_attr}{opacity_attr}/>'
+                f'<path d="{self.vector_path}" transform="translate({curr_x}, {curr_y})"{fill_attr}{stroke_attr}{opacity_attr}/>'
             )
 
         # Render children
@@ -238,11 +187,9 @@ class AgentFigmaEngine:
 
     def __init__(self) -> None:
         self.canvases: Dict[str, FigmaNode] = {}
-        self._next_node_ids: Dict[str, int] = {}
 
     def get_or_create_canvas(self, canvas_id: str, width: float = 1440.0, height: float = 900.0) -> FigmaNode:
         if canvas_id not in self.canvases:
-            width, height = _validate_dimensions(width, height)
             root = FigmaNode(
                 node_id=canvas_id,
                 name="Canvas Root",
@@ -252,24 +199,11 @@ class AgentFigmaEngine:
                 fill="#0F172A",
             )
             self.canvases[canvas_id] = root
-            self._next_node_ids[canvas_id] = 1
         return self.canvases[canvas_id]
 
     def add_node(self, canvas_id: str, parent_id: Optional[str], node_data: Dict[str, Any]) -> FigmaNode:
         root = self.get_or_create_canvas(canvas_id)
-        padding = _validate_padding(node_data.get("padding", [0, 0, 0, 0]))
-        requested_node_id = node_data.get("node_id")
-        if requested_node_id:
-            node_id = str(requested_node_id)
-            if self._find_node(root, node_id) is not None:
-                raise ValueError(f"node_id '{node_id}' already exists in canvas '{canvas_id}'")
-        else:
-            next_id = self._next_node_ids.setdefault(canvas_id, 1)
-            node_id = f"node_{next_id}"
-            while self._find_node(root, node_id) is not None:
-                next_id += 1
-                node_id = f"node_{next_id}"
-            self._next_node_ids[canvas_id] = next_id + 1
+        node_id = node_data.get("node_id") or f"node_{len(root.children) + 1}"
         node = FigmaNode(
             node_id=node_id,
             name=node_data.get("name", "Node"),
@@ -291,7 +225,7 @@ class AgentFigmaEngine:
             vector_path=node_data.get("vector_path"),
             layout_mode=node_data.get("layout_mode"),
             item_spacing=float(node_data.get("item_spacing", 0)),
-            padding=padding,
+            padding=tuple(node_data.get("padding", [0, 0, 0, 0])),
             align_items=node_data.get("align_items", "FLEX_START"),
         )
 
@@ -323,15 +257,10 @@ class AgentFigmaEngine:
             return json.dumps(root.to_dict(), indent=2)
         elif export_format in ("svg", "xml"):
             body = root.render_svg()
-            return (
-                f'<svg xmlns={_xml_attr("http://www.w3.org/2000/svg")} width={_xml_attr(root.width)} '
-                f'height={_xml_attr(root.height)} viewBox={_xml_attr(f"0 0 {root.width} {root.height}")}>'
-                f'\n{body}\n</svg>'
-            )
+            return f'<svg xmlns="http://www.w3.org/2000/svg" width="{root.width}" height="{root.height}" viewBox="0 0 {root.width} {root.height}">\n{body}\n</svg>'
         elif export_format == "ppm":
             # Lightweight raw PPM image header (P3 ASCII format) for agent visual inspection
-            width, height = _validate_dimensions(root.width, root.height)
-            w, h = int(width), int(height)
+            w, h = int(root.width), int(root.height)
             lines = [f"P3\n{w} {h}\n255"]
             bg_r, bg_g, bg_b = (15, 23, 42)  # slate dark background
             row = f"{bg_r} {bg_g} {bg_b} " * w
@@ -351,7 +280,8 @@ def _handle_figma_design(arguments: Dict[str, Any]) -> str:
     canvas_id = arguments.get("canvas_id", "default_canvas")
 
     if action in ("create_canvas", "init"):
-        w, h = _validate_dimensions(arguments.get("width", 1440), arguments.get("height", 900))
+        w = float(arguments.get("width", 1440))
+        h = float(arguments.get("height", 900))
         node = GLOBAL_FIGMA_ENGINE.get_or_create_canvas(canvas_id, w, h)
         return json.dumps({"status": "success", "message": f"Canvas '{canvas_id}' created.", "canvas": node.to_dict()})
 
