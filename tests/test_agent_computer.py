@@ -233,12 +233,15 @@ class TestAgentCodeEditorAndVMSandbox(unittest.TestCase):
     def test_editor_and_vm_paths_are_confined(self):
         editor = AgentCodeEditor()
         for filepath in ("../escape.py", "/tmp/escape.py", "C:\\escape.py", "a\\..\\escape.py"):
+            if filepath.startswith("/") and os.name == "posix":
+                # On POSIX, absolute path /tmp/escape.py is caught by Path.is_absolute()
+                pass
             with self.assertRaises(ValueError, msg=filepath):
                 editor.stage_file(filepath, "value = 1\n")
 
         with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            self.assertEqual(_resolve_confined(root_path, "src/good.py"), root_path / "src" / "good.py")
+            root_path = Path(root).resolve()
+            self.assertEqual(_resolve_confined(root_path, "src/good.py"), (root_path / "src" / "good.py").resolve())
             with self.assertRaises(ValueError):
                 _resolve_confined(root_path, "../bad.py")
 
@@ -262,15 +265,15 @@ class TestAgentCodeEditorAndVMSandbox(unittest.TestCase):
 
     def test_atomic_promotion_restores_all_files_on_replace_failure(self):
         with tempfile.TemporaryDirectory() as host, tempfile.TemporaryDirectory() as sandbox:
-            host_root = Path(host)
-            sandbox_root = Path(sandbox)
+            host_root = Path(host).resolve()
+            sandbox_root = Path(sandbox).resolve()
             first = host_root / "first.py"
             second = host_root / "second.py"
             first.write_text("first-old", encoding="utf-8")
             second.write_text("second-old", encoding="utf-8")
             confined = [
-                ("first.py", "first-new", sandbox_root / "first.py", first),
-                ("second.py", "second-new", sandbox_root / "second.py", second),
+                ("first.py", "first-new", sandbox_root / "first.py", first.resolve()),
+                ("second.py", "second-new", sandbox_root / "second.py", second.resolve()),
             ]
             real_replace = os.replace
             staged_replacements = 0

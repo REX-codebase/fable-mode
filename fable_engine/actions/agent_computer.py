@@ -152,6 +152,22 @@ class AgentCodeEditor:
 class AgentVMSandbox:
     """Isolated execution sandbox VM for testing staged code changes."""
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Checks if unshare user namespace isolation is available on the current OS."""
+        if os.name != "posix" or resource is None or not Path("/usr/bin/unshare").is_file():
+            return False
+        try:
+            res = subprocess.run(
+                ["/usr/bin/unshare", "--user", "--map-root-user", "/bin/true"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
+
     def run_tests_and_promote(
         self,
         staged_files: Dict[str, str],
@@ -167,7 +183,7 @@ class AgentVMSandbox:
 
         if test_command is not None and not isinstance(test_command, str):
             return {"status": "error", "message": "test_command must be a string when provided."}
-        if os.name != "posix" or resource is None or not Path("/usr/bin/unshare").is_file():
+        if not self.is_available():
             return {"status": "error", "message": "A supported isolated sandbox executor is not available."}
 
         host_root = TRUSTED_HOST_ROOT.resolve(strict=True)
