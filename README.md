@@ -40,7 +40,9 @@ mechanical, not prompt advice: no timer, no proof, no write access.
   <img src="./assets/flow-simple.svg" width="720" alt="Think → Prove → Attack → Write"/>
 </div>
 
-<!-- LAUNCH FILM: embed the 30s launch film here once the MP4 is uploaded. -->
+<div align="center">
+  <video src="https://github.com/REX-codebase/fable-mode/raw/main/assets/launch-film.mp4" width="720" controls muted loop playsinline></video>
+</div>
 
 <br/>
 
@@ -66,7 +68,7 @@ red-team swarm for code, and a sealed record of what was verified.
 ### Install
 
 ```bash
-pip install git+https://github.com/REX-codebase/fable-mode.git
+pip install fable-engine
 ```
 
 Point your agent at the MCP server:
