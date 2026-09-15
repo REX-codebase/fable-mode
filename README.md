@@ -6,6 +6,8 @@
 
 # Fable Mode
 
+<!-- mcp-name: io.github.REX-codebase/fable-mode -->
+
 **Agents that think before they write.**
 
 <br/>
@@ -69,22 +71,29 @@ red-team swarm for code, and a sealed record of what was verified.
 pip install fable-engine
 ```
 
-Point your agent at the MCP server:
+Or install the MCP server in your editor:
+
+[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.1%22%2C%22fable-engine%22%5D%7D)
+[![Add to Cursor](https://img.shields.io/badge/Cursor-Add_MCP_server-black)](cursor://anysphere.cursor-deeplink/mcp/install?name=fable-engine&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJmYWJsZS1lbmdpbmU9PTEuMy4xIiwiZmFibGUtZW5naW5lIl19)
+
+These links configure Fable Engine for AI agents in VS Code Chat or Cursor. They do not install a standalone editor extension. Both use `uvx`, which downloads and runs the pinned PyPI release in an isolated environment.
+
+Point your agent at the MCP server manually:
 
 ```jsonc
-// Claude Code: claude mcp add fable-engine -- python -m fable_engine.server
+// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.1 fable-engine
 // Cursor: ~/.cursor/mcp.json
 {
   "mcpServers": {
     "fable-engine": {
-      "command": "python",
-      "args": ["-m", "fable_engine.server"]
+      "command": "uvx",
+      "args": ["--from", "fable-engine==1.3.1", "fable-engine"]
     }
   }
 }
 ```
 
-Python 3.10+, zero runtime dependencies. PyPI package publishing is in progress.
+Python 3.10+, zero runtime dependencies. Published on [PyPI as `fable-engine`](https://pypi.org/project/fable-engine/).
 
 <br/>
 
@@ -110,6 +119,7 @@ Python 3.10+, zero runtime dependencies. PyPI package publishing is in progress.
 - [V1 → V2 migration](./docs/fable-v1-v2-migration.md)
 - [V2 architecture](./docs/fable-v2-architecture.md)
 - [System 3 (experimental)](./docs/system3-architecture.md)
+- [Stop AI coding agents from writing too early](./docs/stop-ai-agents-writing-too-early.md)
 
 <br/>
 

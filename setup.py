@@ -1,9 +1,15 @@
+from pathlib import Path
+
 from setuptools import setup, find_packages
+
+README = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="fable-engine",
-    version="1.3.0",
-    description="Deterministic System 2 Cognitive Engine & Mechanical Time-Lock MCP Server for Antigravity",
+    version="1.3.1",
+    description="Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server",
+    long_description=README,
+    long_description_content_type="text/markdown",
     license="MIT",
     packages=find_packages(),
     py_modules=["fable_mode_entry", "fable_compressor"],
