@@ -40,11 +40,7 @@ mechanical, not prompt advice: no timer, no proof, no write access.
   <img src="./assets/flow-simple.svg" width="720" alt="Think → Prove → Attack → Write"/>
 </div>
 
-<div align="center">
-
 https://github.com/user-attachments/assets/27f4f8a2-b1bb-4398-a08c-bc9fd93d69d7
-
-</div>
 
 <br/>
 
