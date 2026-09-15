@@ -41,7 +41,9 @@ mechanical, not prompt advice: no timer, no proof, no write access.
 </div>
 
 <div align="center">
-  <video src="https://github.com/REX-codebase/fable-mode/raw/main/assets/launch-film.mp4" width="720" controls muted loop playsinline></video>
+
+https://github.com/user-attachments/assets/27f4f8a2-b1bb-4398-a08c-bc9fd93d69d7
+
 </div>
 
 <br/>
