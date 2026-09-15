@@ -6,7 +6,7 @@ README = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="fable-engine",
-    version="1.3.1",
+    version="1.3.2",
     description="Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server",
     long_description=README,
     long_description_content_type="text/markdown",
