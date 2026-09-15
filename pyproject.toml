@@ -9,6 +9,7 @@ description = "Independent deterministic System 2 cognitive engine and mechanica
 readme = "README.md"
 authors = [{ name = "REX-codebase" }]
 license = { file = "LICENSE" }
+keywords = ["mcp", "ai-agents", "coding-agents", "verification", "red-team", "llm-tools"]
 requires-python = ">=3.10"
 dependencies = []
 classifiers = [
@@ -35,3 +36,8 @@ fable_engine = ["fable_session.json"]
 py-modules = ["fable_mode_entry", "fable_compressor"]
 
 
+
+[project.urls]
+Homepage = "https://github.com/REX-codebase/fable-mode"
+Repository = "https://github.com/REX-codebase/fable-mode"
+Issues = "https://github.com/REX-codebase/fable-mode/issues"

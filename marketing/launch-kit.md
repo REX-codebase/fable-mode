@@ -100,3 +100,44 @@ Hey — I’m working on Fable Mode, an open-source MCP control plane for coding
 ## Conversion improvements to measure
 
 Track stars, forks, release downloads, README clicks into installation, issue quality, and the number of contributors who successfully run the canonical test suite. The most important near-term signal is not raw impressions; it is whether a technically serious visitor can understand the product, install it, and reproduce one evidence-gated workflow in under ten minutes.
+
+## Show HN post
+
+**Title:** Show HN: Fable Mode – an MCP control plane that makes coding agents earn write access
+
+I built Fable Mode because my coding agent kept doing the same thing: it would start editing files within seconds, produce a plausible patch, and only afterwards would I find out what it never checked.
+
+Prompting it to "think harder" changed nothing. So I made deliberation a mechanical constraint instead of a request.
+
+Fable Mode is an open-source (MIT) MCP server that puts four gates in front of the workspace:
+
+1. **Think** – a hard time-lock. The agent literally cannot write code until the deliberation budget elapses. Trying to unlock early raises a PermissionError, not a warning.
+2. **Prove** – claims must carry evidence: tool receipts, SHA-256 checksum chains, AST-grounded invariants. Tautologies are filtered out.
+3. **Attack** – a five-vector red-team swarm (chaos environment, Byzantine payloads, concurrency races, resource exhaustion, state invariants) tries to break the change. Unresolved breakages reject the milestone.
+4. **Write** – only then is the workspace unlocked, with a sealed record of what was verified.
+
+Python 3.10+, zero runtime dependencies, works with Claude Code, Cursor, or anything that speaks MCP. 473 tests, CI on Linux/macOS/Windows.
+
+What it is not: a claim of flawless code. It is a way to make "be careful" machine-checkable instead of advisory.
+
+## r/ClaudeCode post
+
+**Title:** I got tired of my agent editing before thinking, so I built a mechanical lock for it (open source, MCP)
+
+Body: same narrative as Show HN, trimmed, leading with the Claude Code setup line (`claude mcp add fable-engine -- python -m fable_engine.server`) and ending with a request for feedback on the proof engine design.
+
+## r/mcp post
+
+**Title:** Fable Mode: an open-source MCP server that gates agent writes behind time-locks, evidence, and red-team review
+
+Body: the tool-oriented version: create_session + set_timer, the evidence ledger ([HYPOTHESIS]/[PROVEN] with receipts), red_team_code_review with the five attack vectors, and the sealed session record. Ends asking the community which other attack vectors the red team should cover.
+
+## Launch checklist
+
+- [ ] Embed the 30-second film at the top of the README (placeholder comment is in place)
+- [ ] Publish `fable-engine` to PyPI, then switch the README install line to `pip install fable-engine`
+- [ ] Submit server.json to the official MCP registry (`mcp-publisher publish`)
+- [ ] PR to punkpeye/awesome-mcp-servers and modelcontextprotocol/servers (draft lines ready)
+- [ ] Post Show HN (Tuesday-Thursday, morning US Eastern)
+- [ ] Post r/ClaudeCode and r/mcp with the demo leading
+- [ ] X post with the film attached, then the 3-post thread

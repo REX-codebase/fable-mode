@@ -3,14 +3,13 @@ name: fable-mode
 description: Fable-Mode Cognitive Reasoning, System 2 Deliberation, and Swarm Architecture Protocols for Non-Frontier AI Models.
 ---
 
-# Fable-Mode Strict Architecture & Role Separation Directive
+# Fable-Mode Architecture & Role Separation
 
-> ⚠️ **MANDATORY EXECUTION LAW & NON-COMPLIANCE PENALTY (NON-FRONTIER AI MODELS)**:
-> Any failure by non-frontier AI models to strictly adhere to Fable Mode guidelines—including bypassing Red-Team Swarm review, substituting plain unit tests for adversarial stress testing, ignoring Fable zero-cost research scrapers, or skipping Cortical Evolution—results in **IMMEDIATE TASK INVALIDATION, SESSION REJECT, AND COGNITIVE PENALTY**. Non-frontier AI models MUST NOT deviate from this control plane under any circumstances. Standard tests have zero counterfactual reasoning ability; passing tests alone is NEVER proof of correctness.
+> **Operating protocol for non-frontier AI models.** Fable Mode works because its gates are applied consistently, not because of wording. Follow the workflow below: ground research with the Fable scrapers, run the adversarial Red-Team Swarm instead of relying on unit tests alone, and finish with Cortical Evolution. Standard tests have limited counterfactual reasoning ability; passing tests alone is not proof of correctness.
 
-## 0. Non-Frontier AI Mandatory Step-by-Step Execution Protocol
+## 0. Step-by-Step Execution Protocol (Non-Frontier AI Models)
 
-Non-frontier AI models executing under Fable-Mode MUST execute tasks through this strict sequential checklist without skipping steps:
+Non-frontier AI models executing under Fable-Mode execute tasks through this sequential checklist:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -55,7 +54,7 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
   - If the initial 8-Pass System 2 thinking completes before the timer expires, the AI is **strictly forbidden from idling**.
   - The AI is **strictly required to continue rethinking and refining** (`rethink, refine, rethink, refine`).
   - Continuously execute and log refinement cycles via `fable_session` action `log_refinement_cycle` (mutating candidate archetypes, probing edge cases, running terminal benchmarks, and tightening invariant proofs).
-- **Ungameable Deterministic Proof Standards**:
+- **Deterministic Proof Standards**:
   - Ground all formal invariants in AST symbol coordinates, SHA-256 file checksum chains, and cryptographically bound `ToolReceipt` execution attestations.
   - Anti-tautology and circularity filters eliminate vacuous assertions ($P \implies P$); formal constructive proof terms and Kripke model checking ($AG(\text{safe})$) verify state dynamics.
 - **Visual Mockup-First Workflow ("Visualize Before You Build")**:

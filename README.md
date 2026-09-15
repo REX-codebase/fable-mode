@@ -10,13 +10,15 @@
 
 <br/>
 
-<img src="./assets/badge-python.svg" alt="Python 3.10+"/>
+<a href="https://github.com/REX-codebase/fable-mode"><img src="https://img.shields.io/badge/python-3.10%2B-black" alt="Python 3.10+"/></a>
 &nbsp;
-<img src="./assets/badge-mit.svg" alt="MIT"/>
+<a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT"/></a>
 &nbsp;
-<img src="./assets/badge-mcp.svg" alt="MCP"/>
+<a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-black" alt="MCP"/></a>
 &nbsp;
-<img src="./assets/badge-stdlib.svg" alt="Zero Dependencies"/>
+<img src="https://img.shields.io/badge/dependencies-0-black" alt="Zero Dependencies"/>
+&nbsp;
+<img src="https://img.shields.io/badge/tests-473%20passing-black" alt="473 tests passing"/>
 
 <br/><br/>
 
@@ -26,18 +28,63 @@
 
 <br/>
 
-Fable Mode is a control plane for AI coding agents.
+Fable Mode is an open-source control plane for AI coding agents.
 
-It forces structured deliberation, evidence, and adversarial review  
-**before** any code is written to your workspace.
-
-No complexity. No hype. Just a mechanical lock that keeps agents honest.
+It makes an agent deliberate, produce evidence, and survive adversarial review
+**before** it earns permission to write to your workspace. The gates are
+mechanical, not prompt advice: no timer, no proof, no write access.
 
 <br/>
 
 <div align="center">
   <img src="./assets/flow-simple.svg" width="720" alt="Think → Prove → Attack → Write"/>
 </div>
+
+<!-- LAUNCH FILM: embed the 30s launch film here once the MP4 is uploaded. -->
+
+<br/>
+
+### See it work
+
+A session starts locked. Confidence does not unlock it.
+
+```text
+>>> session = create_session('demo-refactor', budget='2 min')
+    state=INIT  execution_locked=True  can_execute_code=False
+
+>>> session.unlock_execution('the plan looks fine, let me write code now')
+    PermissionError: HARD TIME-LOCK VIOLATION: Execution unlock rejected!
+    The immutable 2.0m authority budget has not elapsed yet
+    (Remaining: 1m 59s / 120.0s).
+```
+
+The same gates guard every phase: evidence receipts for claims, a five-vector
+red-team swarm for code, and a sealed record of what was verified.
+
+<br/>
+
+### Install
+
+```bash
+pip install git+https://github.com/REX-codebase/fable-mode.git
+```
+
+Point your agent at the MCP server:
+
+```jsonc
+// Claude Code: claude mcp add fable-engine -- python -m fable_engine.server
+// Cursor: ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "fable-engine": {
+      "command": "python",
+      "args": ["-m", "fable_engine.server"]
+    }
+  }
+}
+```
+
+Python 3.10+, zero runtime dependencies. PyPI package publishing is in progress.
 
 <br/>
 
@@ -50,26 +97,25 @@ No complexity. No hype. Just a mechanical lock that keeps agents honest.
 
 <br/>
 
-### Install
+### What it is not
 
-```bash
-# Clone
-git clone https://github.com/REX-codebase/fable-mode.git
-cd fable-mode
-
-# Run the MCP server
-python -m fable_engine.server
-```
-
-Point your agent (Claude Code, Cursor, Codex, etc.) at the MCP server.  
-That’s it.
+- Not a claim of flawless code. It is a checkable workflow, not a guarantee.
+- Not a bigger prompt. The locks are enforced by the engine, not by wording.
+- Not a framework lock-in. It speaks MCP and runs beside your current agent.
 
 <br/>
 
-### Why
+### Docs
 
-Most agents jump straight to editing files.  
-Fable Mode makes them earn the right to touch your code.
+- [V1 → V2 migration](./docs/fable-v1-v2-migration.md)
+- [V2 architecture](./docs/fable-v2-architecture.md)
+- [System 3 (experimental)](./docs/system3-architecture.md)
+
+<br/>
+
+### Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 <br/>
 
