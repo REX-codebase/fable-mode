@@ -21,6 +21,7 @@
     "fable_engine/actions/figma.py",
     "fable_engine/actions/after_effects.py",
     "fable_engine/actions/agent_computer.py",
+    "fable_engine/actions/resource_registry.py",
     "fable_engine/cas.py",
     "fable_engine/scrapers/__init__.py",
     "fable_engine/scrapers/arxiv.py",

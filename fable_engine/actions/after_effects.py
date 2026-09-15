@@ -9,6 +9,12 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
+from xml.sax.saxutils import escape, quoteattr
+
+from fable_engine.actions.resource_registry import SharedResourceRegistry
+
+
+MAX_RENDER_FRAMES = 10_000
 
 
 class Keyframe:
@@ -110,7 +116,12 @@ class AELayer:
         if self.layer_type in ("SHAPE", "SOLID"):
             return f'<rect x="0" y="0" width="{self.width}" height="{self.height}" fill="{self.fill}" {transform_attr}{opacity_attr}/>'
         elif self.layer_type == "TEXT" and self.text_content:
-            return f'<text x="0" y="{self.font_size}" font-size="{self.font_size}" font-family="sans-serif" fill="{self.fill}" {transform_attr}{opacity_attr}>{self.text_content}</text>'
+            return (
+                f'<text x={quoteattr("0")} y={quoteattr(str(self.font_size))} '
+                f'font-size={quoteattr(str(self.font_size))} font-family={quoteattr("sans-serif")} '
+                f'fill={quoteattr(str(self.fill))} transform={quoteattr(f"translate({x}, {y}) rotate({rot}) scale({scale})")} '
+                f'opacity={quoteattr(str(opacity))}>{escape(str(self.text_content))}</text>'
+            )
         return ""
 
 
@@ -148,7 +159,7 @@ class AEComposition:
 
     def render_video_sequence(self) -> List[Dict[str, Any]]:
         """Renders frames across the video composition timeline."""
-        total_frames = int(self.duration_sec * self.fps)
+        total_frames = self._validated_total_frames()
         frames: List[Dict[str, Any]] = []
 
         for f in range(total_frames):
@@ -157,6 +168,17 @@ class AEComposition:
             frames.append({"frame": f, "timestamp_sec": round(time_sec, 3), "svg_content": svg})
         return frames
 
+    def _validated_total_frames(self) -> int:
+        if not math.isfinite(self.duration_sec) or not math.isfinite(self.fps) or self.duration_sec <= 0 or self.fps <= 0:
+            raise ValueError("duration_sec and fps must be finite positive values")
+        frame_count = self.duration_sec * self.fps
+        if not math.isfinite(frame_count):
+            raise ValueError(f"render would exceed the maximum of {MAX_RENDER_FRAMES} frames")
+        total_frames = int(frame_count)
+        if total_frames > MAX_RENDER_FRAMES:
+            raise ValueError(f"render would exceed the maximum of {MAX_RENDER_FRAMES} frames")
+        return total_frames
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "comp_id": self.comp_id,
@@ -164,7 +186,7 @@ class AEComposition:
             "resolution": {"width": self.width, "height": self.height},
             "duration_sec": self.duration_sec,
             "fps": self.fps,
-            "total_frames": int(self.duration_sec * self.fps),
+            "total_frames": self._validated_total_frames(),
             "layers_count": len(self.layers),
         }
 
@@ -173,7 +195,7 @@ class AgentAfterEffectsEngine:
     """In-memory agent-native After Effects engine registry."""
 
     def __init__(self) -> None:
-        self.compositions: Dict[str, AEComposition] = {}
+        self.compositions: SharedResourceRegistry[AEComposition] = SharedResourceRegistry()
 
     def get_or_create_comp(
         self, comp_id: str, name: str = "Main Comp", width: float = 1920.0, height: float = 1080.0, duration_sec: float = 5.0

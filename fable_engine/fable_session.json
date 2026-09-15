@@ -74,6 +74,38 @@
         ],
         "type": "string"
       },
+      "figma_action": {
+        "description": "Figma canvas operation to perform.",
+        "type": "string"
+      },
+      "canvas_id": {
+        "description": "Identifier for the target Figma canvas.",
+        "type": "string"
+      },
+      "ae_action": {
+        "description": "After Effects composition operation to perform.",
+        "type": "string"
+      },
+      "comp_id": {
+        "description": "Identifier for the target After Effects composition.",
+        "type": "string"
+      },
+      "editor_action": {
+        "description": "Agent code editor operation to perform.",
+        "type": "string"
+      },
+      "filepath": {
+        "description": "Relative path for an editor staging operation.",
+        "type": "string"
+      },
+      "test_command": {
+        "description": "Test command to execute inside the isolated VM sandbox.",
+        "type": "string"
+      },
+      "host_root": {
+        "description": "Deprecated host root field; callers may not override the server-owned workspace root.",
+        "type": "string"
+      },
       "accumulate_payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
         "type": "string"
