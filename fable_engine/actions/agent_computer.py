@@ -39,6 +39,8 @@ SANDBOX_PROCESSES = 128
 def _validate_relative_path(filepath: str) -> Path:
     if not isinstance(filepath, str) or not filepath or "\x00" in filepath:
         raise ValueError("filepath must be a non-empty relative path")
+    if filepath.startswith("/") or filepath.startswith("\\"):
+        raise ValueError("root-rooted filepaths are not allowed")
     path = Path(filepath)
     windows_path = PureWindowsPath(filepath)
     if path.is_absolute() or windows_path.is_absolute() or windows_path.drive:

@@ -233,9 +233,6 @@ class TestAgentCodeEditorAndVMSandbox(unittest.TestCase):
     def test_editor_and_vm_paths_are_confined(self):
         editor = AgentCodeEditor()
         for filepath in ("../escape.py", "/tmp/escape.py", "C:\\escape.py", "a\\..\\escape.py"):
-            if filepath.startswith("/") and os.name == "posix":
-                # On POSIX, absolute path /tmp/escape.py is caught by Path.is_absolute()
-                pass
             with self.assertRaises(ValueError, msg=filepath):
                 editor.stage_file(filepath, "value = 1\n")
 
@@ -246,6 +243,8 @@ class TestAgentCodeEditorAndVMSandbox(unittest.TestCase):
                 _resolve_confined(root_path, "../bad.py")
 
     def test_vm_copies_baseline_before_overlay_and_uses_namespace(self):
+        if not AgentVMSandbox.is_available():
+            self.skipTest("Isolated unshare sandbox is not available on this platform/runner.")
         with tempfile.TemporaryDirectory() as host, tempfile.NamedTemporaryFile() as host_sentinel:
             host_root = Path(host)
             (host_root / "tests").mkdir()
