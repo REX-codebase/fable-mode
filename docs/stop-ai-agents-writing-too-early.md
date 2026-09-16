@@ -18,13 +18,13 @@ Fable Mode separates research from authority. A session begins with execution lo
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) so your MCP client can run the package without changing your global Python environment.
 
 ```bash
-uvx --from fable-engine==1.3.3 fable-engine
+uvx --from fable-engine==1.3.4 fable-engine
 ```
 
 For Claude Code:
 
 ```bash
-claude mcp add fable-engine -- uvx --from fable-engine==1.3.3 fable-engine
+claude mcp add fable-engine -- uvx --from fable-engine==1.3.4 fable-engine
 ```
 
 For an MCP client that uses JSON configuration:
@@ -34,7 +34,7 @@ For an MCP client that uses JSON configuration:
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.3", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.4", "fable-engine"]
     }
   }
 }
@@ -68,7 +68,7 @@ It is not a guarantee of correct code. It makes the path to write access explici
 The package has no runtime dependencies. You can confirm the pinned release and inspect its MCP initialization response in an isolated environment before adding it to an editor or agent:
 
 ```bash
-uvx --from fable-engine==1.3.3 fable-engine
+uvx --from fable-engine==1.3.4 fable-engine
 ```
 
 The server communicates over standard input and output. MCP clients start and manage that process for you after configuration.

@@ -15,6 +15,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "fable_mode/launcher.py",
     "fable_mode/manifest.py",
     "fable_mode/safety.py",
+    "fable_mode/skill_bundle.py",
     "fable_mode/resources.json",
     "fable_engine/__init__.py",
     "fable_engine/browser.py",

@@ -113,6 +113,20 @@ class PackagingSecurityTests(unittest.TestCase):
     def test_frozen_like_mcp_smoke(self):
         result = Installer(self.root / "i").install(); result.transaction.commit()
         self.assertEqual(result.executable_argv[-1], "serve")
+        copied_runtime = result.install_dir / "runtime"
+        self.assertTrue(
+            (copied_runtime / "fable_mode" / "skill_bundle.py").is_file(),
+            "portable install omitted a module imported by fable_mode.launcher",
+        )
+        probe = subprocess.run(
+            result.executable_argv[:-1] + ["--version"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": "", "FABLE_DISABLE_AUTO_UPDATE": "1"},
+        )
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertEqual(probe.stdout.strip(), __version__)
         smoke_ok, smoke_detail = _smoke(result.executable_argv, self.root / "data")
         self.assertTrue(smoke_ok, smoke_detail)
 
