@@ -13,13 +13,40 @@ from fable_engine.session import PHASES
 
 TOOL_SCHEMA = {
     "name": "fable_session",
+    "title": "Fable session, evidence, and review workflow",
     "description": (
-        "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\n"
-        "Enforces DeepThink cognitive rigor, hard mechanical time-lock, anti-rush execution lockout, epistemic truth logging (PROVEN/HYPOTHESIS/UNKNOWN),\n"
-        "formal domain invariant modeling, continuous rethink-refine cycles, phased progression gating, subagent delegation contract compilation,\n"
-        "live user-controlled time-budgeted pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant),\n"
-        "and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction)."
+        "Runs one Fable operation selected by `action`. Use it for Fable sessions, gates, "
+        "evidence/proofs, review rubrics, checkpoints, compression, design audits, research "
+        "scrapers, and explicitly experimental System 3 operations; use browser_* tools for "
+        "web-page navigation and interaction. Start stateful workflows with `create_session` "
+        "and a `session_name`; later session actions reuse that name. Only fields documented "
+        "for the selected action are read, and missing or invalid inputs return an `Error:` "
+        "message without raising an MCP transport error. Status/list/telemetry/get/view/check "
+        "operations are read-only. Create, log, record, set, advance, checkpoint, restore, "
+        "track, evaluate, register, compress/accumulate, evolve, generate, and scraper "
+        "operations can persist Fable state or artifacts. `unlock_execution` remains blocked "
+        "until its time and rationale gates pass; `apply_auto_update` can replace installed "
+        "Fable files. The result is action-specific human-readable text in `result`; inspect "
+        "that text for success or `Error:` before continuing."
     ),
+    "annotations": {
+        "title": "Fable session, evidence, and review workflow",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "string",
+                "description": "Action-specific result text. Failures begin with `Error:`."
+            }
+        },
+        "required": ["result"],
+        "additionalProperties": False,
+    },
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -571,7 +598,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_navigate",
-        "description": "Navigates the browser session to a new URL.",
+        "title": "Navigate current browser session",
+        "annotations": {"title": "Navigate current browser session", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Loads `url` into an existing browser session, replacing its current document and adding a history entry. Use this instead of browser_open when continuing in a known session; if `session_id` is omitted, the active session is reused or a default session is created. It waits up to `timeout` seconds and returns the resulting URL, title, viewport, scroll position, and indexed elements; network, timeout, size, and parse failures return an error object without changing committed page state.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -602,7 +632,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_type",
-        "description": "Types text into an input field identified by its stable element ID.",
+        "title": "Replace text field value",
+        "annotations": {"title": "Replace text field value", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Replaces the full value of a text-like input or textarea identified by `element_id`; it does not submit the form. Use browser_press for single-key edits or activation. An omitted `session_id` targets the active/default session. Returns status `typed`, the element ID, and the supplied text; missing or non-editable elements return an error object and are not changed.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -627,7 +660,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_snapshot_layers",
-        "description": "Captures N sequential screen-sized viewport PNG snapshots (1 layer = 1 PC viewport height, 1280x800 px).",
+        "title": "Capture layered page snapshots",
+        "annotations": {"title": "Capture layered page snapshots", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Captures up to `max_layers` PNGs from the top of the current document, one 1280x800 viewport per layer, without changing the session scroll position. Use this for multi-viewport page coverage; use browser_screenshot for only the current viewport. An omitted `session_id` targets the active/default session. Returns layer count, offsets, dimensions, and base64 PNG data; `max_layers` defaults to 3 and is capped at 10.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -638,7 +674,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_screenshot",
-        "description": "Captures a single viewport PNG snapshot of the current scroll position.",
+        "title": "Capture current viewport",
+        "annotations": {"title": "Capture current viewport", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Captures one 1280x800 PNG of the current viewport without navigation or scroll changes. Use this for the visible region; use browser_snapshot_layers for multi-viewport coverage. An omitted `session_id` targets the active/default session. Returns one layer with its offset, dimensions, and base64 PNG data.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -648,7 +687,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_close",
-        "description": "Closes an active browser tab session.",
+        "title": "Close browser session",
+        "annotations": {"title": "Close browser session", "readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Closes and permanently discards one in-memory browser session, including its current document and history; persistent profile cookies remain saved. Use it when that tab is no longer needed. `session_id` targets a specific session; if omitted, the active session is closed. Returns `closed`, or `not_found` without changing another session.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -658,7 +700,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_back",
-        "description": "Navigates back in history for the browser session.",
+        "title": "Go back in browser history",
+        "annotations": {"title": "Go back in browser history", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Loads the previous history entry in the active or named browser session without adding a new history entry. Use it for history traversal rather than browser_navigate. If history is already at its first entry, it is a no-op that returns current page status. A navigation failure returns an error and preserves the history index; omitting `session_id` reuses or creates the active/default session.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -668,7 +713,10 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_forward",
-        "description": "Navigates forward in history for the browser session.",
+        "title": "Go forward in browser history",
+        "annotations": {"title": "Go forward in browser history", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Loads the next history entry in the active or named browser session without adding a new history entry. Use it after browser_back rather than browser_navigate. If no forward entry exists, it is a no-op that returns current page status. A navigation failure returns an error and preserves the history index; omitting `session_id` reuses or creates the active/default session.",
         "inputSchema": {
             "type": "object",
             "properties": {

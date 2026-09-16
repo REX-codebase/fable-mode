@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("fable-engine.scrapers.base")
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FableResearch/1.3.4"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FableResearch/1.3.5"
 
 MAX_RETRY_DELAY_SECONDS = 10.0
 

@@ -237,7 +237,7 @@ def main():
                     },
                     "serverInfo": {
                         "name": "fable-engine",
-                        "version": "1.3.4"
+                        "version": "1.3.5"
                     }
                 }
             })
@@ -282,6 +282,7 @@ def main():
                                     "text": result_text
                                 }
                             ],
+                            "structuredContent": {"result": result_text},
                             "isError": False
                         }
                     })
@@ -370,6 +371,7 @@ def main():
                                     "text": json.dumps(res, indent=2)
                                 }
                             ],
+                            "structuredContent": res if isinstance(res, dict) else {"result": res},
                             "isError": is_error
                         }
                     })

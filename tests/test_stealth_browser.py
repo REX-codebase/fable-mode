@@ -147,6 +147,26 @@ class TestStealthAgentBrowser(unittest.TestCase):
             "href", click_schema["inputSchema"]["properties"]["element_id"]["description"]
         )
 
+        improved = {
+            "browser_navigate", "browser_type", "browser_snapshot_layers",
+            "browser_screenshot", "browser_close", "browser_back", "browser_forward",
+        }
+        for name in improved:
+            tool = next(item for item in BROWSER_TOOL_SCHEMAS if item["name"] == name)
+            self.assertIn("annotations", tool)
+            self.assertIn("outputSchema", tool)
+            self.assertIn("return", tool["description"].lower())
+            self.assertIn("session", tool["description"].lower())
+
+        self.assertIn("no-op", next(
+            item["description"] for item in BROWSER_TOOL_SCHEMAS
+            if item["name"] == "browser_back"
+        ))
+        self.assertIn("Replaces", next(
+            item["description"] for item in BROWSER_TOOL_SCHEMAS
+            if item["name"] == "browser_type"
+        ))
+
     def test_profile_manager_persistence(self):
         pm = ProfileManager(profile_dir=self.profile_dir)
         pm.cookies.set_cookie(http.cookiejar.Cookie(

@@ -786,6 +786,19 @@ class TestFableMCPStdioServer(unittest.TestCase):
         self.assertIn("browser_open", tool_names)
         self.assertIn("log_refinement_cycle", tools[0]["inputSchema"]["properties"]["action"]["enum"])
 
+        self.assertIn("annotations", tools[0])
+        self.assertEqual(tools[0]["outputSchema"]["required"], ["result"])
+        self.assertIn("Only fields documented", tools[0]["description"])
+        self.assertIn("use browser_* tools", tools[0]["description"])
+        for tool in tools:
+            if tool["name"] in {
+                "fable_session", "browser_navigate", "browser_type",
+                "browser_snapshot_layers", "browser_screenshot", "browser_close",
+                "browser_back", "browser_forward",
+            }:
+                self.assertIn("annotations", tool)
+                self.assertIn("outputSchema", tool)
+
         # 3. Call fable_session: create_session
         session_name = f"mcp_stdio_test_{int(time.time() * 1000)}"
         resp = self._rpc_call("tools/call", {
@@ -799,6 +812,7 @@ class TestFableMCPStdioServer(unittest.TestCase):
         })
         self.assertFalse(resp["result"].get("isError", True))
         content = resp["result"]["content"][0]["text"]
+        self.assertEqual(resp["result"]["structuredContent"], {"result": content})
         self.assertIn("Fable Cognitive Session Initialized", content)
 
         # 4. Call fable_session: log_refinement_cycle

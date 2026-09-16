@@ -1,15 +1,21 @@
 {
   "name": "fable_session",
-  "description": "Fable Cognitive Engine Session & Telemetry Manager for MCP-compatible agent hosts.\nEnforces immutable authority time-locks, evidence-gated epistemic tracking, formal invariant modeling, continuous rethink-refine cycles, phased progression, subagent delegation contract compilation, internal pacing telemetry, token compression subsystem (Content-Addressed Storage, 0.003 tokens/character invariant), and System 3 Meta-Cognitive Deliberation & Dialectical Evolutionary Architecture (Pearl do-calculus, TRIZ contradiction synthesis, 10D Pareto genetic search, axiom induction, Poincaré hyperbolic embeddings, Kripke modal model checking, Friston active inference, and Gödelian constructive proof oracle).",
+  "description": "Runs one Fable operation selected by action. Use it for Fable sessions, gates, evidence and proofs, review rubrics, checkpoints, compression, design audits, research scrapers, and experimental System 3 operations; use browser tools for web-page interaction. Start stateful workflows with create_session and session_name, then reuse that name. Only the selected action's fields apply. Read-only status, list, telemetry, get, view, and check actions do not persist state; create, log, record, set, advance, checkpoint, restore, track, evaluate, register, compression, generation, evolution, scraper, and update actions can persist state or artifacts. unlock_execution blocks until its gates pass, and apply_auto_update can replace installed files. Results are action-specific text; failures begin with Error:.",
   "parameters": {
     "properties": {
       "a_matrix": {
         "description": "Observation likelihood matrix A [O x S] for Active Inference.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "actions": {
         "description": "List of control action identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "action": {
         "description": "The Fable session action to perform.",
@@ -88,11 +94,17 @@
       },
       "axioms": {
         "description": "List of reference axiom names or strings for proof oracle.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "b_matrices": {
         "description": "State transition matrices B [Action -> S x S] for Active Inference.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "base_step": {
         "description": "Base geodesic step distance for hyperbolic tree embedding (default 1.0).",
@@ -100,7 +112,10 @@
       },
       "c_preferences": {
         "description": "Prior preference distribution C over observations for Active Inference.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "cas_ref": {
         "description": "CAS reference URI (cas://<sha256_hex>) or 64-char hash to retrieve, slice, or decompress.",
@@ -116,7 +131,10 @@
       },
       "context": {
         "description": "Hypothesis typing context dictionary {name: type} for proof oracle.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "contradiction_density": {
         "description": "Contradiction density index [0.0, 1.0] for System 3 cognitive gear shifting.",
@@ -124,7 +142,10 @@
       },
       "contradictions": {
         "description": "List of parameter trade-offs / contradictions to resolve with TRIZ principles.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "critique_or_bottleneck": {
         "description": "Critical flaw, vulnerability, edge case, memory/latency bottleneck, or assumption scrutinized.",
@@ -135,15 +156,18 @@
         "type": "number"
       },
       "curvature": {
-        "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0).",
+        "description": "Sectional curvature c > 0 of Poincar\u00e9 manifold (default 1.0).",
         "type": "number"
       },
       "d_prior": {
         "description": "Prior initial state belief distribution D for Active Inference.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "dimension": {
-        "description": "Dimension of Poincaré ball manifold (default 2).",
+        "description": "Dimension of Poincar\u00e9 ball manifold (default 2).",
         "type": "integer"
       },
       "domain": {
@@ -152,7 +176,10 @@
       },
       "edges": {
         "description": "List of directed edge dictionaries for Causal DAG construction.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "end_line": {
         "description": "Ending line number (1-indexed inclusive) for windowed line slice viewing.",
@@ -172,7 +199,10 @@
       },
       "failure_modes": {
         "description": "List of adversarial failure modes identified in critique.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "focus_area": {
         "description": "Specific subsystem, component, algorithm, or interface being critically re-evaluated.",
@@ -208,7 +238,10 @@
       },
       "interventions": {
         "description": "Dictionary of Pearl's do-operator interventions: {node_id: value}.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "invariant_name": {
         "description": "Identifier or title of the formal invariant (e.g., 'INV-01: Zero-Deadlock Ring Buffer').",
@@ -248,11 +281,17 @@
       },
       "node_labels": {
         "description": "Optional mapping of node IDs to readable labels.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "nodes": {
         "description": "List of node dictionaries for Causal DAG construction.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "objective": {
         "description": "High-level goal or problem statement for the reasoning session.",
@@ -260,7 +299,10 @@
       },
       "objective_weights": {
         "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "observation": {
         "description": "Current sensory observation for Active Inference belief updating.",
@@ -268,7 +310,10 @@
       },
       "observations": {
         "description": "List of observation identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "payload": {
         "description": "Micro-payload text for adaptive batch accumulator or CAS storage.",
@@ -280,7 +325,10 @@
       },
       "policies": {
         "description": "List of candidate action sequence policies for Expected Free Energy evaluation.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "population_size": {
         "description": "Population size for evolutionary gene pool (default 12).",
@@ -304,7 +352,10 @@
       },
       "seed_paradigms": {
         "description": "Optional list of initial paradigm definitions to seed the gene pool.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "session_name": {
         "description": "Unique identifier / name for the Fable session.",
@@ -316,7 +367,10 @@
       },
       "states": {
         "description": "List of hidden state identifiers for Active Inference POMDP.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "subagent_prompt": {
         "description": "The delegation prompt or contract text for the subagent to validate.",
@@ -361,23 +415,42 @@
       },
       "transitions": {
         "description": "List of transitions or adjacency dictionary for Kripke structure.",
-        "type": ["array", "object", "string"]
+        "type": [
+          "array",
+          "object",
+          "string"
+        ]
       },
       "tree": {
         "description": "Tree hierarchy adjacency list or nested dict for hyperbolic embedding.",
-        "type": ["object", "array", "string"]
+        "type": [
+          "object",
+          "array",
+          "string"
+        ]
       },
       "worlds": {
         "description": "List of world/state definitions for Kripke structure.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "affected_invariants": {
         "description": "List or string of invariant names affected by this file change.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "change_type": {
         "description": "Classification of file change ('modified', 'created', 'deleted', 'slated').",
-        "enum": ["modified", "created", "deleted", "slated"],
+        "enum": [
+          "modified",
+          "created",
+          "deleted",
+          "slated"
+        ],
         "type": "string"
       },
       "diff_summary": {
@@ -390,11 +463,20 @@
       },
       "mockups": {
         "description": "List of concept dictionaries for visual mockup recording.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "proof_type": {
         "description": "Deterministic proof type ('ast', 'receipt', 'file_sha256', 'formal_logic', 'vector_coordinates').",
-        "enum": ["ast", "receipt", "file_sha256", "formal_logic", "vector_coordinates"],
+        "enum": [
+          "ast",
+          "receipt",
+          "file_sha256",
+          "formal_logic",
+          "vector_coordinates"
+        ],
         "type": "string"
       },
       "selected_concept": {
@@ -407,7 +489,10 @@
       },
       "criteria": {
         "description": "List of criteria dictionaries or pointer strings for goal scoring rubric.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "rubric_id": {
         "description": "Identifier for the goal scoring rubric contract.",
@@ -419,7 +504,10 @@
       },
       "evaluations": {
         "description": "List of criterion evaluation dictionaries or score updates for evaluate_goal_rubric.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "pipeline_name": {
         "description": "Name or identifier of the autonomous closed-loop pipeline.",
@@ -455,11 +543,17 @@
       },
       "custom_hypotheses": {
         "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "broken_scenarios": {
         "description": "List or JSON string of broken attack scenarios found during red-team review.",
-        "type": ["array", "string"]
+        "type": [
+          "array",
+          "string"
+        ]
       },
       "remediated_code": {
         "description": "Remediated code submitted to verify against broken scenarios.",
@@ -467,7 +561,10 @@
       },
       "prior_report": {
         "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",
-        "type": ["object", "string"]
+        "type": [
+          "object",
+          "string"
+        ]
       },
       "task_id": {
         "description": "Task identifier for cortical plasticity consolidation or session lineage.",
