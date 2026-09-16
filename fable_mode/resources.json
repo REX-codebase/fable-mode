@@ -109,6 +109,11 @@
     "skills/fable-mode/cortex/frontend_design.md",
     "skills/fable-mode/cortex/research.md",
     "skills/fable-mode/cortex/concurrency.md",
+    "skills/fable-mode/cortex/process.md",
+    "skills/fable-mode/cortex/security.md",
+    "skills/fable-mode/cortex/system.md",
+    "skills/fable-mode/cortex/target.md",
+    "skills/fable-mode/cortex/synaptic_matrix.json",
     "LICENSE"
   ]
 }

@@ -17,6 +17,7 @@ from pathlib import Path
 from .adapters import (RegistrationError, cleanup_recorded_registrations,
                        detect_hosts, register_hosts, validate_registration_record)
 from .installer import Installer, InstallError, verify_installation
+from .skill_bundle import SKILL_NAME, install_skill
 from .manifest import ALLOWED_FILES, validate_manifest
 from . import __version__
 
@@ -251,7 +252,7 @@ def _is_frozen() -> bool:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fable-mode")
     p.add_argument("--version", action="version", version=__version__)
-    p.add_argument("mode", nargs="?", choices=("install", "serve", "verify", "version", "uninstall"), default="install")
+    p.add_argument("mode", nargs="?", choices=("install", "serve", "verify", "version", "uninstall", "install-skill"), default="install")
     p.add_argument("--yes", action="store_true", help="confirm unattended installation")
     p.add_argument("--register-hosts", action="store_true")
     p.add_argument("--aliases", action="store_true", help="also probe legacy cc/antigravity aliases")
@@ -259,6 +260,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--state-dir")
     p.add_argument("--install-dir")
     p.add_argument("--workspace")
+    p.add_argument("--target", help="skill destination directory (default: .agents/skills/fable-mode)")
+    p.add_argument("--force", action="store_true", help="overwrite foreign or locally edited skill files")
     return p
 
 
@@ -302,6 +305,31 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"serve: {exc}", file=sys.stderr)
             return 1
+    if args.mode == "install-skill":
+        target = (Path(args.target).expanduser() if args.target
+                  else Path.cwd() / ".agents" / "skills" / SKILL_NAME)
+        if not args.dry_run and not args.yes:
+            if not sys.stdin.isatty():
+                print("install-skill requires --yes in unattended mode", file=sys.stderr)
+                return 2
+            try:
+                confirmed = input(f"Install the Fable Mode Agent Skill to {target}? [y/N] ").strip().lower() in {"y", "yes"}
+            except (EOFError, KeyboardInterrupt):
+                confirmed = False
+            if not confirmed:
+                print("Skill installation cancelled.")
+                return 0
+        try:
+            result = install_skill(target, force=args.force, dry_run=args.dry_run)
+        except InstallError as exc:
+            print(f"install-skill: {exc}", file=sys.stderr)
+            return 1
+        verb = "Would install" if result.dry_run else "Installed"
+        changes = f"{len(result.installed)} new, {len(result.updated)} updated, {len(result.unchanged)} unchanged"
+        print(f"{verb} the Fable Mode Agent Skill ({result.planned} files: {changes}) to {result.target}")
+        if not result.dry_run:
+            print("Restart or reload your agent to pick up the skill.")
+        return 0
     installer = Installer(Path(args.install_dir) if args.install_dir else None)
     if args.mode == "verify":
         return verify(installer)

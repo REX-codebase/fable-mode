@@ -125,7 +125,18 @@ def _source_path(root: Path, rel: str) -> Path:
         if checkout.is_file():
             return checkout
         return _license_path()
-    return root / rel
+    candidate = root / rel
+    if candidate.exists() or not rel.startswith("skills/"):
+        return candidate
+    # Wheels carry the skill tree as fable_mode package data, not beside
+    # site-packages, so portable installs from a wheel resolve it there.
+    try:
+        packaged = Path(resources.files("fable_mode").joinpath(rel))
+        if packaged.exists():
+            return packaged
+    except (OSError, TypeError, ValueError):
+        pass
+    return candidate
 
 
 @dataclass

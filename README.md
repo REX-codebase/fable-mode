@@ -20,7 +20,7 @@
 &nbsp;
 <img src="https://img.shields.io/badge/dependencies-0-black" alt="Zero Dependencies"/>
 &nbsp;
-<img src="https://img.shields.io/badge/tests-473%20passing-black" alt="473 tests passing"/>
+<img src="https://img.shields.io/badge/tests-490%20passing-black" alt="490 tests passing"/>
 
 <br/><br/>
 
@@ -73,27 +73,48 @@ pip install fable-engine
 
 Or install the MCP server in your editor:
 
-[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.2%22%2C%22fable-engine%22%5D%7D)
-[![Add to Cursor](https://img.shields.io/badge/Cursor-Add_MCP_server-black)](cursor://anysphere.cursor-deeplink/mcp/install?name=fable-engine&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJmYWJsZS1lbmdpbmU9PTEuMy4xIiwiZmFibGUtZW5naW5lIl19)
+[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.3%22%2C%22fable-engine%22%5D%7D)
+[![Add to Cursor](https://img.shields.io/badge/Cursor-Add_MCP_server-black)](cursor://anysphere.cursor-deeplink/mcp/install?name=fable-engine&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJmYWJsZS1lbmdpbmU9PTEuMy4zIiwiZmFibGUtZW5naW5lIl19)
 
 These links configure Fable Engine for AI agents in VS Code Chat or Cursor. They do not install a standalone editor extension. Both use `uvx`, which downloads and runs the pinned PyPI release in an isolated environment.
 
 Point your agent at the MCP server manually:
 
 ```jsonc
-// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.2 fable-engine
+// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.3 fable-engine
 // Cursor: ~/.cursor/mcp.json
 {
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.2", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.3", "fable-engine"]
     }
   }
 }
 ```
 
 Python 3.10+, zero runtime dependencies. Published on [PyPI as `fable-engine`](https://pypi.org/project/fable-engine/).
+
+<br/>
+
+### Optional: the Agent Skill
+
+Installing `fable-engine` gives your agent the MCP tools. It does not install
+or activate the Fable Mode Agent Skill - the prompt-side workflow in
+[`skills/fable-mode`](./skills/fable-mode/SKILL.md). Nothing in the package
+activates those instructions on its own; the skill is always a separate,
+explicit opt-in.
+
+The complete skill tree ships inside the wheel. To install it into your
+project's skills directory (the cross-client `.agents/skills/` convention):
+
+```bash
+uvx --from fable-engine==1.3.3 fable-mode install-skill --yes
+```
+
+This copies the skill to `.agents/skills/fable-mode`. Preview first with
+`--dry-run`, choose another location with `--target <dir>`, and reload your
+agent afterwards so it picks up the skill.
 
 <br/>
 

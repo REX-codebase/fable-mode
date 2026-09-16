@@ -7,13 +7,13 @@
     "url": "https://github.com/REX-codebase/fable-mode",
     "source": "github"
   },
-  "version": "1.3.2",
+  "version": "1.3.3",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "fable-engine",
-      "version": "1.3.2",
+      "version": "1.3.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
