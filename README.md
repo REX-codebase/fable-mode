@@ -42,6 +42,21 @@ mechanical, not prompt advice: no timer, no proof, no write access.
   <img src="./assets/flow-simple.svg" width="720" alt="Think → Prove → Attack → Write"/>
 </div>
 
+### Demo
+
+**KERR // ORRERY**
+
+One self-contained HTML file. Raw WebGL, zero libraries, zero external assets,
+and zero build step.
+
+https://github.com/user-attachments/assets/8287bbfe-e3ee-4dcf-ba0f-f9ff22ae79bd
+
+<sub>7 renders rejected before final · 2 bugs caught · 10/10 red-team probes passed</sub>
+
+<br/>
+
+**Fable Mode overview**
+
 https://github.com/user-attachments/assets/27f4f8a2-b1bb-4398-a08c-bc9fd93d69d7
 
 <br/>
