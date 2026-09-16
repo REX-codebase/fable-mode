@@ -18,9 +18,15 @@ pip install -e . pytest
 python -m pytest -q
 ```
 
-The suite currently holds 473 tests and should stay green on Linux, macOS,
-and Windows (see `.github/workflows/test.yml`). A change that breaks a test
-is not ready, and a new behavior without a test is not done.
+For a dependency-free smoke run, use:
+
+```bash
+python -m unittest discover -q
+```
+
+The full test suite should stay green on Linux, macOS, and Windows (see
+`.github/workflows/test.yml`). A change that breaks a test is not ready, and a
+new behavior without a test is not done.
 
 ## What makes a good contribution
 
