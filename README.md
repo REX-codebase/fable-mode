@@ -61,19 +61,29 @@ https://github.com/user-attachments/assets/27f4f8a2-b1bb-4398-a08c-bc9fd93d69d7
 
 <br/>
 
-### See it work
+### Quick start
 
 A session starts locked. Confidence does not unlock it.
 
-```text
->>> session = create_session('demo-refactor', budget='2 min')
-    state=INIT  execution_locked=True  can_execute_code=False
+1. Install the MCP server using one of the options below.
+2. Add the optional Agent Skill if you want the full workflow.
+3. Ask your agent to use Fable Mode for a concrete coding task and choose a time budget.
 
->>> session.unlock_execution('the plan looks fine, let me write code now')
-    PermissionError: HARD TIME-LOCK VIOLATION: Execution unlock rejected!
-    The immutable 2.0m authority budget has not elapsed yet
-    (Remaining: 1m 59s / 120.0s).
+A new session starts with execution locked:
+
+```json
+{
+  "action": "create_session",
+  "session_name": "demo-refactor",
+  "objective": "Refactor the parser without changing public behavior",
+  "time_budget_minutes": 2
+}
 ```
+
+The agent then records evidence and an invariant. An early `unlock_execution`
+request is rejected until the authority timer and proof prerequisites pass.
+Use `get_status` at any point to see the active phase, remaining time, evidence
+counts, and lock state.
 
 The same gates guard every phase: evidence receipts for claims, a five-vector
 red-team swarm for code, and a sealed record of what was verified.
@@ -152,10 +162,11 @@ agent afterwards so it picks up the skill.
 
 ### Docs
 
+- [Start here: practical guide](./docs/stop-ai-agents-writing-too-early.md)
+- [Agent Skill reference](./skills/fable-mode/SKILL.md)
 - [V1 → V2 migration](./docs/fable-v1-v2-migration.md)
 - [V2 architecture](./docs/fable-v2-architecture.md)
 - [System 3 (experimental)](./docs/system3-architecture.md)
-- [Stop AI coding agents from writing too early](./docs/stop-ai-agents-writing-too-early.md)
 
 <br/>
 
