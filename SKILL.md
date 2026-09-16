@@ -1,142 +1,129 @@
 ---
 name: fable-mode
-description: Fable-Mode Cognitive Reasoning, System 2 Deliberation, and Swarm Architecture Protocols for Non-Frontier AI Models.
+description: Evidence-gated workflow for risky coding tasks. Use when a change needs deliberate research, explicit invariants, a time lock, adversarial review, and a verifiable completion record through the Fable Engine MCP server.
 ---
 
-# Fable-Mode Architecture & Role Separation
+# Fable Mode
 
-> **Operating protocol for non-frontier AI models.** Fable Mode works because its gates are applied consistently, not because of wording. Follow the workflow below: ground research with the Fable scrapers, run the adversarial Red-Team Swarm instead of relying on unit tests alone, and finish with Cortical Evolution. Standard tests have limited counterfactual reasoning ability; passing tests alone is not proof of correctness.
+Fable Mode separates confidence from permission. Use the `fable_session` MCP tool to move a coding task through four gates:
 
-## 0. Step-by-Step Execution Protocol (Non-Frontier AI Models)
-
-Non-frontier AI models executing under Fable-Mode execute tasks through this sequential checklist:
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ STEP 1: Research & Epistemic Grounding via Fable Research Scrapers       │
-│ • MUST use scrape_web, scrape_github, scrape_arxiv, scrape_reddit, etc.  │
-│ • MUST NOT rely on generic host environment search/fetch tools instead.   │
-│ • Log research findings as [HYPOTHESIS] / [PROVEN] in Epistemic Ledger.  │
-├──────────────────────────────────────────────────────────────────────────┤
-│ STEP 2: Session & Goal Rubric Initialization                             │
-│ • MUST create session (create_session) & set authority time-lock.       │
-│ • MUST set weighted goal rubric (set_goal_rubric) with target S >= 0.95. │
-├──────────────────────────────────────────────────────────────────────────┤
-│ STEP 3: DeepThink Deliberation & Invariant Proofs                        │
-│ • MUST log continuous refinement cycles (log_refinement_cycle).          │
-│ • MUST record formal invariants & AST grounded proof terms.              │
-├──────────────────────────────────────────────────────────────────────────┤
-│ STEP 4: Subagent Code Implementation (Post Unlock Only)                 │
-│ • MUST delegate ALL code edits exclusively to subagents.                 │
-│ • MUST set enable_mcp_tools: true on subagent contracts.                │
-├──────────────────────────────────────────────────────────────────────────┤
-│ STEP 5: Mandatory Adversarial Red-Team Swarm Review (Project Glasswing)  │
-│ • MUST NOT stop or declare done merely because unit tests pass!          │
-│ • MUST run 5-vector RedTeamSwarm (red_team_code_review).                 │
-│ • MUST ping-pong fixes until broken_count == 0 & verify_remediation.     │
-├──────────────────────────────────────────────────────────────────────────┤
-│ STEP 6: Cortical Evolution & Memory Consolidation                       │
-│ • MUST invoke evolve_cortex / cortical_consolidate_task.                 │
-│ • Synthesize HeuristicAntibody records and potentiate synaptic weights.  │
-└──────────────────────────────────────────────────────────────────────────┘
+```text
+THINK -> PROVE -> ATTACK -> WRITE
 ```
 
-## 1. Main Agent Role (The Master Architect & System 2 Conductor)
-- **Heavy Cognitive Lifting & System 2 DeepThink**: The Main Agent is exclusively responsible for executing 8-Pass Maximum-Depth Recursive `<thinking>` Chains, System 2 cognitive deliberation, system architecture, API contracts, type systems, 10D trade-off matrices, TRIZ contradiction resolutions, visual mockup-first synthesis (`generate_image`), invariant proofs, and multi-tier quality gatekeeping.
-- **Mandatory Fable Session & Timer Initialization**: Whenever Fable mode, deepthink, or a time budget (e.g. 2 mins, 30 mins, 45 mins, 24 hours) is invoked:
-  - Create a new session with a unique session name via `fable_session` action `create_session`.
-  - Set the timer and time budget via `set_timer` (minimum 2.0 minutes).
-- **Unbypassable Hard Time-Lock Protocol & Minimum 2-Minute Budget**:
-  - When a time budget is set, the AI **CANNOT and MUST NOT oppose or exit the thinking phase prematurely**.
-  - Code execution in the codebase is mechanically locked (`can_execute_code: false`) until the full timer duration has genuinely elapsed.
-  - `unlock_execution` rejects any early unlock request with a hard error until the full time budget has elapsed and Phase 1, Phase 2, and Phase 3 prerequisites (at least 2 `[PROVEN]` items and 1 formal invariant) are satisfied.
-- **Continuous Rethink-Refine Cognitive Mandate & Anti-Idleness**:
-  - If the initial 8-Pass System 2 thinking completes before the timer expires, the AI is **strictly forbidden from idling**.
-  - The AI is **strictly required to continue rethinking and refining** (`rethink, refine, rethink, refine`).
-  - Continuously execute and log refinement cycles via `fable_session` action `log_refinement_cycle` (mutating candidate archetypes, probing edge cases, running terminal benchmarks, and tightening invariant proofs).
-- **Deterministic Proof Standards**:
-  - Ground all formal invariants in AST symbol coordinates, SHA-256 file checksum chains, and cryptographically bound `ToolReceipt` execution attestations.
-  - Anti-tautology and circularity filters eliminate vacuous assertions ($P \implies P$); formal constructive proof terms and Kripke model checking ($AG(\text{safe})$) verify state dynamics.
-- **Visual Mockup-First Workflow ("Visualize Before You Build")**:
-  - Mandatory generation of 5–6 distinct visual concept mockups via `generate_image` across Haute aesthetic universes before UI/web coding.
-  - OKLCH color spaces calibrated for APCA $L_c \ge 75$ accessibility and pre-calculated SVG/Canvas vector mathematics.
-- **AAA Three.js Game-Grade Standards**:
-  - Locked 60–120+ FPS deterministic game loop with decoupled 120 Hz physics accumulator, TSL WebGPU node shaders, HDR post-processing, GPU mass instancing (100k+ particles with `frustumCulled = false`), 3D spatial audio with autoplay unlocking, and zero-leak memory management.
-  - **Mandatory 5-Point Scene Grounding Contract**: Every 3D scene must enforce (1) Container sizing fallback (`clientWidth || innerWidth`) with `ResizeObserver`, (2) Camera placed outside geometry bounds (e.g. `(0, 3, 8)` looking at `(0, 0, 0)` or auto-framed), (3) Baseline PBR lighting (`AmbientLight(0.6)` + `DirectionalLight(1.8)` at `(5, 10, 7)`), (4) ColorSpace discipline (`SRGBColorSpace` for output and diffuse maps; `NoColorSpace` for normal/roughness/metalness/AO data maps), and (5) Universal recursive teardown (`disposeSceneHierarchy` and `renderer.forceContextLoss()`).
-  - **Strict Backend Isolation**: Never mix graphics backends. Use `WebGLRenderer` with `EffectComposer`; use `WebGPURenderer` (with mandatory `await renderer.init()`) exclusively with `PostProcessing` from `'three/webgpu'`. Passing `WebGPURenderer` into legacy `EffectComposer` is strictly banned.
-  - **React Three Fiber (R3F) Direct Mutation**: In React/R3F codebases, wrap async asset loaders in `<Suspense>` and **NEVER** call `useState` or state dispatch inside `useFrame()`. Always mutate object refs directly to eliminate render-loop thrashing. Scale fidelity to task scope.
-- **Omniscient Session Lineage & Working Memory**:
-  - Track file deltas in real-time (`track_file_change`), historical tree lineage (`get_session_lineage`), structured plan introspection (`inspect_plan`), verified proof sealing (`verify_proof`), and visual mockup registries (`record_visual_mockups`).
-- **Model Velocity Calibration**:
-  - High-velocity models (Flash) harness 2.5x exploration throughput for multi-archetype synthesis, 5–6 visual mockups, and extensive scratch benchmark probing during the time-lock window.
-- **Authorized Powers During Thinking Phase**:
-  - Running powershell terminal commands (`run_command`) for live system inspection, compiling scratch test harnesses, and running performance benchmarks is **fully permitted and encouraged**.
-  - Creating and updating rich design artifacts in the brain directory (`<appDataDir>\\brain\\<conversation-id>/`) is **fully permitted and encouraged** throughout the entire thinking window.
-- **Anti-Hallucination Epistemic Calibration**:
-  - Rigorously separate `[PROVEN]` (empirically verified against files/tools), `[HYPOTHESIS]` (untested assumption), and `[UNKNOWN]` (unmeasured parameter to probe).
-  - **Zero-Unverified-Claims Rule**: Never make architectural or implementation commitments based on unverified assumptions.
-- **Strict Prohibition**: **The Main Agent CANNOT write or edit code files directly in the codebase.** The Main Agent's context and compute must remain 100% dedicated to high-level reasoning, invariant verification, and orchestration.
+The engine records the session, enforces its configured authority timer, and checks its own unlock prerequisites. It does not replace the host's permissions, sandbox, tests, or human approval rules.
 
-## 2. Subagent Fleet Role (The Coder & Implementer Fleet)
-- **100% Code Delegation**: All code creation (`write_to_file`), edits (`replace_file_content`), unit test implementations, script modifications, and build fixes are executed **exclusively by subagents** (`type: self` or `type: research`).
-- **Gated Execution**: Subagents are dispatched to modify the codebase **ONLY AFTER the timer has genuinely elapsed and execution is unlocked**.
-- **Workflow**:
-  1. Main Agent formulates precise architectural blueprints, invariants, and interface definitions.
-  2. Main Agent dispatches subagents (`invoke_subagent`) to implement the code and run local tests once execution is unlocked.
-  3. Subagents report code diffs, compiler outputs, and test logs back to the Main Agent.
-  4. Main Agent audits the results against the Definition of Done and enforces the quality gate.
-- **Subagent MCP Tooling Mandate & Zero-Crash Protocol**:
-  * The Main Agent **must explicitly inform subagents** during dispatch to use MCP tools (e.g. via `call_mcp_tool` for available servers like `fable-engine`, `context7`, `narsil`, `fable_coder_fleet`).
-  * When defining subagents (`define_subagent`), the Main Agent **must set `enable_mcp_tools: true`** (along with `enable_write_tools: true`) so that subagents are properly enabled to use MCPs and do not crash from unauthorized tool calls.
-  * **Non-Restriction Policy (Graceful Fallback)**: Subagents are **strictly NOT restricted, penalized, or rejected for not using an MCP tool**. If a task is executed cleanly using native workspace tools (`write_to_file`, `replace_file_content`, `run_command`), or if an MCP is unavailable or unneeded, subagents are fully authorized to proceed without crashing or blocking.
+## When to use it
 
-14. **Pre-Flight Goal Score & Rubric Pointers ($S_{\text{target}} \ge 95\%$)**:
-    - The AI must initialize an explicit, weighted goal evaluation rubric via `fable_session` action `set_goal_rubric` before code execution begins.
-    - Each criterion pointer must bind to concrete verification checks, test commands, or evidence receipts.
-    - Deliverables cannot be finalized or declared done until `evaluate_goal_rubric` attests that the weighted composite goal score satisfies $S \ge 0.95$ ($95\%$).
-15. **Autonomous Tool & Pipeline Synthesis ("Automate What Can Be Automated")**:
-    - The AI must proactively construct and register closed-loop generation and verification pipelines (`register_automation_pipeline`) to automate iterative workflows (e.g. test-fix-verify loops, fuzzing, property checks).
-    - Eliminate manual human iteration by specifying generator commands, evaluator commands, and target thresholds ($S \ge 0.95$) for autonomous convergence.
+Use Fable Mode for changes where a rushed edit has a meaningful cost:
 
-16. **Mandatory Coder Fleet Tool Injection in Subagent Contracts**:
-    - The Main Agent must never dispatch subagents blind. Every subagent dispatch specification must inject the 10-Tool Coder Fleet (`fable_v2.coder_fleet`):
-      * `VisualGroundingEngine`: Vector/SVG coordinate verification and visual diffing.
-      * `DiagnosticsEngine`: AST syntax and semantic diagnostics with automated quick fixes.
-      * `TreeSitterCodemodEngine`: AST structural queries and safe semantic identifier renames.
-      * `AtomicWorkspaceEngine`: Isolated file checkpoints, unified diffs, rollbacks, and SHA-256 commits.
-      * `TestHarnessEngine`: Isolated subprocess execution sandboxing with 3s timeouts, race fuzzing, and memory profiling.
-      * `MutationVerifierEngine`: AST mutant injection and kill rate auditing (`audit_test_strength()`) to eradicate fake tests.
-      * `MockAuditorEngine`: Tautology auditing banning `assert True`, trivial assertions, mock leakage, and verifying negative paths.
-      * `PropertyOracleEngine`: Extreme boundary matrices and algebraic roundtrip invariant proofs.
-      * `ReceiptAttestorEngine`: Tamper-evident HMAC-SHA256 authenticated `ToolReceipt` execution proofs.
-      * `ComputeOrchestratorEngine`: Dynamic thinking token budgets up to 64k tokens and Monte Carlo Tree Search (MCTS).
-    - Subagents are encouraged to audit test suites with `MutationVerifierEngine` and `MockAuditorEngine` where available, but are strictly never restricted, penalized, or blocked if using native test runners (`pytest`, `cargo test`, `npm test`) or if MCP tools are omitted.
+- security, authentication, payments, or data migration work;
+- unfamiliar codebases or broad refactors;
+- changes with hidden compatibility or concurrency risks;
+- autonomous runs where the evidence trail matters.
 
-17. **Mandatory Adversarial Code Review Swarm (Project Glasswing Red Team Loop)**:
-    - **Immutable Review Obligation**: The Main Agent is strictly forbidden from directly accepting subagent implementations or relying on superficial line-by-line inspection or happy-path author unit tests.
-    - **Summoning the Swarm**: Whenever a subagent completes code modifications, the Main Agent must deploy `RedTeamSwarm` (`fable_v2.coder_fleet`) across the 5 core attack vectors:
-      * `Chaos Environment`: Missing paths, permission errors, stream truncations, corrupt configurations.
-      * `Byzantine Payload`: Embedded null bytes (`\x00`), 60+ level recursive dictionary bombs, type confusion (`None`), and extreme numbers (NaN/Inf).
-      * `Concurrency Race`: Multithreaded burst contention (6-16 threads), TOCTOU state mutations, and reentrancy.
-      * `Resource Exhaustion`: 150KB+ payloads, rapid churn loops, memory/handle leaks, and 3.0s CPU timeouts.
-      * `State Invariant`: Idempotency violations $f(f(x)) \neq f(x)$, out-of-order lifecycle calls, and boundary state corruption.
-    - **Ping-Pong Hardening Cycle**: If breakages are found (`broken_count > 0`), the Main Agent must reject the deliverable, provide the reproduction snippet and remediation directives to the subagent, and re-attack (`verify_remediation`) until 100% resilience is verified before sealing milestones.
+For a small, reversible edit, use the host's normal workflow unless the user explicitly asks for Fable Mode.
 
-18. **Frontier Anti-Slop Frontend Design & Awwwards Standard (`fable_v2.coder_fleet.design_engine`)**:
-    - For any frontend, UI, or web task, subagents must strictly enforce the Anti-Slop Invariants. Zero purple/violet glowing gradient blobs, zero centered 3-card boilerplates, zero unstyled default font crutches, zero fake div screenshot dots, zero mobile-unstable `h-screen`, and zero LLM buzzwords ('supercharge', 'unleash', 'next-gen AI').
-    - Subagents must structure layouts across the 7-Layer Optical Depth Architecture, apply curated OKLCH palettes (Cold Luxury, Haute Editorial, Swiss Precision, Cyber HUD, Neo-Nordic), use golden-ratio fluid clamp typography, enforce single-line CTAs (`whitespace-nowrap`), and verify compliance via `validate_preflight_design` and `audit_anti_slop`.
+## Core workflow
 
-19. **Mandatory Native Research Scraping Directive**:
-    - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
-    - If Fable scrapers are unavailable or unconfigured, the AI MUST explicitly log a fallback rationale before utilizing generic host environment tools or web searches. Generic host tools MUST NOT be substituted when Fable scrapers are available. Scraped content MUST be automatically ingested into the Epistemic Ledger (`auto_log_epistemic: true`) as candidate research evidence.
+### 1. Think
 
-20. **Mandatory Red-Team Swarm vs Unit Tests Rule & Remediation Loop Bounding**:
-    - Standard unit tests (e.g. `pytest`, `cargo test`, `npm test`) check basic happy-path assumptions. **They do not possess adversarial thinking ability.**
-    - The AI **MUST NEVER** stop or declare a task finished solely because unit tests pass.
-    - After any code modification, the AI MUST invoke the 5-vector `RedTeamSwarm` review (`red_team_code_review` or `RedTeamSwarm.run_full_review_cycle`).
-    - If any breakages occur (`broken_count > 0`), the deliverable MUST be rejected and ping-ponged back for subagent remediation until `verify_red_team_remediation` attests 0 breakages, up to a maximum of 5 remediation iterations or 15 elapsed minutes. If breakages persist after either 5 iterations or 15 elapsed minutes, the session MUST trigger an explicit escalation outcome (`ESCALATION_UNRESOLVED_BREAKAGES`), log all active breakages to the Epistemic Ledger as `UNKNOWN`/`HYPOTHESIS`, and request human architecture arbitration.
-    - `verify_red_team_remediation` may seal only with an authenticated Red-Team receipt that identifies its Red-Team origin, attests passing results for all five attack vectors, and is cryptographically bound to the reviewed change set.
+1. Create one session with a unique, filesystem-safe name:
+   - action: `create_session`
+   - required: `session_name`, `objective`
+   - optional: `time_budget_minutes` (default 60, minimum 2)
+2. Inspect the repository and its local instructions before proposing changes.
+3. Record each important claim with `log_epistemic_item`:
+   - `PROVEN`: supported by a file, command output, receipt, or source;
+   - `HYPOTHESIS`: plausible but not verified;
+   - `UNKNOWN`: a material gap that still needs a probe.
+4. Use Fable's `scrape_*` actions when they fit and are available. If not, use the host's normal research tools and record the resulting evidence. Never weaken the host's security or source rules to satisfy this skill.
 
-21. **Mandatory Cortical Evolution & Learning Rule**:
-    - After milestone verification and Red-Team sealing, the Main Agent **MUST** execute `evolve_cortex` / `cortical_consolidate_task`.
-    - This updates the domain cortex (`DATA_DIR/cortex/<domain>.md`), reinforces synaptic weights ($\Delta W = +0.10$), and synthesizes persistent `HeuristicAntibody` records so past mistakes are permanently eliminated across future agent sessions.
+Do not edit merely because the plan sounds plausible. The engine reports `can_execute_code`; treat `false` as locked.
+
+### 2. Prove
+
+1. Record at least one meaningful invariant with `record_invariant`.
+2. Back unlock-driving claims with concrete evidence. The engine requires at least two `PROVEN` ledger items and one invariant.
+3. For a multi-part task, define a weighted acceptance rubric with `set_goal_rubric`. Point each criterion at a check, artifact, or command.
+4. Use `get_status` before attempting to unlock. If evidence is weak, run another probe and log a `log_refinement_cycle` instead of relabeling an assumption.
+
+A useful invariant is falsifiable:
+
+```text
+INV-01: Existing public CLI behavior remains compatible.
+For every command in the documented smoke-test set, exit status and output schema
+remain unchanged unless the task explicitly changes that command.
+```
+
+### 3. Unlock and implement
+
+Call `unlock_execution` with a short evidence-based `rationale`. An unlock can succeed only when the engine's authority timer has elapsed and its cognitive prerequisites pass.
+
+After unlock:
+
+1. Make the smallest change that satisfies the objective.
+2. Keep unrelated edits out of the patch.
+3. Run the repository's own tests, linters, type checks, and build commands.
+4. Record material file changes with `track_file_change` when lineage is useful.
+
+Fable permission is not user permission. Continue to follow the host's approval, secret-handling, network, and side-effect rules.
+
+### 4. Attack
+
+Challenge the actual changed behavior, not an invented code string. `red_team_code_review` does not execute arbitrary source text passed through MCP. Use repository tests or a sandboxed host runner for executable probes, then use Fable to record and assess the review.
+
+Cover the attack classes that matter to the change:
+
+- malformed, missing, oversized, or deeply nested inputs;
+- permission, filesystem, and network failures;
+- concurrency, reentrancy, and out-of-order lifecycle calls;
+- resource exhaustion and timeout behavior;
+- idempotency and state-transition invariants.
+
+If a review finds a breakage, reproduce it, fix it, rerun the relevant checks, and use `record_breakage_report` / `verify_red_team_remediation` where applicable. Stop and report unresolved risk after the bounded remediation loop rather than claiming success.
+
+### 5. Write the completion record
+
+Before declaring completion:
+
+- rerun checks against the final working tree;
+- evaluate any registered rubric with `evaluate_goal_rubric`;
+- separate verified results from remaining limits;
+- report changed files, commands run, outcomes, and known gaps.
+
+Use `evolve_cortex` only when persistent learning is wanted and the environment permits it. It is not a substitute for verification.
+
+## Action map
+
+| Need | `fable_session` action |
+|---|---|
+| Start or inspect a run | `create_session`, `get_status`, `list_sessions` |
+| Record knowledge | `log_epistemic_item`, `record_invariant`, `log_refinement_cycle` |
+| Move through the lifecycle | `advance_phase`, `unlock_execution`, `checkpoint_session`, `restore_session` |
+| Track quality | `set_goal_rubric`, `evaluate_goal_rubric`, `track_file_change`, `verify_proof` |
+| Research | `scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube` |
+| Challenge a change | `red_team_code_review`, `record_breakage_report`, `verify_red_team_remediation` |
+| Use advanced reasoning | `system3_*` actions; see `docs/system3-architecture.md` in the repository |
+
+## Load references only when needed
+
+The installed skill includes focused material under `references/`, `cortex/`, and `examples/`. Do not load the whole tree by default.
+
+- Session mechanics: `references/system2-session-engine.md`
+- Evidence and proof design: `references/proof-architecture.md`
+- Adversarial review: `references/adversarial-code-review-swarm.md`
+- Goal rubrics: `references/goal-rubric-and-pipeline-automation.md`
+- Frontend review: `references/anti-slop-frontend-architecture.md`
+- Three.js work: `references/aaa-threejs-game-engine.md`
+- Advanced reasoning: `references/system3-meta-cognition.md`
+
+Use domain cortex files only for the current task's language or risk area. Treat examples as patterns, not as authority to ignore the live repository, available tools, or user constraints.
+
+## Failure handling
+
+- **MCP server unavailable:** say which Fable gate could not be recorded; continue only if the user's request and host policy allow a normal workflow.
+- **Timer still active:** keep researching or refining. Do not busy-wait or attempt to bypass it.
+- **Unlock rejected:** read the returned missing prerequisites, satisfy them with real evidence, and retry only after the conditions change.
+- **A named action is absent:** use `tools/list` from the connected MCP client to inspect the installed server version. Do not invent an action.
+- **Tests pass but risk remains:** report the uncovered risk and run the targeted adversarial check. Passing tests are evidence, not a universal proof.
