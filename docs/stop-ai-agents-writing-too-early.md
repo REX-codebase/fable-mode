@@ -16,13 +16,13 @@ You need Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/install
 Run the pinned release without changing your global Python environment:
 
 ```bash
-uvx --from fable-engine==1.3.5 fable-engine
+uvx --from fable-engine==1.3.6 fable-engine
 ```
 
 ### Claude Code
 
 ```bash
-claude mcp add fable-engine -- uvx --from fable-engine==1.3.5 fable-engine
+claude mcp add fable-engine -- uvx --from fable-engine==1.3.6 fable-engine
 ```
 
 ### Cursor or another JSON-configured MCP client
@@ -32,7 +32,7 @@ claude mcp add fable-engine -- uvx --from fable-engine==1.3.5 fable-engine
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.5", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.6", "fable-engine"]
     }
   }
 }
@@ -45,8 +45,8 @@ Restart or reload the client, then inspect its MCP tools. You should see `fable_
 From the root of the project where you want the skill:
 
 ```bash
-uvx --from fable-engine==1.3.5 fable-mode install-skill --dry-run
-uvx --from fable-engine==1.3.5 fable-mode install-skill --yes
+uvx --from fable-engine==1.3.6 fable-mode install-skill --dry-run
+uvx --from fable-engine==1.3.6 fable-mode install-skill --yes
 ```
 
 The default destination is `.agents/skills/fable-mode`. Use `--target <dir>` for a different skill directory. The installer refuses to overwrite local edits unless you pass `--force`.

@@ -325,6 +325,18 @@ class TestPingPongRemediationCycle(unittest.TestCase):
 
 
 class TestPublicActionHandlers(unittest.TestCase):
+    def setUp(self) -> None:
+        # The swarm's plasticity consolidation writes cwd-relative cortex
+        # artifacts; keep them out of the repository tree.
+        self._tmp = tempfile.mkdtemp(prefix="fable-handler-test-")
+        self._prev_cwd = os.getcwd()
+        os.chdir(self._tmp)
+        # Several cases reference README.md as on-disk evidence.
+        Path("README.md").write_text(chr(10).join("evidence line %d" % i for i in range(1, 41)) + chr(10))
+
+    def tearDown(self) -> None:
+        os.chdir(self._prev_cwd)
+
     def test_handle_red_team_code_review_rejects_source_string_without_mutation(self) -> None:
         from fable_engine.actions.fleet import _handle_red_team_code_review
         from fable_engine.session import FableSession, ACTIVE_SESSIONS, SESSIONS_DIR
@@ -340,7 +352,9 @@ class TestPublicActionHandlers(unittest.TestCase):
                 "session_name": session_name,
                 "target_code": "def process(): pass",
             })
-            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            # 1.3.6: source strings run in the sandboxed executor. The review
+            # executes, but an INIT-state session still refuses the record.
+            self.assertIn("Error: Cannot record red-team report", resp)
             self.assertEqual(session.to_dict(), snapshot)
         finally:
             ACTIVE_SESSIONS.pop(session_name, None)
@@ -362,7 +376,9 @@ class TestPublicActionHandlers(unittest.TestCase):
                 "session_name": session_name,
                 "remediated_code": "def process(): pass",
             })
-            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp)
+            # 1.3.6: source strings run in the sandboxed executor; with no
+            # prior breakage report there is nothing to verify against.
+            self.assertIn("Error: No prior breakage report found", resp)
             self.assertEqual(session.to_dict(), snapshot)
         finally:
             ACTIVE_SESSIONS.pop(session_name, None)
@@ -383,21 +399,21 @@ class TestPublicActionHandlers(unittest.TestCase):
         try:
             self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
 
-            resp1 = _handle_red_team_code_review({
-                "action": "red_team_code_review",
-                "session_name": nonexistent_name,
-                "target_code": "def process(): pass",
-            })
-            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp1)
+            with self.assertRaises(ValueError):
+                _handle_red_team_code_review({
+                    "action": "red_team_code_review",
+                    "session_name": nonexistent_name,
+                    "target_code": "def process(): pass",
+                })
             self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
             self.assertFalse(session_file.exists())
 
-            resp2 = _handle_verify_red_team_remediation({
-                "action": "verify_red_team_remediation",
-                "session_name": nonexistent_name,
-                "remediated_code": "def process(): pass",
-            })
-            self.assertIn("Error: Source-code strings cannot be evaluated in-process for security reasons", resp2)
+            with self.assertRaises(ValueError):
+                _handle_verify_red_team_remediation({
+                    "action": "verify_red_team_remediation",
+                    "session_name": nonexistent_name,
+                    "remediated_code": "def process(): pass",
+                })
             self.assertNotIn(nonexistent_name, ACTIVE_SESSIONS)
             self.assertFalse(session_file.exists())
         finally:

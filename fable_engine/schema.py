@@ -510,11 +510,15 @@ TOOL_SCHEMA = {
             },
             "target_code": {
                 "type": "string",
-                "description": "Source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
+                "description": "Source-code string input. Loaded and probed in an isolated subprocess sandbox (process boundary, resource limits, per-call timeout)."
             },
             "code_snippet": {
                 "type": "string",
-                "description": "Alternative alias for source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
+                "description": "Alternative alias for source-code string input. Executed in the isolated subprocess sandbox."
+            },
+            "entrypoint": {
+                "type": "string",
+                "description": "Optional function name to probe inside the target source for red-team review. Auto-detected when the source defines exactly one public function."
             },
             "custom_hypotheses": {
                 "description": "List or JSON string of custom adversarial hypotheses / attack vectors.",
@@ -526,7 +530,7 @@ TOOL_SCHEMA = {
             },
             "remediated_code": {
                 "type": "string",
-                "description": "Remediated source-code string input. Dynamic target execution from source-code strings is disabled and requires a separate sandboxed executor."
+                "description": "Remediated source-code string input. Executed in the isolated subprocess sandbox."
             },
             "prior_report": {
                 "description": "Prior red-team breakage report dictionary or JSON string to verify remediation against.",

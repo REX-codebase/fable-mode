@@ -200,16 +200,25 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
             code_snippet = arguments[k]
             break
 
+    sandbox = None
     if code_snippet is not None and not callable(code_snippet):
-        return (
-            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
-            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
-        )
+        from fable_v2.coder_fleet.sandbox_executor import load_sandboxed_target
+        entrypoint = arguments.get("entrypoint") or arguments.get("function_name") or None
+        try:
+            sandbox = load_sandboxed_target(str(code_snippet), entrypoint=entrypoint)
+            code_snippet = sandbox
+        except Exception as exc:
+            return f"Error: Sandboxed executor could not load the target source: {exc}"
 
     custom_hypotheses = arguments.get("custom_hypotheses") or arguments.get("hypotheses")
     output_path = arguments.get("output_path")
 
-    session = get_or_load_session(session_name)
+    try:
+        session = get_or_load_session(session_name)
+    except Exception:
+        if sandbox is not None:
+            sandbox.close()
+        raise
     try:
         report = _get_swarm().run_full_review_cycle(
             target_callable=code_snippet,
@@ -227,9 +236,13 @@ def _handle_red_team_code_review(arguments: Dict[str, Any]) -> str:
             report_dict["red_team_receipt"] = session.issue_red_team_receipt(report_dict, change_id)
         session.record_breakage_report(report_dict)
     except (TypeError, ValueError) as exc:
+        if sandbox is not None:
+            sandbox.close()
         return f"Error: Cannot record red-team report: {exc}"
     session.save()
 
+    if sandbox is not None:
+        sandbox.close()
     md_report = _get_swarm().document_breakage(report, output_path=output_path)
     return (
         f"{md_report}\n\n"
@@ -320,11 +333,15 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             remediated_code = arguments[k]
             break
 
+    sandbox = None
     if remediated_code is not None and not callable(remediated_code):
-        return (
-            "Error: Source-code strings cannot be evaluated in-process for security reasons. "
-            "Dynamic source-code execution is disabled for public actions until an isolated sandbox executor is configured."
-        )
+        from fable_v2.coder_fleet.sandbox_executor import load_sandboxed_target
+        entrypoint = arguments.get("entrypoint") or arguments.get("function_name") or None
+        try:
+            sandbox = load_sandboxed_target(str(remediated_code), entrypoint=entrypoint)
+            remediated_code = sandbox
+        except Exception as exc:
+            return f"Error: Sandboxed executor could not load the remediated source: {exc}"
 
     session = get_or_load_session(session_name)
 
@@ -338,6 +355,8 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             prior_report = session.breakage_reports[-1]
 
     if not prior_report:
+        if sandbox is not None:
+            sandbox.close()
         return "Error: No prior breakage report found to verify. Provide 'report_id' or 'prior_report'."
     try:
         timeout_sec = float(arguments.get("timeout_seconds", 3.0))
@@ -369,8 +388,12 @@ def _handle_verify_red_team_remediation(arguments: Dict[str, Any]) -> str:
             report["red_team_receipt"] = session.issue_red_team_receipt(report, change_id)
         session.record_breakage_report(report)
     except (TypeError, ValueError) as exc:
+        if sandbox is not None:
+            sandbox.close()
         return f"Error: Cannot record remediation verification: {exc}"
 
+    if sandbox is not None:
+        sandbox.close()
     session.save()
     broken_count = int(report.get("broken_count", 0))
     if broken_count > 0:

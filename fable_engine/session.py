@@ -1258,6 +1258,14 @@ class FableSession:
         broken_count = self._validate_breakage_report(report_data)
         now = self._wall_clock()
         if broken_count == 0:
+            if self.current_state == SessionState.IMPLEMENTATION:
+                # A clean review submitted straight from implementation enters
+                # the red-team gate first. transition_to() enforces the
+                # gate's own precondition (file changes logged).
+                self.transition_to(
+                    SessionState.RED_TEAM_GATE,
+                    "Clean red-team report submitted from implementation",
+                )
             if self.current_state not in (
                 SessionState.RED_TEAM_GATE,
                 SessionState.ARBITRATION,
@@ -1559,7 +1567,7 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.3.5",
+            "version": "1.3.6",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,

@@ -1,3 +1,3 @@
 """Fable Mode portable runtime and transactional installer."""
 
-__version__ = "1.3.5"
+__version__ = "1.3.6"

@@ -170,7 +170,20 @@ def _handle_advance_phase(arguments: Dict[str, Any]) -> str:
     cog_state = tel.get("system3_cognitive_state", {})
     bias_lines = ""
     if session.active_biases:
-        bias_items = "\n".join([f"  * ⚠️ **{b['bias_type']}** ({b['severity']}): {b['description']} -> *{b['mitigation_recommendation']}*" for b in session.active_biases])
+        def _bias_field(b: Dict[str, Any], *keys: str) -> str:
+            for k in keys:
+                v = b.get(k)
+                if v:
+                    return str(v)
+            return ""
+
+        bias_items = "\n".join([
+            f"  * ⚠️ **{_bias_field(b, 'bias_type') or 'unknown'}** "
+            f"({_bias_field(b, 'severity') or 'n/a'}): "
+            f"{_bias_field(b, 'description', 'evidence_trail')} -> "
+            f"*{_bias_field(b, 'mitigation_recommendation', 'mitigation_strategy')}*"
+            for b in session.active_biases
+        ])
         bias_lines = f"\n- **Active Biases Intercepted** ({len(session.active_biases)}):\n{bias_items}"
 
     sys3_advisory = (
