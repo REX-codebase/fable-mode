@@ -411,13 +411,31 @@ class HebbianPlasticityEngine:
         if cortex_dir is not None:
             self.cortex_dir = Path(cortex_dir)
         else:
-            # Resolve to skills/fable-mode/cortex in project repository
-            repo_root = Path(__file__).resolve().parents[2]
-            cortex_candidate = repo_root / "skills" / "fable-mode" / "cortex"
-            if cortex_candidate.exists() or (repo_root / "skills" / "fable-mode").exists():
-                self.cortex_dir = cortex_candidate
+            env_dir = os.environ.get("FABLE_CORTEX_DIR")
+            if env_dir:
+                self.cortex_dir = Path(env_dir).expanduser().absolute()
             else:
-                self.cortex_dir = Path.cwd() / "skills" / "fable-mode" / "cortex"
+                # Runtime cortex state belongs to user data, never to the
+                # source checkout. The repository's bundled cortex is a
+                # read-only seed consulted on first load.
+                try:
+                    from fable_engine.cas import DATA_DIR
+                    self.cortex_dir = DATA_DIR / "cortex"
+                except Exception:
+                    self.cortex_dir = (
+                        Path.home() / ".local" / "share" / "fable-engine" / "data" / "cortex"
+                    )
+        # Read-only seed shipped with the repository / package. Seeding applies
+        # only to the resolved runtime location (default or FABLE_CORTEX_DIR);
+        # an explicit constructor directory is used exactly as given.
+        if cortex_dir is not None:
+            self._bundled_cortex_dir = None
+        else:
+            self._bundled_cortex_dir = (
+                Path(__file__).resolve().parents[2] / "skills" / "fable-mode" / "cortex"
+            )
+            if self._bundled_cortex_dir == self.cortex_dir:
+                self._bundled_cortex_dir = None
 
         self.cortex_dir.mkdir(parents=True, exist_ok=True)
         self.matrix_path = self.cortex_dir / "synaptic_matrix.json"
@@ -436,8 +454,10 @@ class HebbianPlasticityEngine:
         for d in CorticalDomain:
             if d.value == slug:
                 return d.value
-        # Check if lobe file already exists on disk
+        # Check if lobe file already exists on disk (runtime or bundled seed)
         if (self.cortex_dir / f"{slug}.md").exists():
+            return slug
+        if self._bundled_cortex_dir is not None and (self._bundled_cortex_dir / f"{slug}.md").exists():
             return slug
         if slug in self._lobes:
             return slug
@@ -473,6 +493,16 @@ class HebbianPlasticityEngine:
             return lobe
 
         lobe_path = self._get_lobe_path(slug)
+        seed_path = (
+            (self._bundled_cortex_dir / f"{slug}.md")
+            if self._bundled_cortex_dir is not None else None
+        )
+        if not lobe_path.exists() and seed_path is not None and seed_path.exists():
+            # First touch: copy the bundled read-only seed into runtime state.
+            try:
+                lobe_path.write_text(seed_path.read_text(encoding="utf-8"), encoding="utf-8")
+            except OSError:
+                pass
         if lobe_path.exists():
             lobe = CorticalLobe.load_from_disk(lobe_path)
             if not lobe.name:
@@ -521,6 +551,15 @@ class HebbianPlasticityEngine:
 
     def _load_synaptic_matrix(self) -> dict[str, dict[str, float]]:
         """Load cross-domain synaptic co-activation matrix from disk."""
+        if not self.matrix_path.exists() and self._bundled_cortex_dir is not None:
+            bundled_matrix = self._bundled_cortex_dir / "synaptic_matrix.json"
+            if bundled_matrix.exists():
+                try:
+                    self.matrix_path.write_text(
+                        bundled_matrix.read_text(encoding="utf-8"), encoding="utf-8"
+                    )
+                except OSError:
+                    pass
         if self.matrix_path.exists():
             try:
                 data = json.loads(self.matrix_path.read_text(encoding="utf-8"))

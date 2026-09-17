@@ -571,7 +571,10 @@ class TestHebbianCorticalPlasticity(unittest.TestCase):
 
     def test_production_baseline_lobes_integrity(self) -> None:
         """Verify the repository's 5 production baseline lobes in skills/fable-mode/cortex/ are fully valid."""
-        repo_engine = HebbianPlasticityEngine()  # Resolves to repo cortex dir
+        bundled_cortex = (
+            Path(__file__).resolve().parents[1] / "skills" / "fable-mode" / "cortex"
+        )
+        repo_engine = HebbianPlasticityEngine(cortex_dir=bundled_cortex)
         for domain in CorticalDomain:
             lobe_path = repo_engine._get_lobe_path(domain)
             lobe = CorticalLobe.load_from_disk(lobe_path)
