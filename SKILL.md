@@ -114,7 +114,8 @@ The installed skill includes focused material under `references/`, `cortex/`, an
 - Evidence and proof design: `references/proof-architecture.md`
 - Adversarial review: `references/adversarial-code-review-swarm.md`
 - Goal rubrics: `references/goal-rubric-and-pipeline-automation.md`
-- Frontend review: `references/anti-slop-frontend-architecture.md`
+- Frontend creation and review: `references/design-system.md`
+- Legacy frontend pattern catalogue: `references/anti-slop-frontend-architecture.md`
 - Three.js work: `references/aaa-threejs-game-engine.md`
 - Advanced reasoning: `references/system3-meta-cognition.md`
 
