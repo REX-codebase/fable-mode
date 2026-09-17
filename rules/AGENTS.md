@@ -120,7 +120,7 @@ Non-frontier AI models executing under Fable-Mode MUST execute tasks through thi
 
 18. **Frontier Anti-Slop Frontend Design & Awwwards Standard (`fable_v2.coder_fleet.design_engine`)**:
     - For any frontend, UI, or web task, subagents must strictly enforce the Anti-Slop Invariants. Zero purple/violet glowing gradient blobs, zero centered 3-card boilerplates, zero unstyled default font crutches, zero fake div screenshot dots, zero mobile-unstable `h-screen`, and zero LLM buzzwords ('supercharge', 'unleash', 'next-gen AI').
-    - Subagents must structure layouts across the 7-Layer Optical Depth Architecture, apply curated OKLCH palettes (Cold Luxury, Haute Editorial, Swiss Precision, Cyber HUD, Neo-Nordic), use golden-ratio fluid clamp typography, enforce single-line CTAs (`whitespace-nowrap`), and verify compliance via `validate_preflight_design` and `audit_anti_slop`.
+    - Subagents must derive a design thesis from the product, use role-based tokens and complete interaction states, run `validate_preflight_design` and `audit_anti_slop`, then inspect rendered screenshots at 360×800, 768×1024, and 1440×900 before claiming visual completion.
 
 19. **Mandatory Native Research Scraping Directive**:
     - Whenever external information, documentation, web content, code repositories, or papers are required for a task, non-frontier AI models **MUST use Fable's zero-cost research scrapers** (`scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube`) when available.
