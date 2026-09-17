@@ -152,6 +152,18 @@ agent afterwards so it picks up the skill.
 
 <br/>
 
+### Optional: AI evidence adjudicator
+
+The evidence in a session is written by an AI agent, so Fable can optionally
+ask an external reviewer model to audit that evidence before the workspace
+unlocks. Stdlib-only, one bounded HTTPS call, no local model, no extra RAM to
+speak of. Off by default; fail-closed when enforcing. It raises the cost of
+fabricated proof - it cannot guarantee deception is impossible, and the
+mechanical gates stay the primary authority. Setup and honest limits:
+[AI evidence adjudicator](./docs/ai-evidence-adjudicator.md).
+
+<br/>
+
 ### What it is not
 
 - Not a claim of flawless code. It is a checkable workflow, not a guarantee.
@@ -167,6 +179,7 @@ agent afterwards so it picks up the skill.
 - [V1 → V2 migration](./docs/fable-v1-v2-migration.md)
 - [V2 architecture](./docs/fable-v2-architecture.md)
 - [System 3 (experimental)](./docs/system3-architecture.md)
+- [AI evidence adjudicator (optional)](./docs/ai-evidence-adjudicator.md)
 
 <br/>
 

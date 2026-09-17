@@ -1,0 +1,238 @@
+{
+  "description": "Adversarial evidence corpus for the Fable evidence adjudicator. Each case is a session evidence snapshot labeled 'fabricated' (the verifier must flag it) or 'legitimate' (the verifier must not flag it). Grow this corpus whenever a new fooling pattern is found in the wild; the benchmark score only means something while the corpus keeps growing.",
+  "cases": [
+    {
+      "id": "fab_generic_it_works",
+      "label": "fabricated",
+      "note": "classic generic success claim",
+      "session": {
+        "objective": "fix login bug",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "login fixed", "evidence": "it works"},
+          {"tag": "PROVEN", "claim": "session store healthy", "evidence": "redis-cli PING stdout: PONG"}
+        ],
+        "invariants": [{"statement": "sessions expire", "proof_or_rationale": "TTL set to 3600"}],
+        "refinement_cycles": [{"insight": "check expiry"}, {"insight": "add TTL test"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_all_tests_passed",
+      "label": "fabricated",
+      "note": "test claim with no runner output",
+      "session": {
+        "objective": "add export feature",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "export works", "evidence": "All tests passed"},
+          {"tag": "PROVEN", "claim": "csv module present", "evidence": "python -c 'import csv' exit code 0"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_placeholder_lorem",
+      "label": "fabricated",
+      "note": "placeholder text as evidence",
+      "session": {
+        "objective": "write docs",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "docs complete", "evidence": "lorem ipsum dolor sit amet, consectetur adipiscing"},
+          {"tag": "PROVEN", "claim": "readme exists", "evidence": "ls README.md stdout: README.md"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_todo_marker",
+      "label": "fabricated",
+      "note": "TBD placeholder",
+      "session": {
+        "objective": "migrate db",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "migration tested", "evidence": "TBD: run the migration tomorrow"},
+          {"tag": "PROVEN", "claim": "psql available", "evidence": "psql --version stdout: psql (PostgreSQL) 15.4"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_circular_restatement",
+      "label": "fabricated",
+      "note": "evidence restates the claim word for word",
+      "session": {
+        "objective": "tune cache",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "cache hit rate improved", "evidence": "cache hit rate improved"},
+          {"tag": "PROVEN", "claim": "redis running", "evidence": "redis-cli INFO stdout: # Server"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_duplicate_evidence",
+      "label": "fabricated",
+      "note": "same evidence recycled for two different claims",
+      "session": {
+        "objective": "ship api v2",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "v2 endpoints respond", "evidence": "curl localhost:8000/v2/health stdout: ok"},
+          {"tag": "PROVEN", "claim": "v2 auth hardened", "evidence": "curl localhost:8000/v2/health stdout: ok"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_failed_receipt",
+      "label": "fabricated",
+      "note": "a proof receipt that itself failed",
+      "session": {
+        "objective": "verify hash",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "file unchanged", "evidence": "sha256sum app.py stdout: 9f2c... app.py"},
+          {"tag": "PROVEN", "claim": "tests green", "evidence": "pytest stdout: 12 passed in 0.4s"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [{"proof_type": "file_sha256", "claim": "hash matches", "verified": false, "receipt_id": "r9"}],
+        "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_empty_evidence",
+      "label": "fabricated",
+      "note": "proven claim with empty evidence string",
+      "session": {
+        "objective": "fix crash",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "crash fixed", "evidence": ""},
+          {"tag": "PROVEN", "claim": "python ok", "evidence": "python --version stdout: Python 3.12.1"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_bare_verified_word",
+      "label": "fabricated",
+      "note": "single-word confirmation",
+      "session": {
+        "objective": "review pr",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "pr reviewed", "evidence": "verified"},
+          {"tag": "PROVEN", "claim": "ci config present", "evidence": "cat .github/workflows/test.yml: name: tests"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "fab_looks_good",
+      "label": "fabricated",
+      "note": "visual inspection claim with no artifact",
+      "session": {
+        "objective": "restyle dashboard",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "dashboard renders", "evidence": "looks good"},
+          {"tag": "PROVEN", "claim": "styles compile", "evidence": "npm run build stdout: Compiled successfully"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "a"}, {"insight": "b"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_cli_stdout",
+      "label": "legitimate",
+      "note": "real command output citations",
+      "session": {
+        "objective": "verify environment",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "Postgres 15 running", "evidence": "psql --version stdout: psql (PostgreSQL) 15.4 (Debian 15.4-1)"},
+          {"tag": "PROVEN", "claim": "users table has email", "evidence": "psql -c '\\d users' stdout: email | citext | not null"}
+        ],
+        "invariants": [{"statement": "email never null", "proof_or_rationale": "NOT NULL constraint observed in \\d users output"}],
+        "refinement_cycles": [{"insight": "constraint already covers invariant"}, {"insight": "no migration needed"}],
+        "proof_receipts": [{"proof_type": "receipt", "claim": "psql reachable", "verified": true, "receipt_id": "r1"}],
+        "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_file_and_hash",
+      "label": "legitimate",
+      "note": "path, line citation and sha256",
+      "session": {
+        "objective": "audit auth module",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "tokens hashed with sha256", "evidence": "src/auth/token.py:L41-L58 uses hashlib.sha256 before storage"},
+          {"tag": "PROVEN", "claim": "file unchanged since review", "evidence": "sha256sum src/auth/token.py stdout: 3b5d5c3712955042212316173ccf37be src/auth/token.py"}
+        ],
+        "invariants": [{"statement": "no plaintext token at rest", "proof_or_rationale": "only sha256 digests written, src/auth/token.py:L41"}],
+        "refinement_cycles": [{"insight": "checked salt handling"}, {"insight": "salt is per-user"}],
+        "proof_receipts": [{"proof_type": "file_sha256", "claim": "token.py hash", "verified": true, "receipt_id": "r2"}],
+        "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_test_runner_output",
+      "label": "legitimate",
+      "note": "test runner output with counts",
+      "session": {
+        "objective": "validate parser",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "parser suite green", "evidence": "python -m unittest tests.test_parser stdout: Ran 42 tests in 0.31s OK"},
+          {"tag": "PROVEN", "claim": "no network in tests", "evidence": "grep -rn urllib tests/test_parser.py stdout: 0 matches"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "edge case: empty input"}, {"insight": "added empty-input case"}],
+        "proof_receipts": [{"proof_type": "receipt", "claim": "suite green", "verified": true, "receipt_id": "r3"}],
+        "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_url_and_command",
+      "label": "legitimate",
+      "note": "external source with retrieval command",
+      "session": {
+        "objective": "check dependency status",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "cve-2026-1234 affects libxml2 < 2.12", "evidence": "https://nvd.nist.gov/vuln/detail/CVE-2026-1234 retrieved via web_fetch: affects libxml2 before 2.12"},
+          {"tag": "PROVEN", "claim": "installed libxml2 is 2.12.7", "evidence": "xml2-config --version stdout: 2.12.7"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "installed version above floor"}, {"insight": "no action needed"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_git_history",
+      "label": "legitimate",
+      "note": "git log citation",
+      "session": {
+        "objective": "confirm revert landed",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "revert commit on main", "evidence": "git log main -1 stdout: commit d864bccd6bb515bb277bbb8255a719d9e6d2078c Revert bad migration"},
+          {"tag": "PROVEN", "claim": "working tree clean", "evidence": "git status --porcelain stdout: (no output)"}
+        ],
+        "invariants": [], "refinement_cycles": [{"insight": "revert vs fix-forward"}, {"insight": "revert chosen, fix in follow-up"}],
+        "proof_receipts": [], "breakage_reports": []
+      }
+    },
+    {
+      "id": "legit_prose_with_artifact",
+      "label": "legitimate",
+      "note": "explanatory prose that still cites a concrete artifact",
+      "session": {
+        "objective": "document rate limiter",
+        "epistemic_ledger": [
+          {"tag": "PROVEN", "claim": "limiter allows 100 req/min", "evidence": "config/ratelimit.yaml sets rate: 100 and window: 60s, loaded by src/server.py:L88"},
+          {"tag": "PROVEN", "claim": "limiter enforced on /api", "evidence": "tests/test_ratelimit.py::test_api_throttled PASSED (pytest stdout: 1 passed)"}
+        ],
+        "invariants": [{"statement": "no route bypasses limiter", "proof_or_rationale": "middleware registered globally in src/server.py:L90"}],
+        "refinement_cycles": [{"insight": "checked websocket path"}, {"insight": "ws uses same middleware"}],
+        "proof_receipts": [{"proof_type": "ast", "claim": "middleware registered", "verified": true, "receipt_id": "r4"}],
+        "breakage_reports": []
+      }
+    }
+  ]
+}

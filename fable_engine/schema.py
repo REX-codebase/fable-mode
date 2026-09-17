@@ -86,6 +86,7 @@ TOOL_SCHEMA = {
                     "get_session_lineage",
                     "inspect_plan",
                     "verify_proof",
+                    "adjudicate_evidence",
                     "record_visual_mockups",
                     "validate_event_history",
                     "set_goal_rubric",

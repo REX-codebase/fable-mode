@@ -1502,6 +1502,26 @@ class FableSession:
                 f"Please log required proven facts, formal invariants, refinement cycles, and advance to Phase 3+ before unlocking."
             )
 
+        # Optional AI evidence adjudicator: an external reviewer model audits the
+        # recorded evidence as a second opinion. Disabled unless the host sets
+        # FABLE_ADJUDICATOR_ENABLED; fail-closed in enforcing mode.
+        adjudication_receipt = None
+        try:
+            from fable_engine.adjudicator import adjudicate_session, adjudication_denies_unlock
+            adjudication_receipt = adjudicate_session(self)
+        except Exception:
+            adjudication_receipt = None
+        if adjudication_receipt is not None:
+            self.proof_receipts.append(adjudication_receipt)
+            if adjudication_denies_unlock(adjudication_receipt):
+                issues = adjudication_receipt.get("issues") or ["no reason supplied"]
+                reasons = "\n".join([f"  - {i}" for i in issues])
+                raise PermissionError(
+                    f"🛑 AI Evidence Adjudicator rejected the unlock (verdict: "
+                    f"{adjudication_receipt.get('verdict', 'uncertain')}):\n{reasons}\n\n"
+                    f"Address the flagged evidence gaps, record stronger proof, and request the unlock again."
+                )
+
         self.execution_locked = False
         self.can_execute_code = True
         if self.current_state == SessionState.INIT:
@@ -1517,7 +1537,16 @@ class FableSession:
             "refinement_cycles_count": len(self.refinement_cycles),
             "phase": self.active_phase,
             "force_override_used": force_override_used,
-            "authority_deadline_elapsed": remaining_sec <= 0
+            "authority_deadline_elapsed": remaining_sec <= 0,
+            "adjudication": (
+                {
+                    "verdict": adjudication_receipt.get("verdict"),
+                    "confidence": adjudication_receipt.get("confidence"),
+                    "mode": adjudication_receipt.get("mode"),
+                    "receipt_id": adjudication_receipt.get("receipt_id"),
+                }
+                if adjudication_receipt is not None else None
+            ),
         }
 
         return {

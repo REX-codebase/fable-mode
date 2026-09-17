@@ -102,6 +102,7 @@ Use `evolve_cortex` only when persistent learning is wanted and the environment 
 | Record knowledge | `log_epistemic_item`, `record_invariant`, `log_refinement_cycle` |
 | Move through the lifecycle | `advance_phase`, `unlock_execution`, `checkpoint_session`, `restore_session` |
 | Track quality | `set_goal_rubric`, `evaluate_goal_rubric`, `track_file_change`, `verify_proof` |
+| Audit evidence with AI | `adjudicate_evidence` (optional, off by default; see `docs/ai-evidence-adjudicator.md`) |
 | Research | `scrape_web`, `scrape_github`, `scrape_arxiv`, `scrape_reddit`, `scrape_x`, `scrape_youtube` |
 | Challenge a change | `red_team_code_review`, `record_breakage_report`, `verify_red_team_remediation` |
 | Use advanced reasoning | `system3_*` actions; see `docs/system3-architecture.md` in the repository |

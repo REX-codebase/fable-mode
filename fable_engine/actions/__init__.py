@@ -27,6 +27,7 @@ from fable_engine.actions.deliberation import (
     _handle_get_session_lineage,
     _handle_inspect_plan,
     _handle_verify_proof,
+    _handle_adjudicate_evidence,
     _handle_record_visual_mockups,
     _handle_validate_event_history,
 )
@@ -186,6 +187,9 @@ ACTION_DISPATCH: Dict[str, Callable[[Dict[str, Any]], str]] = {
     "plan": _handle_inspect_plan,
     "inspect_blueprint": _handle_inspect_plan,
     "verify_proof": _handle_verify_proof,
+    "adjudicate_evidence": _handle_adjudicate_evidence,
+    "adjudicate": _handle_adjudicate_evidence,
+    "ai_review": _handle_adjudicate_evidence,
     "validate_proof": _handle_verify_proof,
     "check_proof": _handle_verify_proof,
     "record_visual_mockups": _handle_record_visual_mockups,

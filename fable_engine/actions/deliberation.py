@@ -521,3 +521,51 @@ def _handle_validate_event_history(arguments: Dict[str, Any]) -> str:
     )
 
 
+def _handle_adjudicate_evidence(arguments: Dict[str, Any]) -> str:
+    """On-demand AI adjudication of a session's recorded evidence.
+
+    Runs even in advisory mode; the env flag still gates whether any
+    external call happens at all.
+    """
+    session_name = arguments.get("session_name", "").strip()
+    if not session_name:
+        return "Error: 'session_name' is required for action 'adjudicate_evidence'."
+    try:
+        session = get_or_load_session(session_name)
+    except Exception as exc:
+        return f"Error: could not load session '{session_name}': {exc}"
+
+    from fable_engine.adjudicator import AdjudicatorConfig, adjudicate_session
+    config = AdjudicatorConfig.from_env()
+    if not config.enabled:
+        return (
+            "AI Evidence Adjudicator is disabled. The host must set "
+            "FABLE_ADJUDICATOR_ENABLED=1 and FABLE_ADJUDICATOR_API_KEY "
+            "(optional: FABLE_ADJUDICATOR_STYLE, FABLE_ADJUDICATOR_MODEL, "
+            "FABLE_ADJUDICATOR_MODE=advisory|enforcing). No evidence was sent anywhere."
+        )
+    receipt = adjudicate_session(session, config=config)
+    if receipt is None:
+        return "AI Evidence Adjudicator is disabled; no review performed."
+    session.proof_receipts.append(receipt)
+    try:
+        session.save()
+    except Exception:
+        pass
+
+    verdict = str(receipt.get("verdict", "uncertain")).upper()
+    badge = {"PASS": "✅ PASS", "FAIL": "❌ FAIL"}.get(verdict, "⚠️ UNCERTAIN")
+    issues = receipt.get("issues") or []
+    issues_md = "\n".join(f"- {i}" for i in issues) if issues else "- none reported"
+    blocking = "blocking (enforcing mode)" if receipt.get("mode") == "enforcing" else "advisory only"
+    return (
+        f"### 🤖 AI Evidence Adjudication\n\n"
+        f"- **Verdict**: `{badge}` ({blocking})\n"
+        f"- **Confidence**: `{receipt.get('confidence', 0.0)}`\n"
+        f"- **Model**: `{receipt.get('model')}` ({receipt.get('style')})\n"
+        f"- **Receipt ID**: `{receipt.get('receipt_id')}`\n"
+        f"- **Evidence Bundle SHA-256**: `{receipt.get('bundle_sha256')}`\n"
+        f"\n**Issues**:\n{issues_md}\n\n"
+        f"Note: an AI adjudication is a second opinion, not a guarantee. "
+        f"Mechanical gates and deterministic proof receipts remain the primary authority."
+    )
