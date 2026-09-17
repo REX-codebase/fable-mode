@@ -40,7 +40,7 @@ class build_py(_build_py):
 
 setup(
     name="fable-engine",
-    version="1.3.6",
+    version="1.3.7",
     description="Independent deterministic System 2 cognitive engine and mechanical time-lock MCP server",
     long_description=README,
     long_description_content_type="text/markdown",

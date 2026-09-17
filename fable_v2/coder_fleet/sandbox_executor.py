@@ -100,7 +100,10 @@ class SandboxedTarget:
             if not ready:
                 raise TimeoutError(f"sandbox worker did not respond within {timeout:.1f}s")
             line = self._proc.stdout.readline()
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError, OSError):
+            # ImportError/AttributeError: no select module or fileno.
+            # OSError: Windows select() only accepts sockets and raises on
+            # pipe handles (WinError 10038) - use the thread fallback.
             result: Dict[str, Any] = {}
 
             def _reader() -> None:
