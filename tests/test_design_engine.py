@@ -414,6 +414,18 @@ class TestAwwwardsScaffoldGenerator(unittest.TestCase):
         self.assertIn("whitespace-nowrap", html)  # Single line CTA
         self.assertIn("grid", html)  # Asymmetric Bento layout
 
+    def test_scaffold_content_changes_with_domain(self) -> None:
+        coffee = self.generator.generate_scaffold("Artisan coffee from Huila")
+        infra = self.generator.generate_scaffold("Kubernetes telemetry dashboard")
+        self.assertIn("Coffee for the slower part of morning", coffee["html_layout"])
+        self.assertIn("See the system before it drifts", infra["html_layout"])
+        self.assertNotEqual(coffee["content_profile"], infra["content_profile"])
+
+    def test_scaffold_exposes_visual_quality_contract(self) -> None:
+        res = self.generator.generate_scaffold("Editorial journal")
+        self.assertEqual(res["quality_contract"]["viewports"], ["360x800", "768x1024", "1440x900"])
+        self.assertIn("focus-visible", res["quality_contract"]["required_states"])
+
     def test_scaffold_archetype_override(self) -> None:
         res = self.generator.generate_scaffold("Minimalist website", archetype_override="haute_editorial_modernism")
         self.assertEqual(res["archetype"], "haute_editorial_modernism")
@@ -435,6 +447,11 @@ class TestPreFlightDesignGate(unittest.TestCase):
         self.assertEqual(val["passed_checks"], 5)
         self.assertEqual(val["total_checks"], 5)
         self.assertGreaterEqual(val["composite_score"], 0.95)
+
+    def test_minimal_div_cannot_claim_visual_completion(self) -> None:
+        val = self.gate.validate_design("<div class='min-h-[100dvh]'>Valid</div>")
+        self.assertFalse(val["approved"])
+        self.assertIn("screenshot", val["claim_boundary"].lower())
 
     def test_failing_code_rejected(self) -> None:
         bad_code = """
@@ -470,8 +487,8 @@ class TestPreFlightDesignGate(unittest.TestCase):
         </div>
         """
         val = self.gate.validate_design(code_with_accessible_focus)
-        chk4 = next(c for c in val["checklist"] if c["point"] == 4)
-        self.assertTrue(chk4["passed"])
+        access = next(c for c in val["checklist"] if c["point"] == 3)
+        self.assertFalse(access["passed"])  # focus is present, but the snippet lacks the other access contracts
 
 
 class TestCoderFleetDispatcherDesignRouting(unittest.TestCase):
@@ -510,7 +527,7 @@ class TestCoderFleetDispatcherDesignRouting(unittest.TestCase):
         self.assertTrue(res["result"]["anti_slop_verified"])
 
     def test_dispatch_validate_preflight_design(self) -> None:
-        res = self.dispatcher.dispatch("validate_preflight_design", {"code": "<div class='min-h-[100dvh]'></div>"})
+        res = self.dispatcher.dispatch("validate_preflight_design", {"code": AwwwardsScaffoldGenerator().generate_scaffold("Operational telemetry")["html_layout"]})
         self.assertTrue(res["success"])
         self.assertTrue(res["result"]["approved"])
 
@@ -528,7 +545,7 @@ class TestCoderFleetDispatcherDesignRouting(unittest.TestCase):
         # content alias for validate_preflight_design
         r2 = self.dispatcher.dispatch("validate_preflight_design", {"content": "<div class='min-h-[100dvh]'></div>"})
         self.assertTrue(r2["success"])
-        self.assertTrue(r2["result"]["approved"])
+        self.assertFalse(r2["result"]["approved"])
 
         # user_prompt alias for infer_design_brief
         r3 = self.dispatcher.dispatch("infer_design_brief", {"user_prompt": "realtime kubernetes telemetry"})
@@ -580,7 +597,7 @@ class TestFableEngineDesignActionHandlers(unittest.TestCase):
         self.assertIn("100% CLEAN", out)
 
     def test_handle_validate_preflight_design(self) -> None:
-        out = _handle_validate_preflight_design({"code": "<div class='min-h-[100dvh]'>Valid</div>"})
+        out = _handle_validate_preflight_design({"code": AwwwardsScaffoldGenerator().generate_scaffold("Operational telemetry")["html_layout"]})
         self.assertIn("5-Point Pre-Flight Design Gate", out)
         self.assertIn("PRE-FLIGHT APPROVED", out)
 
@@ -599,5 +616,4 @@ class TestFableEngineDesignActionHandlers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 
