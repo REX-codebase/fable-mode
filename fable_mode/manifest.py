@@ -98,6 +98,7 @@ ALLOWED_FILES: tuple[str, ...] = (
     "skills/fable-mode/references/cognitive-protocol.md",
     "skills/fable-mode/references/deepthink-mode.md",
     "skills/fable-mode/references/design-tokens-and-typographies.md",
+    "skills/fable-mode/references/design-system.md",
     "skills/fable-mode/references/goal-rubric-and-pipeline-automation.md",
     "skills/fable-mode/references/innovation-engine.md",
     "skills/fable-mode/references/interleaved-verification.md",
