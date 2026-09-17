@@ -955,6 +955,75 @@ class BriefInferenceEngine:
 # 6. AWWWARDS SCAFFOLD GENERATOR
 # ==============================================================================
 
+CONTENT_PROFILES: dict[AestheticArchetype, dict[str, Any]] = {
+    AestheticArchetype.CYBER_OBSIDIAN_MONOLITH: {
+        "brand": "Relay", "eyebrow": "Execution, observed",
+        "headline": "Every deploy leaves a receipt.",
+        "subtext": "Trace the decision, proof, and state change behind each release without slowing the team.",
+        "primary_cta": "Inspect a run", "secondary_cta": "Read the protocol",
+        "nav": ["Runs", "Proofs", "Protocol"],
+        "section_title": "A release you can explain", "section_copy": "The evidence stays attached from claim to production.", "rows": [("Claim", "C-1844"), ("Invariant", "3 / 3 passed"), ("Owner", "Runtime team")], "status": "Receipt sealed",
+        "metric_label": "Verified transitions", "metric_value": "18,442",
+        "feature_title": "Proof before permission",
+        "feature_copy": "A write opens only after the claim, evidence, and invariant agree.",
+    },
+    AestheticArchetype.KINETIC_SPATIAL_HUD: {
+        "brand": "Vector", "eyebrow": "Region eu-west-2 · live",
+        "headline": "See the system before it drifts.",
+        "subtext": "One operational surface for latency, saturation, ownership, and the next safe action.",
+        "primary_cta": "Open live view", "secondary_cta": "Review incidents",
+        "nav": ["Overview", "Signals", "Incidents"],
+        "section_title": "What needs attention", "section_copy": "Recent changes ranked by user impact and accountable owner.", "rows": [("Saturation", "68%"), ("Error budget", "99.94%"), ("Owner", "Edge platform")], "status": "All regions stable",
+        "metric_label": "p95 ingest", "metric_value": "42 ms",
+        "feature_title": "Signal with an owner",
+        "feature_copy": "Each anomaly shows its source, blast radius, and accountable team.",
+    },
+    AestheticArchetype.HAUTE_EDITORIAL_MODERNISM: {
+        "brand": "Field Notes", "eyebrow": "Volume 08 · Autumn",
+        "headline": "Ideas deserve room to change shape.",
+        "subtext": "Long-form essays on tools, cities, and the people who make durable things.",
+        "primary_cta": "Read the new issue", "secondary_cta": "Browse the archive",
+        "nav": ["Essays", "Contributors", "Archive"],
+        "section_title": "Inside this issue", "section_copy": "Three field reports on repair, memory, and useful constraints.", "rows": [("Words", "3,840"), ("Photographs", "12"), ("Published", "17 Sep")], "status": "Issue 08",
+        "metric_label": "Reading time", "metric_value": "12 min",
+        "feature_title": "The patient machine",
+        "feature_copy": "Mara Venn visits a repair shop where every object gets a second life.",
+    },
+    AestheticArchetype.SWISS_PRECISION_VIGNELLI: {
+        "brand": "Form 27", "eyebrow": "Exhibition 04—27 Oct",
+        "headline": "Systems for living, 1960—2026.",
+        "subtext": "A study of domestic objects shaped by restraint, repair, and exact proportion.",
+        "primary_cta": "Reserve a visit", "secondary_cta": "View the catalogue",
+        "nav": ["Exhibition", "Programme", "Visit"],
+        "section_title": "The objects, in use", "section_copy": "Furniture, tools, and graphics understood through maintenance.", "rows": [("Gallery", "North Hall"), ("Access", "Step-free"), ("Guide", "English · हिन्दी")], "status": "Open until 19:00",
+        "metric_label": "Objects on view", "metric_value": "64",
+        "feature_title": "Chair 620",
+        "feature_copy": "Dieter Rams and the discipline of a frame that can be maintained.",
+    },
+    AestheticArchetype.NEO_NORDIC_WARMTH: {
+        "brand": "Still", "eyebrow": "Small-batch · roasted Tuesday",
+        "headline": "Coffee for the slower part of morning.",
+        "subtext": "Seasonal lots roasted with a light hand, packed in paper, and sent while they are fresh.",
+        "primary_cta": "Shop this roast", "secondary_cta": "Meet the growers",
+        "nav": ["Coffee", "Journal", "Visit"],
+        "section_title": "This week at the roastery", "section_copy": "Fresh coffee, transparent sourcing, and simple ways to brew it.", "rows": [("Origin", "Huila, Colombia"), ("Process", "Washed"), ("Roast", "Light · filter")], "status": "Ships tomorrow",
+        "metric_label": "Tasting note", "metric_value": "Pear · cacao",
+        "feature_title": "La Esperanza",
+        "feature_copy": "Washed Caturra from Huila with a clean finish and quiet sweetness.",
+    },
+    AestheticArchetype.COLD_CHROMATIC_LUXURY: {
+        "brand": "Aperture", "eyebrow": "Series 01 · 38 mm",
+        "headline": "Time, reduced to essentials.",
+        "subtext": "A hand-finished mechanical watch in titanium, built for daily wear and lifelong service.",
+        "primary_cta": "Configure Series 01", "secondary_cta": "See the movement",
+        "nav": ["Series 01", "Engineering", "Service"],
+        "section_title": "Engineered for service", "section_copy": "A restrained case around a movement built to be opened and repaired.", "rows": [("Case", "Grade 5 titanium"), ("Movement", "Automatic"), ("Water", "10 ATM")], "status": "5-year warranty",
+        "metric_label": "Power reserve", "metric_value": "72 hours",
+        "feature_title": "Grade 5 titanium",
+        "feature_copy": "Brushed by hand, light on the wrist, and resistant to the marks of daily use.",
+    },
+}
+
 class AwwwardsScaffoldGenerator:
     """Generates zero-slop, Awwwards-caliber HTML/JSX and CSS layouts from simple prompts."""
 
@@ -975,6 +1044,7 @@ class AwwwardsScaffoldGenerator:
         brief = self.inference.infer_brief(p, archetype_override=arch_enum.value if arch_enum else None)
         selected_arch = AestheticArchetype.from_str(brief["archetype"]) or AestheticArchetype.CYBER_OBSIDIAN_MONOLITH
         theme = HAUTE_THEMES[selected_arch]
+        profile = CONTENT_PROFILES[selected_arch]
 
         css_theme = theme.to_tailwind_v4_theme()
         fluid_tokens = theme.get_fluid_typography_tokens()
@@ -988,6 +1058,11 @@ class AwwwardsScaffoldGenerator:
   FABLE-MODE AWWWARDS-WINNING PRODUCTION LAYOUT
   {brief['design_read']}
 -->
+<style>
+  :focus-visible {{ outline: 3px solid var(--color-accent-primary); outline-offset: 3px; }}
+  @media (prefers-reduced-motion: reduce) {{ *, *::before, *::after {{ scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }} }}
+</style>
+<a href="#main-content" class="sr-only focus:not-sr-only fixed left-4 top-4 z-[100] min-h-11 px-4 py-3 bg-[var(--color-bg-void)] text-[var(--color-text-primary)]">Skip to content</a>
 <div class="relative min-h-[100dvh] w-full bg-[var(--color-bg-void)] text-[var(--color-text-primary)] font-[var(--font-family-body)] selection:bg-[var(--color-accent-primary)] selection:text-[var(--color-bg-void)] overflow-x-hidden antialiased">
   
   <!-- Layer 1: Procedural Micro-Texture / Film Grain (Anti-Banding Matrix) -->
@@ -1011,23 +1086,23 @@ class AwwwardsScaffoldGenerator:
     <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 lg:px-8">
       <a href="/" class="flex items-center gap-3 group">
         <div class="h-4 w-4 {theme.border_radius_scale} bg-[var(--color-accent-primary)] transition-transform duration-300 group-hover:scale-110"></div>
-        <span class="font-[var(--font-family-display)] font-semibold tracking-tight text-lg text-[var(--color-text-primary)]">{brief['page_kind'].split()[0]}</span>
+        <span class="font-[var(--font-family-display)] font-semibold tracking-tight text-lg text-[var(--color-text-primary)]">{profile["brand"]}</span>
       </a>
-      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-[var(--color-text-muted)]">
-        <a href="#architecture" class="hover:text-[var(--color-text-primary)] transition-colors">Architecture</a>
-        <a href="#specs" class="hover:text-[var(--color-text-primary)] transition-colors">Specifications</a>
-        <a href="#telemetry" class="hover:text-[var(--color-text-primary)] transition-colors">Telemetry</a>
+      <nav aria-label="Primary navigation" class="hidden md:flex items-center gap-8 text-sm font-medium text-[var(--color-text-muted)]">
+        <a href="#architecture" class="hover:text-[var(--color-text-primary)] transition-colors">{profile["nav"][0]}</a>
+        <a href="#specs" class="hover:text-[var(--color-text-primary)] transition-colors">{profile["nav"][1]}</a>
+        <a href="#telemetry" class="hover:text-[var(--color-text-primary)] transition-colors">{profile["nav"][2]}</a>
       </nav>
       <div class="flex items-center gap-4">
-        <button class="whitespace-nowrap px-4 py-2 text-xs font-semibold tracking-wide {theme.border_radius_scale} bg-[var(--color-accent-primary)] text-[var(--color-bg-void)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)] hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-opacity">
-          Initialize System
+        <button class="min-h-11 whitespace-nowrap px-4 py-2 text-xs font-semibold tracking-wide {theme.border_radius_scale} bg-[var(--color-accent-primary)] text-[var(--color-bg-void)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)] hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-opacity">
+          {profile["primary_cta"]}
         </button>
       </div>
     </div>
   </header>
 
   <!-- Layer 5: Asymmetric Hero Section (Hero Stack <= 4 Elements, Desktop Top Padding <= pt-24) -->
-  <main class="relative z-10">
+  <main id="main-content" class="relative z-10">
     
     <section id="hero" class="mx-auto max-w-7xl px-6 pt-16 pb-24 md:pt-24 lg:px-8">
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -1036,26 +1111,26 @@ class AwwwardsScaffoldGenerator:
           <!-- Element 1: Eyebrow (Restrained, max 1 per 3 sections) -->
           <div class="inline-flex items-center gap-2 px-3 py-1 text-xs font-mono tracking-wider uppercase {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-card)] text-[var(--color-text-muted)]">
             <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent-primary)]"></span>
-            <span>SYSTEM DISPATCH // V2.5</span>
+            <span>{profile["eyebrow"]}</span>
           </div>
 
           <!-- Element 2: Headline (Max 2 lines on desktop, fluid clamp) -->
           <h1 class="font-[var(--font-family-display)] font-bold tracking-tight text-[clamp(2.25rem,1.5rem+3.5vw,4.5rem)] leading-[0.95] text-[var(--color-text-primary)]">
-            Precision engineering for autonomous scale.
+            {profile["headline"]}
           </h1>
 
           <!-- Element 3: Subtext (Max 20 words, zero buzzwords) -->
           <p class="max-w-xl text-base md:text-lg text-[var(--color-text-muted)] leading-relaxed">
-            Deterministic execution brokers delivering sub-60ms state transitions with mathematical verification guarantees.
+            {profile["subtext"]}
           </p>
 
           <!-- Element 4: Single-Line Primary CTA + Max 1 Secondary -->
           <div class="flex flex-wrap items-center gap-4 pt-2">
-            <button class="whitespace-nowrap px-6 py-3.5 text-sm font-semibold {theme.border_radius_scale} bg-[var(--color-accent-primary)] text-[var(--color-bg-void)] shadow-[0_12px_24px_-8px_var(--color-accent-glow)] hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-opacity">
-              Deploy Node
+            <button class="min-h-11 whitespace-nowrap px-6 py-3.5 text-sm font-semibold {theme.border_radius_scale} bg-[var(--color-accent-primary)] text-[var(--color-bg-void)] shadow-[0_12px_24px_-8px_var(--color-accent-glow)] hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-opacity">
+              {profile["primary_cta"]}
             </button>
-            <button class="whitespace-nowrap px-6 py-3.5 text-sm font-semibold {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-card)] text-[var(--color-text-primary)] hover:border-[var(--color-border-specular)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-colors">
-              Inspect Architecture
+            <button class="min-h-11 whitespace-nowrap px-6 py-3.5 text-sm font-semibold {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-card)] text-[var(--color-text-primary)] hover:border-[var(--color-border-specular)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)] active:scale-[0.98] transition-colors">
+              {profile["secondary_cta"]}
             </button>
           </div>
 
@@ -1064,20 +1139,20 @@ class AwwwardsScaffoldGenerator:
         <!-- Hero Visual / Real Interactive Component Sandbox (No Div Dots) -->
         <div class="lg:col-span-5 relative w-full aspect-square {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-card)] p-8 flex flex-col justify-between overflow-hidden shadow-2xl">
           <div class="flex items-center justify-between border-b border-[var(--color-border-hairline)] pb-4">
-            <span class="text-xs font-mono text-[var(--color-text-muted)]">Live Telemetry</span>
+            <span class="text-xs font-mono text-[var(--color-text-muted)]">{profile["metric_label"]}</span>
             <span class="inline-flex items-center gap-1.5 text-xs font-mono text-[var(--color-accent-primary)]">
               <span class="h-2 w-2 rounded-full bg-[var(--color-accent-primary)] animate-pulse"></span>
-              60.0 FPS LOCKED
+              {profile["metric_value"]}
             </span>
           </div>
           <div class="my-auto font-mono text-xs text-[var(--color-text-muted)] space-y-2">
-            <div class="flex justify-between"><span>Proof Engine:</span><span class="text-[var(--color-text-primary)]">Curry-Howard Verified</span></div>
-            <div class="flex justify-between"><span>VRAM Allocation:</span><span class="text-[var(--color-text-primary)]">18.4 MB / Tier-1</span></div>
-            <div class="flex justify-between"><span>Syntactic Drift:</span><span class="text-[var(--color-text-primary)]">0.0000 %</span></div>
+            <div class="flex justify-between gap-6"><span>{profile["rows"][0][0]}</span><span class="text-right text-[var(--color-text-primary)]">{profile["rows"][0][1]}</span></div>
+            <div class="flex justify-between gap-6"><span>{profile["rows"][1][0]}</span><span class="text-right text-[var(--color-text-primary)]">{profile["rows"][1][1]}</span></div>
+            <div class="flex justify-between gap-6"><span>{profile["rows"][2][0]}</span><span class="text-right text-[var(--color-text-primary)]">{profile["rows"][2][1]}</span></div>
           </div>
           <div class="pt-4 border-t border-[var(--color-border-hairline)] flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-            <span>APCA Contrast: Lc >= 78.4</span>
-            <span class="text-[var(--color-accent-primary)]">STATUS: GREEN</span>
+            <span>{profile["brand"]} / {profile["eyebrow"]}</span>
+            <span class="text-[var(--color-accent-primary)]">{profile["status"]}</span>
           </div>
         </div>
 
@@ -1088,9 +1163,9 @@ class AwwwardsScaffoldGenerator:
     <section id="architecture" class="mx-auto max-w-7xl px-6 pb-24 lg:px-8">
       <div class="mb-12">
         <h2 class="font-[var(--font-family-display)] text-2xl md:text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-          Architectural Invariants
+          {profile["section_title"]}
         </h2>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">Sub-second deterministic proofs eliminating runtime failures.</p>
+        <p class="mt-2 text-sm text-[var(--color-text-muted)]">{profile["section_copy"]}</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-6">
@@ -1098,26 +1173,26 @@ class AwwwardsScaffoldGenerator:
         <!-- Cell 1: 2-column span Hero Cell -->
         <div class="lg:col-span-8 {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-card)] p-8 flex flex-col justify-between hover:border-[var(--color-border-specular)] transition-colors">
           <div>
-            <span class="text-xs font-mono text-[var(--color-accent-primary)] font-medium">[01] // FORMAL PROOF</span>
-            <h3 class="mt-3 font-[var(--font-family-display)] text-xl font-semibold text-[var(--color-text-primary)]">Ungameable AST Grounding</h3>
+            <span class="text-xs font-mono text-[var(--color-accent-primary)] font-medium">01 · {profile["metric_label"]}</span>
+            <h3 class="mt-3 font-[var(--font-family-display)] text-xl font-semibold text-[var(--color-text-primary)]">{profile["feature_title"]}</h3>
             <p class="mt-2 text-sm text-[var(--color-text-muted)] leading-relaxed">
-              Every state transition binds directly to abstract syntax tree symbol nodes and SHA-256 source chains, eliminating circular reasoning.
+              {profile["feature_copy"]}
             </p>
           </div>
           <div class="mt-8 pt-6 border-t border-[var(--color-border-hairline)] flex items-center justify-between text-xs font-mono text-[var(--color-text-muted)]">
-            <span>RECEIPT: HMAC-SHA256</span>
-            <span>AG(safe) SEALED</span>
+            <span>{profile["rows"][0][1]}</span>
+            <span>{profile["status"]}</span>
           </div>
         </div>
 
         <!-- Cell 2: 1-column span Compact Metric -->
         <div class="lg:col-span-4 {theme.border_radius_scale} border border-[var(--color-border-hairline)] bg-[var(--color-surface-elevated)] p-8 flex flex-col justify-between hover:border-[var(--color-border-specular)] transition-colors">
           <div>
-            <span class="text-xs font-mono text-[var(--color-accent-primary)] font-medium">[02] // LATENCY</span>
-            <div class="mt-4 font-[var(--font-family-display)] text-4xl font-bold text-[var(--color-text-primary)]">&lt; 60ms</div>
-            <p class="mt-2 text-xs text-[var(--color-text-muted)]">Damped harmonic oscillator response with critical damping.</p>
+            <span class="text-xs font-mono text-[var(--color-accent-primary)] font-medium">02 · DETAIL</span>
+            <div class="mt-4 font-[var(--font-family-display)] text-4xl font-bold text-[var(--color-text-primary)]">{profile["metric_value"]}</div>
+            <p class="mt-2 text-xs text-[var(--color-text-muted)]">{profile["feature_copy"]}</p>
           </div>
-          <div class="mt-6 text-xs font-mono text-[var(--color-accent-primary)]">&zeta; = 1.00 ZERO OVERSHOOT</div>
+          <div class="mt-6 text-xs font-mono text-[var(--color-accent-primary)]">{profile["rows"][1][0]} · {profile["rows"][1][1]}</div>
         </div>
 
       </div>
@@ -1150,6 +1225,13 @@ class AwwwardsScaffoldGenerator:
             "html_layout": html_layout,
             "audit_result": audit_res,
             "anti_slop_verified": audit_res["clean"],
+            "content_profile": profile,
+            "quality_contract": {
+                "viewports": ["360x800", "768x1024", "1440x900"],
+                "required_states": ["default", "hover", "focus-visible", "active", "disabled", "loading", "empty", "error"],
+                "checks": ["semantic landmarks", "keyboard path", "reduced motion", "44px targets", "content specificity", "visual screenshots"],
+                "rule": "Do not claim visual completion until screenshots at all listed viewports were inspected.",
+            },
         }
 
 
@@ -1164,85 +1246,47 @@ class PreFlightDesignGate:
         self.auditor = auditor or AntiSlopAuditor()
 
     def validate_design(self, code: str, theme: Optional[HauteDesignTheme] = None) -> dict[str, Any]:
-        """Verify the 5 mandatory design invariants:
-
-        1. Viewport Fit & Stability (100dvh, pt-24 max desktop hero)
-        2. Typographic Polish & Descender Clearance
-        3. Color & Shape Invariant Locks (1 primary accent, 1 radius scale)
-        4. Interactive Contrast (WCAG AA >= 4.5:1) & Single-Line CTAs
-        5. Eyebrow Restraint & Copy Audit (zero LLM buzzwords)
-        """
+        """Check five release contracts: structure, responsive behavior, access, system coherence, and content."""
         audit = self.auditor.audit_code(code)
+        source = code or ""
         checklist: list[dict[str, Any]] = []
 
-        # 1. Viewport Stability Check
-        has_100dvh = bool(re.search(r"100dvh", code, re.IGNORECASE))
-        has_h_screen = bool(re.search(r"\bh-screen\b|height:\s*100vh\b", code, re.IGNORECASE))
-        viewport_ok = has_100dvh or not has_h_screen
-        checklist.append({
-            "point": 1,
-            "name": "Viewport Fit & Stability",
-            "passed": viewport_ok,
-            "details": "Uses min-h-[100dvh]; strictly zero mobile-jumping h-screen usages." if viewport_ok else "Fails: contains banned h-screen without 100dvh fallback.",
-        })
+        has_structure = all(re.search(fr"<{tag}\b", source, re.I) for tag in ("header", "main", "footer"))
+        has_heading = bool(re.search(r"<h1\b", source, re.I))
+        checklist.append({"point": 1, "name": "Structure & hierarchy", "passed": has_structure and has_heading,
+            "details": "Header, main, footer, and one page heading are present." if has_structure and has_heading else "Add semantic page landmarks and a clear h1."})
 
-        # 2. Typographic Polish Check
-        has_italic_without_clearance = bool(re.search(r"italic\s+[^>]*leading-\[1\.0\]", code, re.IGNORECASE))
-        typo_ok = not has_italic_without_clearance
-        checklist.append({
-            "point": 2,
-            "name": "Typographic Polish & Descender Clearance",
-            "passed": typo_ok,
-            "details": "Italic descenders cleared with leading >= 1.1; font pairings respected." if typo_ok else "Fails: italic descenders clipped by tight leading.",
-        })
+        stable_viewport = "100dvh" in source and not re.search(r"\bh-screen\b|height:\s*100vh\b", source, re.I)
+        responsive = bool(re.search(r"\b(?:sm|md|lg|xl):", source))
+        checklist.append({"point": 2, "name": "Responsive layout", "passed": stable_viewport and responsive,
+            "details": "Uses dynamic viewport units and responsive layout changes." if stable_viewport and responsive else "Use 100dvh and include a real breakpoint-driven layout change."})
 
-        # 3. Color & Shape Invariant Locks
-        multi_accents = len(set(re.findall(r"(?:text|bg)-(?:emerald|cyan|rose|amber|violet|indigo)-[5-7]00", code, re.IGNORECASE))) > 2
-        color_ok = not multi_accents
-        checklist.append({
-            "point": 3,
-            "name": "Color & Shape Invariant Locks",
-            "passed": color_ok,
-            "details": "Locked exactly 1 primary accent color and 1 unified border-radius scale." if color_ok else "Fails: multiple conflicting accent colors found without unified token locking.",
-        })
+        reduced_motion = "prefers-reduced-motion" in source
+        skip_link = bool(re.search(r'href=["\']#main-content["\']', source, re.I))
+        focus = "focus-visible" in source
+        target = bool(re.search(r"min-h-(?:11|12)|min-height:\s*(?:44|48)px", source, re.I))
+        access_ok = reduced_motion and skip_link and focus and target
+        checklist.append({"point": 3, "name": "Interaction accessibility", "passed": access_ok,
+            "details": "Reduced motion, skip navigation, visible focus, and 44px targets are encoded." if access_ok else "Add reduced-motion handling, skip navigation, focus-visible styles, and 44px targets."})
 
-        # 4. Interactive Contrast & Single-Line CTAs
-        button_has_wrap = bool(re.search(r"<button(?![^>]*whitespace-nowrap)[^>]*>[^<]*\n[^<]*</button>", code, re.IGNORECASE))
-        has_naked_outline = False
-        for btn_match in re.finditer(r"<(?:button|a|input|select|textarea)\b[^>]*class=[\"']([^\"']*)[\"'][^>]*>", code, re.IGNORECASE):
-            c_str = btn_match.group(1)
-            if re.search(r"\b(?:focus:)?outline-none\b", c_str, re.IGNORECASE) and not re.search(r"\bfocus-visible:", c_str, re.IGNORECASE):
-                has_naked_outline = True
-                break
-        cta_ok = (not button_has_wrap) and (not has_naked_outline)
-        checklist.append({
-            "point": 4,
-            "name": "Interactive Contrast & Single-Line CTAs",
-            "passed": cta_ok,
-            "details": "All button CTAs fit on a single line with whitespace-nowrap; focus accessibility preserved." if cta_ok else "Fails: button CTA text wraps across multiple lines or removes focus outlines without focus-visible rings.",
-        })
+        tokenized = source.count("var(--color-") >= 6
+        coherent = not re.search(r"(?:bg|text)-(?:purple|violet|indigo)-[4-7]00", source, re.I)
+        checklist.append({"point": 4, "name": "System coherence", "passed": tokenized and coherent,
+            "details": "Color roles use shared tokens without arbitrary accent drift." if tokenized and coherent else "Use shared color roles and remove arbitrary palette drift."})
 
-        # 5. Eyebrow Restraint & Copy Audit
-        copy_ok = (audit["fatal_count"] == 0 and audit["high_count"] == 0)
-        checklist.append({
-            "point": 5,
-            "name": "Eyebrow Restraint & Copy Audit",
-            "passed": copy_ok,
-            "details": "Restrained uppercase eyebrows (<= 1 per 3 sections) and zero LLM marker buzzwords." if copy_ok else f"Fails: {audit['fatal_count'] + audit['high_count']} anti-slop copy/eyebrow violations detected.",
-        })
+        placeholder = bool(re.search(r"\b(?:lorem ipsum|jane doe|feature one|your product|coming soon)\b", source, re.I))
+        concrete = bool(re.search(r"\b(?:ms|hours?|minutes?|%|[0-9]{2,})\b", source, re.I))
+        content_ok = not placeholder and concrete and audit["fatal_count"] == 0 and audit["high_count"] == 0
+        checklist.append({"point": 5, "name": "Content specificity", "passed": content_ok,
+            "details": "Copy is concrete, non-placeholder, and free of high-severity AI tells." if content_ok else "Replace placeholder or generic copy with specific evidence and actions."})
 
-        passed_count = sum(1 for c in checklist if c["passed"])
-        approved = (passed_count == 5 and audit["clean"])
-        composite_score = round(passed_count / 5.0 * audit["score"], 3)
-
-        return {
-            "approved": approved,
-            "composite_score": composite_score,
-            "passed_checks": passed_count,
-            "total_checks": 5,
-            "checklist": checklist,
+        passed_count = sum(1 for item in checklist if item["passed"])
+        approved = passed_count == len(checklist) and audit["clean"]
+        return {"approved": approved, "composite_score": round((passed_count / 5.0) * audit["score"], 3),
+            "passed_checks": passed_count, "total_checks": 5, "checklist": checklist,
             "anti_slop_audit": audit,
-        }
+            "manual_visual_checks": ["Inspect 360x800, 768x1024, and 1440x900 screenshots", "Check clipping, overlap, hierarchy, and image crop", "Walk the keyboard path and inspect focus order"],
+            "claim_boundary": "Approval covers source-level checks only. Visual completion still requires screenshot inspection."}
 
 
 # ==============================================================================
@@ -1313,4 +1357,4 @@ class DesignEngine:
                 "dials": theme.dials.to_dict(),
             }
             for theme in HAUTE_THEMES.values()
-        ]
+]
