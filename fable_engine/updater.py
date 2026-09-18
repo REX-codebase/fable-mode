@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import copy
 import shutil
 import subprocess
 import threading
@@ -248,9 +249,9 @@ class AutoUpdater:
                     try:
                         pulled = CorticalLobe.load_from_disk(lobe_file)
                         local = local_lobes[name]
-                        self._merge_lobe_data(pulled, local)
-                        pulled.save_to_disk(lobe_file)
-                        preserved_names.append(name)
+                        if self._merge_lobe_data(pulled, local):
+                            pulled.save_to_disk(lobe_file)
+                            preserved_names.append(name)
                     except Exception as e:
                         logger.debug(f"Error merging custom lobe {name}: {e}")
 
@@ -262,9 +263,12 @@ class AutoUpdater:
                     try:
                         pulled = CorticalLobe.load_from_disk(lobe_file)
                         local = local_lobes[base_name]
-                        self._merge_lobe_data(pulled, local)
-                        pulled.save_to_disk(lobe_file)
-                        preserved_names.append(base_name)
+                        # Bundled seeds are read-only: rewrite only when the merge
+                        # actually folded preserved experience into the lobe. A
+                        # no-op update must leave seed bytes untouched.
+                        if self._merge_lobe_data(pulled, local):
+                            pulled.save_to_disk(lobe_file)
+                            preserved_names.append(base_name)
                     except Exception as e:
                         logger.debug(f"Error merging baseline lobe {base_name}: {e}")
 
@@ -278,6 +282,7 @@ class AutoUpdater:
                     pulled_matrix = json.loads(matrix_file.read_text(encoding="utf-8"))
                 except Exception:
                     pulled_matrix = {}
+            pre_merge_matrix = copy.deepcopy(pulled_matrix)
             # Non-destructively union local matrix weights with pulled matrix
             for src, targets in local_matrix.items():
                 if src not in pulled_matrix:
@@ -293,21 +298,29 @@ class AutoUpdater:
                                 )
                             except (ValueError, TypeError):
                                 pass
-            try:
-                matrix_file.write_text(json.dumps(pulled_matrix, indent=2), encoding="utf-8")
-            except Exception as e:
-                logger.debug(f"Error writing synaptic matrix: {e}")
+            if pulled_matrix != pre_merge_matrix:
+                try:
+                    matrix_file.write_text(json.dumps(pulled_matrix, indent=2), encoding="utf-8")
+                except Exception as e:
+                    logger.debug(f"Error writing synaptic matrix: {e}")
 
         return preserved_names
 
-    def _merge_lobe_data(self, target_lobe: Any, source_lobe: Any) -> None:
-        """Merge source antibodies, synaptic weights, and heuristics into target."""
+    def _merge_lobe_data(self, target_lobe: Any, source_lobe: Any) -> bool:
+        """Merge source antibodies, synaptic weights, and heuristics into target.
+
+        Returns True only when the merge actually changed the target, so callers
+        can skip rewriting files whose content is already up to date.
+        """
+        changed = False
+
         # 1. Merge Antibodies by antibody_id
         target_ids = {ab.antibody_id for ab in getattr(target_lobe, "antibodies", [])}
         for ab in getattr(source_lobe, "antibodies", []):
             if ab.antibody_id not in target_ids:
                 target_lobe.antibodies.append(ab)
                 target_ids.add(ab.antibody_id)
+                changed = True
             else:
                 # If both have antibody, adopt source counterfactual/defense if target is missing it
                 for idx, t_ab in enumerate(target_lobe.antibodies):
@@ -316,6 +329,7 @@ class AutoUpdater:
                             t_ab, "verified_counterfactual", ""
                         ):
                             target_lobe.antibodies[idx] = ab
+                            changed = True
                         break
 
         # 2. Merge Synaptic Weights (max retention)
@@ -324,17 +338,21 @@ class AutoUpdater:
         for node, weight in source_weights.items():
             if node not in target_weights:
                 target_weights[node] = weight
+                changed = True
             else:
                 try:
-                    target_weights[node] = max(float(weight), float(target_weights[node]))
+                    merged_weight = max(float(weight), float(target_weights[node]))
+                    if merged_weight != target_weights[node]:
+                        target_weights[node] = merged_weight
+                        changed = True
                 except (ValueError, TypeError):
                     pass
 
         # 3. Merge Activation Count
-        target_lobe.activation_count = max(
-            getattr(target_lobe, "activation_count", 0),
-            getattr(source_lobe, "activation_count", 0),
-        )
+        source_activation = getattr(source_lobe, "activation_count", 0)
+        if source_activation > getattr(target_lobe, "activation_count", 0):
+            target_lobe.activation_count = source_activation
+            changed = True
 
         # 4. Merge Specialized Heuristics
         target_heuristics = set(getattr(target_lobe, "specialized_heuristics", []))
@@ -342,6 +360,9 @@ class AutoUpdater:
             if h not in target_heuristics:
                 target_lobe.specialized_heuristics.append(h)
                 target_heuristics.add(h)
+                changed = True
+
+        return changed
 
     def _sync_host_targets(self) -> list[str]:
         """Hot-sync skills, rules, and MCP session manifests into host environments."""

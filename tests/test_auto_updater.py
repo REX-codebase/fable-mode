@@ -405,3 +405,188 @@ class TestMCPServerAutoUpdateActions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoOpMergeIdempotence(unittest.TestCase):
+    """A no-op update must never rewrite bundled cortex seed bytes.
+
+    Regression coverage for the source-tree contamination where every
+    "Already up to date" apply re-serialized all baseline lobes through
+    save_to_disk, dirtying the checkout (and, on JSON-frontmatter era seeds,
+    changing byte content) mid-test-run.
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name).resolve()
+        self.updater = AutoUpdater(repo_root=self.root)
+        self.cortex_dir = self.root / "skills" / "fable-mode" / "cortex"
+        self.cortex_dir.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_noop_merge_leaves_baseline_seed_bytes_untouched(self) -> None:
+        seed_lobe = CorticalLobe(
+            name="python",
+            description="High-performance CPython",
+            activation_count=17,
+            synaptic_weights={"asyncio_event_loop": 0.94, "test_harness": 0.92},
+            antibodies=[
+                HeuristicAntibody(
+                    antibody_id="ab_python_mutable_default_arg",
+                    domain="python",
+                    trigger_condition="mutable default",
+                    lethal_anti_pattern="def f(x, acc=[])",
+                    prescribed_defense="Default to None.",
+                    verified_counterfactual="AST codemod verified",
+                )
+            ],
+            specialized_heuristics=["Prefer explicit None defaults."],
+        )
+        seed_path = self.cortex_dir / "python.md"
+        seed_lobe.save_to_disk(seed_path)
+        seed_bytes = seed_path.read_bytes()
+
+        snapshot = self.updater._snapshot_cortex()
+        self.assertIn("python", snapshot["lobes"])
+
+        # Simulate an "Already up to date" pull: files untouched on disk.
+        preserved = self.updater._merge_and_restore_cortex(snapshot)
+
+        self.assertEqual(seed_path.read_bytes(), seed_bytes)
+        self.assertNotIn("python", preserved)
+
+    def test_noop_merge_preserves_noncanonical_seed_format(self) -> None:
+        # JSON-frontmatter seed format (pre-canonicalization era): a no-op
+        # merge must not re-serialize it to save_to_disk's markdown format.
+        json_seed = (
+            "---\n"
+            "{\n"
+            '  "name": "python",\n'
+            '  "description": "High-performance CPython",\n'
+            '  "domain": "python",\n'
+            '  "activation_count": 17,\n'
+            '  "synaptic_weights": {"asyncio_event_loop": 0.94},\n'
+            '  "antibodies": [\n'
+            "    {\n"
+            '      "antibody_id": "ab_python_mutable_default_arg",\n'
+            '      "domain": "python",\n'
+            '      "trigger_condition": "mutable default",\n'
+            '      "lethal_anti_pattern": "def f(x, acc=[])",\n'
+            '      "prescribed_defense": "Default to None.",\n'
+            '      "severity": "HIGH",\n'
+            '      "verified_counterfactual": "AST codemod verified"\n'
+            "    }\n"
+            "  ],\n"
+            '  "specialized_heuristics": ["Prefer explicit None defaults."],\n'
+            '  "last_consolidated_at": "2026-09-04T12:00:00+00:00"\n'
+            "}\n"
+            "---\n\n"
+            "# python Cortical Lobe\n"
+        )
+        seed_path = self.cortex_dir / "python.md"
+        seed_path.write_text(json_seed, encoding="utf-8")
+        seed_bytes = seed_path.read_bytes()
+
+        snapshot = self.updater._snapshot_cortex()
+        self.assertIn("python", snapshot["lobes"])
+
+        preserved = self.updater._merge_and_restore_cortex(snapshot)
+
+        self.assertEqual(seed_path.read_bytes(), seed_bytes)
+        self.assertNotIn("python", preserved)
+
+    def test_noop_synaptic_matrix_not_rewritten(self) -> None:
+        matrix_path = self.cortex_dir / "synaptic_matrix.json"
+        matrix_path.write_text(
+            json.dumps({"node_a": {"tool_a": 0.9}}), encoding="utf-8"
+        )
+        matrix_bytes = matrix_path.read_bytes()
+
+        snapshot = self.updater._snapshot_cortex()
+        self.updater._merge_and_restore_cortex(snapshot)
+
+        self.assertEqual(matrix_path.read_bytes(), matrix_bytes)
+
+    def test_meaningful_merge_still_writes(self) -> None:
+        # Guard the other direction: a merge that folds in preserved
+        # experience must still persist it.
+        pulled_lobe = CorticalLobe(
+            name="python",
+            description="Upstream seed",
+            activation_count=10,
+            synaptic_weights={"asyncio_event_loop": 0.80},
+        )
+        seed_path = self.cortex_dir / "python.md"
+        pulled_lobe.save_to_disk(seed_path)
+
+        snapshot = self.updater._snapshot_cortex()
+        # Locally evolved state arrives in the snapshot while the pulled
+        # file on disk is the plain upstream seed.
+        snapshot["lobes"]["python"].synaptic_weights["local_tool"] = 0.85
+        snapshot["lobes"]["python"].activation_count = 25
+
+        preserved = self.updater._merge_and_restore_cortex(snapshot)
+
+        self.assertIn("python", preserved)
+        merged = CorticalLobe.load_from_disk(seed_path)
+        self.assertAlmostEqual(merged.synaptic_weights["local_tool"], 0.85)
+        self.assertEqual(merged.activation_count, 25)
+
+
+@unittest.skipIf(shutil.which("git") is None, "git binary required")
+class TestApplyUpdateNoOpKeepsTreeClean(unittest.TestCase):
+    """End-to-end: apply_update on an up-to-date checkout leaves cortex clean."""
+
+    def _git(self, repo: Path, *args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(repo), *args],
+            check=True, capture_output=True, text=True, timeout=30.0,
+        )
+
+    def test_apply_update_up_to_date_leaves_cortex_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp).resolve()
+            origin = tmp_path / "origin.git"
+            work = tmp_path / "work"
+            subprocess.run(
+                ["git", "init", "--bare", str(origin)],
+                check=True, capture_output=True, text=True, timeout=30.0,
+            )
+            subprocess.run(
+                ["git", "init", "-b", "main", str(work)],
+                check=True, capture_output=True, text=True, timeout=30.0,
+            )
+            cortex_dir = work / "skills" / "fable-mode" / "cortex"
+            cortex_dir.mkdir(parents=True)
+            seed_lobe = CorticalLobe(
+                name="python",
+                description="High-performance CPython",
+                activation_count=17,
+                synaptic_weights={"asyncio_event_loop": 0.94},
+            )
+            seed_path = cortex_dir / "python.md"
+            seed_lobe.save_to_disk(seed_path)
+            seed_bytes = seed_path.read_bytes()
+            self._git(work, "add", "-A")
+            self._git(
+                work, "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                "commit", "-m", "seed",
+            )
+            self._git(work, "remote", "add", "origin", str(origin))
+            self._git(work, "push", "-u", "origin", "main")
+
+            with patch.object(AutoUpdater, "discover_host_targets", return_value=[]):
+                updater = AutoUpdater(repo_root=work)
+                result = updater.apply_update()
+
+            self.assertTrue(result["success"])
+            self.assertFalse(result["updated"])
+            self.assertEqual(result["preserved_lobes"], [])
+            self.assertEqual(seed_path.read_bytes(), seed_bytes)
+            status = subprocess.run(
+                ["git", "-C", str(work), "status", "--porcelain"],
+                check=True, capture_output=True, text=True, timeout=30.0,
+            ).stdout.strip()
+            self.assertEqual(status, "")
