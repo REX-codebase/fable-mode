@@ -18,8 +18,8 @@ You need Python 3.10+ and either [uv](https://docs.astral.sh/uv/getting-started/
 From the project the agent will work in:
 
 ```bash
-uvx --from fable-engine==1.3.8 fable-mode setup --dry-run
-uvx --from fable-engine==1.3.8 fable-mode setup --yes
+uvx --from fable-engine==1.3.9 fable-mode setup --dry-run
+uvx --from fable-engine==1.3.9 fable-mode setup --yes
 ```
 
 `setup` copies the complete bundled skill to `.agents/skills/fable-mode`. Use
@@ -40,7 +40,7 @@ Run `fable-engine` as its stdio MCP server.
 ### Claude Code
 
 ```bash
-claude mcp add fable-engine -- uvx --from fable-engine==1.3.8 fable-engine
+claude mcp add fable-engine -- uvx --from fable-engine==1.3.9 fable-engine
 ```
 
 ### Cursor or another JSON-configured MCP client
@@ -50,7 +50,7 @@ claude mcp add fable-engine -- uvx --from fable-engine==1.3.8 fable-engine
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.8", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.9", "fable-engine"]
     }
   }
 }
@@ -64,7 +64,7 @@ Pipe one `fable_session` argument object to `fable-mode call`:
 
 ```bash
 printf '%s\n' '{"action":"create_session","session_name":"parser-refactor","objective":"Refactor the parser without changing its public behavior","time_budget_minutes":2}' \
-  | uvx --from fable-engine==1.3.8 fable-mode call
+  | uvx --from fable-engine==1.3.9 fable-mode call
 ```
 
 The command uses JSON Lines and passes each object to the same Fable handler used

@@ -99,7 +99,7 @@ server never silently activates workspace instructions.
 Run setup from the project the agent will work in:
 
 ```bash
-uvx --from fable-engine==1.3.8 fable-mode setup --yes
+uvx --from fable-engine==1.3.9 fable-mode setup --yes
 ```
 
 This resolves the pinned package in an isolated uv environment and copies the
@@ -118,19 +118,19 @@ Then choose only the invocation that matches the agent environment.
 Run `fable-engine` as the stdio server. For example:
 
 ```jsonc
-// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.8 fable-engine
+// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.9 fable-engine
 // Cursor or another JSON-configured client:
 {
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.8", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.9", "fable-engine"]
     }
   }
 }
 ```
 
-[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.8%22%2C%22fable-engine%22%5D%7D)
+[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.9%22%2C%22fable-engine%22%5D%7D)
 
 #### Shell sandbox with internet, no MCP host
 
@@ -139,7 +139,7 @@ argument object to `fable-mode call`:
 
 ```bash
 printf '%s\n' '{"action":"create_session","session_name":"demo","objective":"Verify this change","time_budget_minutes":2}' \
-  | uvx --from fable-engine==1.3.8 fable-mode call
+  | uvx --from fable-engine==1.3.9 fable-mode call
 ```
 
 The command uses JSON Lines: one `fable_session` argument object per input line
