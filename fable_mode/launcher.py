@@ -256,6 +256,14 @@ def _shell_call() -> int:
     """Call fable_session over bounded JSON Lines without an MCP host."""
     from fable_engine.server import handle_fable_session
 
+    # JSON Lines is a UTF-8 protocol. Session text can contain characters the
+    # platform default encoding (cp1252 on Windows pipes) cannot encode, so
+    # pin both output streams to UTF-8 instead of inheriting the locale.
+    for std in (sys.stdout, sys.stderr):
+        reconfigure = getattr(std, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
     stream = getattr(sys.stdin, "buffer", sys.stdin)
     handled = 0
     while True:

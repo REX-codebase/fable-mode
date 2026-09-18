@@ -181,7 +181,7 @@ class InstallSkillCliTests(unittest.TestCase):
     def _run_cli(self, *argv, cwd):
         return subprocess.run(
             [sys.executable, "-m", "fable_mode", *argv],
-            cwd=cwd, capture_output=True, text=True,
+            cwd=cwd, capture_output=True, text=True, encoding="utf-8",
             env={**os.environ, "FABLE_DISABLE_AUTO_UPDATE": "1"})
 
     def test_cli_install_skill_with_yes(self):
@@ -225,7 +225,7 @@ class WheelInstallEndToEndTests(WheelBuildMixin, unittest.TestCase):
         env = {**os.environ, "PYTHONPATH": str(site), "FABLE_DISABLE_AUTO_UPDATE": "1"}
         result = subprocess.run(
             [sys.executable, "-m", "fable_mode", "install-skill", "--yes"],
-            cwd=workspace, env=env, capture_output=True, text=True)
+            cwd=workspace, env=env, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stderr)
         target = workspace / ".agents" / "skills" / SKILL_NAME
         installed = _tree_files(target) - {SKILL_MARKER}
@@ -244,7 +244,7 @@ class WheelInstallEndToEndTests(WheelBuildMixin, unittest.TestCase):
         request = json.dumps({"action": "list_sessions"}) + "\n"
         result = subprocess.run(
             [sys.executable, "-m", "fable_mode", "call"], input=request,
-            cwd=workspace, env=env, capture_output=True, text=True)
+            cwd=workspace, env=env, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertTrue(payload["ok"])

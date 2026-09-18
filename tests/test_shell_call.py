@@ -40,3 +40,19 @@ class ShellCallTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertEqual(stdout, "")
         self.assertIn("exceeds 1 MiB", stderr)
+
+    def test_output_stays_utf8_when_pipe_encoding_is_not(self):
+        # Windows pipes default to cp1252: session text with emoji must still
+        # reach the caller as decodable UTF-8 JSON instead of crashing.
+        buffer = io.BytesIO()
+        narrow_stdout = io.TextIOWrapper(buffer, encoding="cp1252")
+        stdin = io.TextIOWrapper(io.BytesIO(b'{"action": "list_sessions"}\n'), encoding="utf-8")
+        with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", narrow_stdout), \
+                mock.patch("fable_engine.server.handle_fable_session",
+                           return_value="### \U0001f5c2\ufe0f Available Fable Sessions"):
+            status = _shell_call()
+        narrow_stdout.flush()
+        self.assertEqual(status, 0)
+        payload = json.loads(buffer.getvalue().decode("utf-8"))
+        self.assertTrue(payload["ok"])
+        self.assertIn("\U0001f5c2\ufe0f", payload["result"])
