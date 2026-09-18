@@ -379,3 +379,55 @@ class TestSystem3ExecutiveAndArbitration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestObservedAutomaticEvolution(unittest.TestCase):
+    def test_evidence_fed_loop_stops_and_requires_external_acceptance(self):
+        pool = CognitiveGenePool(population_size=6, mutation_rate=0.1, random_seed=7)
+        pool.initialize_population()
+        calls = []
+        def measured(genome):
+            calls.append(genome.genome_id)
+            return {dim: 0.8 for dim in PARETO_DIMENSIONS}
+        receipt = pool.evolve_until_stable(measured, max_generations=10, patience=2)
+        self.assertEqual(receipt["stop_reason"], "stagnation")
+        self.assertLess(receipt["generations_run"], 10)
+        self.assertTrue(receipt["requires_external_acceptance"])
+        self.assertTrue(calls)
+        self.assertEqual(len(pool.observation_history), receipt["generations_run"])
+        restored = CognitiveGenePool.from_dict(pool.to_dict())
+        self.assertEqual(restored.observation_history, pool.observation_history)
+        self.assertEqual(restored.rng.random(), pool.rng.random())
+
+    def test_automatic_loop_is_bounded_and_rejects_non_evaluator(self):
+        pool = CognitiveGenePool(population_size=4, random_seed=3)
+        with self.assertRaises(TypeError):
+            pool.evolve_until_stable(None)  # type: ignore[arg-type]
+
+class TestObservedEvolutionHandler(unittest.TestCase):
+    def setUp(self):
+        from fable_engine.session import ACTIVE_SESSIONS, FableSession
+        self.name = "observed-evolution-handler"
+        ACTIVE_SESSIONS[self.name] = FableSession(self.name, "measured evolution", 2.0)
+
+    def tearDown(self):
+        from fable_engine.session import ACTIVE_SESSIONS
+        ACTIVE_SESSIONS.pop(self.name, None)
+
+    def test_handler_runs_measured_loop_with_external_acceptance_boundary(self):
+        from fable_engine.actions.system3 import _handle_system3_evolve_paradigms
+        scores = {"*": {dim: 0.8 for dim in PARETO_DIMENSIONS}}
+        out = _handle_system3_evolve_paradigms({
+            "session_name": self.name,
+            "generations": 4,
+            "population_size": 4,
+            "stagnation_patience": 2,
+            "observed_fitness": scores,
+        })
+        self.assertIn("Measured Loop", out)
+        self.assertIn("external acceptance required", out)
+        self.assertIn("Stop Reason", out)
+
+    def test_handler_rejects_empty_observations(self):
+        from fable_engine.actions.system3 import _handle_system3_evolve_paradigms
+        out = _handle_system3_evolve_paradigms({"session_name": self.name, "observed_fitness": {}})
+        self.assertIn("non-empty", out)

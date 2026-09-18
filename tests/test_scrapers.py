@@ -368,3 +368,23 @@ class TestScraperActionsAndEpistemicLog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestResearchIntegrityMetadata(unittest.TestCase):
+    def test_success_result_has_stable_integrity_and_origin(self):
+        result = ResearchResult(
+            ok=True,
+            source_type="web",
+            canonical_url="HTTPS://Example.COM:443/path?q=1",
+            content="evidence body",
+        )
+        self.assertEqual(result.metadata["canonical_origin"], "https://example.com")
+        self.assertEqual(result.metadata["content_bytes"], 13)
+        self.assertEqual(len(result.metadata["content_sha256"]), 64)
+        again = ResearchResult(ok=True, source_type="web", canonical_url="https://example.com/other", content="evidence body")
+        ipv6 = ResearchResult(ok=True, source_type="web", canonical_url="https://[2606:4700:4700::1111]/", content="v6")
+        self.assertEqual(ipv6.metadata["canonical_origin"], "https://[2606:4700:4700::1111]")
+        self.assertEqual(result.metadata["content_sha256"], again.metadata["content_sha256"])
+
+    def test_failure_does_not_claim_content_integrity(self):
+        result = ResearchResult(ok=False, source_type="web", canonical_url="", error="failed")
+        self.assertNotIn("content_sha256", result.metadata)

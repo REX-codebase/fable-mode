@@ -143,6 +143,10 @@ class TestStealthAgentBrowser(unittest.TestCase):
             tool for tool in BROWSER_TOOL_SCHEMAS if tool["name"] == "browser_click"
         )
         self.assertIn("href", click_schema["description"])
+        self.assertIn("GET form", click_schema["description"])
+        self.assertIn("password", click_schema["description"])
+        self.assertIn("annotations", click_schema)
+        self.assertIn("outputSchema", click_schema)
         self.assertIn(
             "href", click_schema["inputSchema"]["properties"]["element_id"]["description"]
         )
@@ -988,3 +992,41 @@ with patch('pathlib.Path.mkdir', side_effect=PermissionError('read-only home')):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestSafeGetFormSemantics(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.session = StealthBrowserSession("forms", ProfileManager(profile_dir=self.tmp.name))
+
+    def tearDown(self):
+        self.session.close()
+        self.tmp.cleanup()
+
+    def _load(self, html):
+        self.session._commit_navigation("https://example.test/search?existing=1", html, True)
+
+    def test_click_submits_named_get_controls_and_preserves_query(self):
+        self._load('<form action="/find" method="get"><input id="q" name="q"><input name="skip" disabled><button id="go">Go</button></form>')
+        self.session.type_text("q", "fable mode")
+        with patch.object(self.session, "open", return_value={"status": "ok"}) as opened:
+            result = self.session.click("go")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(opened.call_args.args[0], "https://example.test/find?q=fable+mode")
+
+    def test_enter_submits_get_form_but_post_is_refused(self):
+        self._load('<form action="/find"><input id="q" name="q"></form>')
+        self.session.type_text("q", "safe")
+        with patch.object(self.session, "open", return_value={"status": "ok"}) as opened:
+            self.session.press_key("Enter", "q")
+        self.assertEqual(opened.call_args.args[0], "https://example.test/find?q=safe")
+
+        self._load('<form action="/write" method="post"><input id="q" name="q"><button id="go">Go</button></form>')
+        result = self.session.click("go")
+        self.assertEqual(result["status"], "error")
+        self.assertIn("may mutate remote state", result["error"])
+
+        self._load('<form action="/login"><input id="pw" name="password" type="password"><button id="go">Go</button></form>')
+        self.session.type_text("pw", "never-in-a-query")
+        result = self.session.click("go")
+        self.assertEqual(result["status"], "error")
+        self.assertIn("credential leakage", result["error"])

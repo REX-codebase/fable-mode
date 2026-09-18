@@ -571,18 +571,69 @@ class StealthBrowserSession:
         self.scroll_y = max(0, min(self.scroll_y + delta_y, self.document_height - self.viewport_height))
         return self._build_status()
 
+    def _ancestor_form(self, elem: DOMElement) -> Optional[DOMElement]:
+        current = elem.parent
+        while current is not None:
+            if current.tag == "form":
+                return current
+            current = current.parent
+        return None
+
+    def _submit_get_form(self, form: DOMElement) -> Dict[str, Any]:
+        """Submit a GET form through normal navigation; never synthesize a write request."""
+        method = form.attrs.get("method", "get").strip().lower() or "get"
+        if method != "get":
+            return {
+                "status": "error",
+                "error": f"Form method '{method.upper()}' is unsupported because it may mutate remote state",
+                "element_id": form.element_id,
+            }
+        action = urllib.parse.urljoin(self.url, form.attrs.get("action") or self.url)
+        pairs: List[Tuple[str, str]] = []
+        stack = list(reversed(form.children))
+        while stack:
+            node = stack.pop()
+            stack.extend(reversed(node.children))
+            name = node.attrs.get("name", "").strip()
+            if not name or node.attrs.get("disabled") is not None:
+                continue
+            if node.tag == "textarea":
+                pairs.append((name, node.attrs.get("value", node.text)))
+            elif node.tag == "input":
+                input_type = node.attrs.get("type", "text").lower()
+                if input_type == "password":
+                    return {
+                        "status": "error",
+                        "error": "GET form submission with a password field is blocked to prevent credential leakage",
+                        "element_id": form.element_id,
+                    }
+                if input_type in ("submit", "button", "reset", "file", "image"):
+                    continue
+                if input_type in ("checkbox", "radio") and "checked" not in node.attrs:
+                    continue
+                pairs.append((name, node.attrs.get("value", "on" if input_type in ("checkbox", "radio") else "")))
+        parsed = urllib.parse.urlsplit(action)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) + pairs
+        target = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), parsed.fragment))
+        return self.open(target)
+
     def click(self, element_id: str) -> Dict[str, Any]:
-        """Follow an element's link target; non-link controls are unsupported."""
+        """Follow a link or activate a safe GET form control."""
         elem = self.elements_by_id.get(element_id)
         if not elem:
-            return {"error": f"Element '{element_id}' not found"}
+            return {"status": "error", "error": f"Element '{element_id}' not found"}
         href = elem.attrs.get("href")
         if href is not None:
             target_url = urllib.parse.urljoin(self.url, href)
             return self.open(target_url)
+        input_type = elem.attrs.get("type", "").lower()
+        if elem.tag == "button" or (elem.tag == "input" and input_type in ("submit", "image")):
+            form = self._ancestor_form(elem)
+            if form is not None:
+                return self._submit_get_form(form)
         return {
             "status": "error",
-            "error": f"Click is unsupported for <{elem.tag}> elements without a link target",
+            "error": f"Click is unsupported for <{elem.tag}> elements without a link or safe GET form target",
             "element_id": element_id,
         }
 
@@ -672,6 +723,10 @@ class StealthBrowserSession:
                     updated_value = current_value + " "
                 elif key == "Enter" and target.tag == "textarea":
                     updated_value = current_value + "\n"
+                elif key == "Enter" and target.tag == "input":
+                    form = self._ancestor_form(target)
+                    if form is not None:
+                        return self._submit_get_form(form)
                 elif len(key) == 1:
                     updated_value = current_value + key
                 if updated_value is not None and updated_value != current_value:

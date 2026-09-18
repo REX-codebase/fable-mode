@@ -282,11 +282,53 @@ def _handle_system3_evolve_paradigms(arguments: Dict[str, Any]) -> str:
     )
     pool.initialize_population(seed_paradigms=seed_paradigms)
 
-    for _ in range(generations):
-        pool.evolve_generation()
+    observed_scores = arguments.get("observed_fitness")
+    if isinstance(observed_scores, str):
+        try:
+            observed_scores = json.loads(observed_scores)
+        except Exception:
+            return "Error: 'observed_fitness' must be a JSON object keyed by genome ID or '*' default."
+
+    evolution_receipt = None
+    if observed_scores is not None:
+        if not isinstance(observed_scores, dict) or not observed_scores:
+            return "Error: 'observed_fitness' must be a non-empty object keyed by genome ID or '*' default."
+
+        def observed_evaluator(genome: CognitiveGenome) -> Dict[str, float]:
+            raw = observed_scores.get(genome.genome_id, observed_scores.get("*"))
+            if not isinstance(raw, dict):
+                raise ValueError(f"Missing observed fitness for genome '{genome.genome_id}' and no '*' default was supplied.")
+            normalized: Dict[str, float] = {}
+            for dim in pool.population[0].fitness_scores.keys() or []:
+                if dim in raw:
+                    normalized[dim] = max(0.0, min(1.0, float(raw[dim])))
+            if not normalized:
+                from fable_v2.system3 import PARETO_DIMENSIONS
+                for dim in PARETO_DIMENSIONS:
+                    if dim in raw:
+                        normalized[dim] = max(0.0, min(1.0, float(raw[dim])))
+            if not normalized:
+                raise ValueError("Observed fitness rows must contain at least one recognized Pareto dimension.")
+            return normalized
+
+        try:
+            evolution_receipt = pool.evolve_until_stable(
+                observed_evaluator,
+                max_generations=generations,
+                patience=int(arguments.get("stagnation_patience", min(4, max(1, generations)))),
+                min_improvement=float(arguments.get("min_improvement", 0.001)),
+                weights=weights,
+            )
+        except (TypeError, ValueError) as exc:
+            return f"Error: Invalid observed fitness: {exc}"
+    else:
+        for _ in range(generations):
+            pool.evolve_generation()
 
     pareto_frontier = pool.get_pareto_frontier()
-    best_genome = pool.get_best_genome(weights)
+    best_genome = pool.get_best_genome(weights) if evolution_receipt is None else max(
+        pool.population, key=lambda g: g.compute_scalar_fitness(weights)
+    )
 
     session = get_or_load_session(session_name)
     session.system3_gene_pools.append(pool.to_dict())
@@ -316,7 +358,10 @@ def _handle_system3_evolve_paradigms(arguments: Dict[str, Any]) -> str:
         f"- **Session**: `{session.session_name}`\n"
         f"- **Generations Evolved**: `{pool.generation_count}` (Population: `{len(pool.population)}`)\n"
         f"- **Rank 1 Pareto Frontier Size**: `{len(pareto_frontier)}` non-dominated solutions\n"
-        f"- **Top Archetype**: **{best_genome.paradigm_name}** (`{best_genome.genome_id}`)\n\n"
+        f"- **Top Archetype**: **{best_genome.paradigm_name}** (`{best_genome.genome_id}`)\n"
+        f"- **Measured Loop**: `{'ACTIVE - external acceptance required' if evolution_receipt else 'structural heuristic mode'}`\n"
+        + (f"- **Stop Reason**: `{evolution_receipt['stop_reason']}`\n" if evolution_receipt else "")
+        + "\n"
         f"#### 🏆 Top Rank 1 Non-Dominated Pareto Frontier:\n"
         f"| ID | Paradigm | Lat | Tput | Mem | Fault | Mod | Sec | Token | Score |\n"
         f"|---|---|---|---|---|---|---|---|---|---|\n"

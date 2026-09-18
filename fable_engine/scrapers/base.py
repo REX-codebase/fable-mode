@@ -8,6 +8,7 @@ clamped retry/backoff, response bounds, and explicit untrusted external content 
 from __future__ import annotations
 
 import datetime
+import hashlib
 import http.client
 import ipaddress
 import json
@@ -173,6 +174,23 @@ class DomainRateLimiter:
 GLOBAL_RATE_LIMITER = DomainRateLimiter(min_interval_seconds=0.3)
 
 
+def _canonical_origin(url: str) -> str:
+    """Return a stable, credential-free origin for provenance metadata."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+            return ""
+        host = parsed.hostname.lower().rstrip(".")
+        if ":" in host:
+            host = f"[{host}]"
+        port = parsed.port
+        default_port = 443 if parsed.scheme.lower() == "https" else 80
+        authority = host if port in (None, default_port) else f"{host}:{port}"
+        return f"{parsed.scheme.lower()}://{authority}"
+    except (TypeError, ValueError):
+        return ""
+
+
 @dataclass
 class ResearchResult:
     """Structured research retrieval result."""
@@ -189,6 +207,14 @@ class ResearchResult:
     def __post_init__(self):
         if "trust_level" not in self.metadata:
             self.metadata["trust_level"] = "untrusted_external_content"
+        # Every successful extraction carries deterministic integrity/provenance facts.
+        # This does not make external content trusted; it lets callers detect repeated,
+        # changed, or accidentally truncated evidence without source-specific code.
+        if self.ok:
+            encoded = self.content.encode("utf-8", errors="replace")
+            self.metadata.setdefault("content_bytes", len(encoded))
+            self.metadata.setdefault("content_sha256", hashlib.sha256(encoded).hexdigest())
+            self.metadata.setdefault("canonical_origin", _canonical_origin(self.canonical_url))
 
     def to_markdown(self) -> str:
         """Formats the structured research result as readable Markdown with explicit untrusted content boundaries."""

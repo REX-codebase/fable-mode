@@ -16,6 +16,13 @@ import random
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 
+def _tuplify(value: Any) -> Any:
+    """Restore nested JSON arrays to tuples for random.Random state."""
+    if isinstance(value, list):
+        return tuple(_tuplify(item) for item in value)
+    return value
+
+
 PARETO_DIMENSIONS = [
     "latency",             # Speed / execution responsiveness (higher is better)
     "throughput",          # Concurrency / operations per second
@@ -159,6 +166,7 @@ class CognitiveGenePool:
         self.population: List[CognitiveGenome] = []
         self.generation_count: int = 0
         self.history: List[Dict[str, Any]] = []
+        self.observation_history: List[Dict[str, Any]] = []
 
     def initialize_population(
         self,
@@ -464,6 +472,68 @@ class CognitiveGenePool:
 
         return self.get_pareto_frontier()
 
+    def evolve_until_stable(
+        self,
+        fitness_fn: Callable[[CognitiveGenome], Dict[str, float]],
+        max_generations: int = 20,
+        patience: int = 4,
+        min_improvement: float = 0.001,
+        weights: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Any]:
+        """Run a bounded evidence-fed loop and stop when measured fitness stagnates.
+
+        The evaluator is caller-owned and must return observed scores. This method only
+        searches/ranks candidates; it never edits files, deploys, or accepts a winner.
+        Mutation adapts within fixed bounds to escape stagnation and returns a complete
+        serializable receipt for deterministic review or resumption.
+        """
+        if not callable(fitness_fn):
+            raise TypeError("fitness_fn must be callable")
+        max_generations = max(1, min(int(max_generations), 100))
+        patience = max(1, min(int(patience), max_generations))
+        min_improvement = max(0.0, float(min_improvement))
+        if not self.population:
+            self.initialize_population()
+
+        best_score = -math.inf
+        stagnant = 0
+        stop_reason = "max_generations"
+        observations: List[Dict[str, Any]] = []
+        for _ in range(max_generations):
+            frontier = self.evolve_generation(fitness_fn=fitness_fn)
+            best = max(self.population, key=lambda g: g.compute_scalar_fitness(weights))
+            score = best.compute_scalar_fitness(weights)
+            improved = score > best_score + min_improvement
+            stagnant = 0 if improved else stagnant + 1
+            best_score = max(best_score, score)
+            record = {
+                "generation": self.generation_count,
+                "best_genome_id": best.genome_id,
+                "best_score": score,
+                "frontier_size": len(frontier),
+                "improved": improved,
+                "mutation_rate": round(self.mutation_rate, 6),
+            }
+            observations.append(record)
+            self.observation_history.append(record)
+            if stagnant >= patience:
+                stop_reason = "stagnation"
+                break
+            if stagnant:
+                self.mutation_rate = min(0.5, self.mutation_rate * 1.25)
+            elif improved:
+                self.mutation_rate = max(0.01, self.mutation_rate * 0.95)
+
+        winner = max(self.population, key=lambda g: g.compute_scalar_fitness(weights))
+        return {
+            "stop_reason": stop_reason,
+            "generations_run": len(observations),
+            "best_genome": winner.to_dict(),
+            "best_score": winner.compute_scalar_fitness(weights),
+            "observations": observations,
+            "requires_external_acceptance": True,
+        }
+
     def get_pareto_frontier(self) -> List[CognitiveGenome]:
         """Return the current Generation's Rank 1 non-dominated Pareto frontier."""
         fronts = self.fast_non_dominated_sort()
@@ -485,6 +555,8 @@ class CognitiveGenePool:
             "crossover_rate": self.crossover_rate,
             "population": [g.to_dict() for g in self.population],
             "history": self.history,
+            "observation_history": self.observation_history,
+            "random_state": self.rng.getstate(),
         }
 
     @classmethod
@@ -497,6 +569,9 @@ class CognitiveGenePool:
         )
         pool.generation_count = data.get("generation_count", 0)
         pool.history = data.get("history", [])
+        pool.observation_history = data.get("observation_history", [])
+        if "random_state" in data:
+            pool.rng.setstate(_tuplify(data["random_state"]))
         pool.population = [
             CognitiveGenome.from_dict(g) for g in data.get("population", [])
         ]

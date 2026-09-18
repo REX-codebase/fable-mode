@@ -306,6 +306,20 @@ TOOL_SCHEMA = {
                 "description": "Optional dictionary of weights across the 10 Pareto dimensions.",
                 "type": ["object", "string"]
             },
+            "observed_fitness": {
+                "description": "Optional measured fitness object keyed by genome ID, with '*' as a default row. Supplying it enables bounded evidence-fed evolution with stagnation stopping; values are clamped to [0, 1] and never authorize deployment.",
+                "type": ["object", "string"]
+            },
+            "stagnation_patience": {
+                "description": "Measured generations without improvement before automatic evolution stops (default min(4, generations)).",
+                "type": "integer",
+                "minimum": 1
+            },
+            "min_improvement": {
+                "description": "Minimum scalar measured-fitness gain required to reset stagnation (default 0.001).",
+                "type": "number",
+                "minimum": 0
+            },
             "task_complexity": {
                 "type": "number",
                 "description": "Task complexity index [0.0, 1.0] for tri-level cognitive arbitration."
@@ -625,11 +639,14 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_click",
-        "description": "Navigates to the href of a link element by its stable element ID. Elements without an href are unsupported.",
+        "title": "Activate a safe browser target",
+        "annotations": {"title": "Activate a safe browser target", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+        "outputSchema": {"type": "object", "additionalProperties": True},
+        "description": "Activates an href-bearing link or submits a GET form through normal browser navigation. POST and other form methods are refused, and GET forms containing password fields are blocked to prevent credential leakage. Returns the resulting page status or a bounded error without bypassing existing navigation controls.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "Stable element ID of an href-bearing link."},
+                "element_id": {"type": "string", "description": "Stable element ID of an href-bearing link or submit control inside a safe GET form."},
                 "session_id": {"type": "string", "description": "Optional browser tab/session identifier."}
             },
             "required": ["element_id"]

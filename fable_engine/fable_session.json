@@ -156,7 +156,7 @@
         "type": "number"
       },
       "curvature": {
-        "description": "Sectional curvature c > 0 of Poincar\u00e9 manifold (default 1.0).",
+        "description": "Sectional curvature c > 0 of Poincaré manifold (default 1.0).",
         "type": "number"
       },
       "d_prior": {
@@ -167,7 +167,7 @@
         ]
       },
       "dimension": {
-        "description": "Dimension of Poincar\u00e9 ball manifold (default 2).",
+        "description": "Dimension of Poincaré ball manifold (default 2).",
         "type": "integer"
       },
       "domain": {
@@ -597,6 +597,23 @@
       "user_prompt": {
         "description": "Alias for prompt: high-level design prompt describing desired web experience.",
         "type": "string"
+      },
+      "observed_fitness": {
+        "description": "Optional measured fitness object keyed by genome ID, with '*' as a default row. Enables bounded evidence-fed evolution and does not authorize deployment.",
+        "type": [
+          "object",
+          "string"
+        ]
+      },
+      "stagnation_patience": {
+        "description": "Measured generations without improvement before automatic evolution stops.",
+        "type": "integer",
+        "minimum": 1
+      },
+      "min_improvement": {
+        "description": "Minimum scalar measured-fitness gain required to reset stagnation.",
+        "type": "number",
+        "minimum": 0
       }
     },
     "required": [
