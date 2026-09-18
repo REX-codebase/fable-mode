@@ -249,10 +249,51 @@ def _is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
 
 
+MAX_SHELL_REQUEST_BYTES = 1 * 1024 * 1024
+
+
+def _shell_call() -> int:
+    """Call fable_session over bounded JSON Lines without an MCP host."""
+    from fable_engine.server import handle_fable_session
+
+    stream = getattr(sys.stdin, "buffer", sys.stdin)
+    handled = 0
+    while True:
+        raw = stream.readline(MAX_SHELL_REQUEST_BYTES + 1)
+        if not raw:
+            break
+        if isinstance(raw, str):
+            raw = raw.encode("utf-8")
+        if len(raw) > MAX_SHELL_REQUEST_BYTES or (len(raw) == MAX_SHELL_REQUEST_BYTES + 1 and not raw.endswith(b"\n")):
+            print("call: request exceeds 1 MiB", file=sys.stderr)
+            return 2
+        if not raw.strip():
+            continue
+        try:
+            request = json.loads(raw.decode("utf-8"))
+            if not isinstance(request, dict):
+                raise ValueError("request must be a JSON object")
+            if not isinstance(request.get("action"), str) or not request["action"]:
+                raise ValueError("request must include a non-empty string action")
+            result = handle_fable_session(request)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
+            print(f"call: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:
+            print(f"call: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps({"ok": True, "result": result}, ensure_ascii=False), flush=True)
+        handled += 1
+    if not handled:
+        print("call: expected at least one JSON object on stdin", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fable-mode")
     p.add_argument("--version", action="version", version=__version__)
-    p.add_argument("mode", nargs="?", choices=("install", "serve", "verify", "version", "uninstall", "install-skill"), default="install")
+    p.add_argument("mode", nargs="?", choices=("install", "serve", "verify", "version", "uninstall", "install-skill", "setup", "call"), default="install")
     p.add_argument("--yes", action="store_true", help="confirm unattended installation")
     p.add_argument("--register-hosts", action="store_true")
     p.add_argument("--aliases", action="store_true", help="also probe legacy cc/antigravity aliases")
@@ -305,7 +346,9 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"serve: {exc}", file=sys.stderr)
             return 1
-    if args.mode == "install-skill":
+    if args.mode == "call":
+        return _shell_call()
+    if args.mode in {"install-skill", "setup"}:
         target = (Path(args.target).expanduser() if args.target
                   else Path.cwd() / ".agents" / "skills" / SKILL_NAME)
         if not args.dry_run and not args.yes:
@@ -329,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{verb} the Fable Mode Agent Skill ({result.planned} files: {changes}) to {result.target}")
         if not result.dry_run:
             print("Restart or reload your agent to pick up the skill.")
+        if args.mode == "setup":
+            print("Native MCP: run `fable-engine` as a stdio server.")
+            print("Shell sandbox: pipe one fable_session argument object to `fable-mode call`.")
         return 0
     installer = Installer(Path(args.install_dir) if args.install_dir else None)
     if args.mode == "verify":

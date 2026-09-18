@@ -202,6 +202,14 @@ class InstallSkillCliTests(unittest.TestCase):
         self.assertIn("Would install", result.stdout)
         self.assertFalse((self.root / ".agents").exists())
 
+    def test_cli_setup_installs_skill_and_prints_both_routes(self):
+        result = self._run_cli("setup", "--yes", cwd=self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = self.root / ".agents" / "skills" / SKILL_NAME
+        self.assertEqual(_tree_files(target) - {SKILL_MARKER}, _tree_files(SKILL_TREE))
+        self.assertIn("Native MCP", result.stdout)
+        self.assertIn("Shell sandbox", result.stdout)
+
 
 class WheelInstallEndToEndTests(WheelBuildMixin, unittest.TestCase):
     """The real path: install the wheel, then install the skill from it."""
@@ -224,6 +232,23 @@ class WheelInstallEndToEndTests(WheelBuildMixin, unittest.TestCase):
         self.assertEqual(installed, _tree_files(SKILL_TREE))
         for rel in installed:
             self.assertEqual((target / rel).read_bytes(), (SKILL_TREE / rel).read_bytes())
+
+    def test_shell_call_from_installed_wheel(self):
+        site = Path(self._tmp.name) / "shell-site"
+        with zipfile.ZipFile(self.wheel_path) as wheel:
+            wheel.extractall(site)
+        workspace = Path(self._tmp.name) / "shell-workspace"
+        workspace.mkdir()
+        env = {**os.environ, "PYTHONPATH": str(site), "FABLE_DISABLE_AUTO_UPDATE": "1",
+               "FABLE_DATA_DIR": str(workspace / "data")}
+        request = json.dumps({"action": "list_sessions"}) + "\n"
+        result = subprocess.run(
+            [sys.executable, "-m", "fable_mode", "call"], input=request,
+            cwd=workspace, env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertIn("Available Fable Sessions", payload["result"])
 
 
 if __name__ == "__main__":

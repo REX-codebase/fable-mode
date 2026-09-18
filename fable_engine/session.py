@@ -1567,7 +1567,7 @@ class FableSession:
     def to_dict(self) -> Dict[str, Any]:
         """Serializes session to dictionary."""
         return {
-            "version": "1.3.7",
+            "version": "1.3.8",
             "session_name": self.session_name,
             "session_id": self.session_id,
             "objective": self.objective,

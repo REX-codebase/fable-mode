@@ -90,56 +90,73 @@ red-team swarm for code, and a sealed record of what was verified.
 
 <br/>
 
-### Install
+### One package, two agent environments
+
+Fable ships as one PyPI package. The same package contains the runtime, stdio
+MCP server, and complete Agent Skill. Setup is explicit so installing an MCP
+server never silently activates workspace instructions.
+
+Run setup from the project the agent will work in:
 
 ```bash
-pip install fable-engine
+uvx --from fable-engine==1.3.8 fable-mode setup --yes
 ```
 
-Or install the MCP server in your editor:
+This resolves the pinned package in an isolated uv environment and copies the
+bundled skill to `.agents/skills/fable-mode`. Use `--dry-run` to preview or
+`--target <dir>` for another skill directory. For a persistent install, use:
 
-[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.7%22%2C%22fable-engine%22%5D%7D)
-[![Add to Cursor](https://img.shields.io/badge/Cursor-Add_MCP_server-black)](cursor://anysphere.cursor-deeplink/mcp/install?name=fable-engine&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJmYWJsZS1lbmdpbmU9PTEuMy4zIiwiZmFibGUtZW5naW5lIl19)
+```bash
+python -m pip install fable-engine
+fable-mode setup --yes
+```
 
-These links configure Fable Engine for AI agents in VS Code Chat or Cursor. They do not install a standalone editor extension. Both use `uvx`, which downloads and runs the pinned PyPI release in an isolated environment.
+Then choose only the invocation that matches the agent environment.
 
-Point your agent at the MCP server manually:
+#### Native MCP client
+
+Run `fable-engine` as the stdio server. For example:
 
 ```jsonc
-// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.7 fable-engine
-// Cursor: ~/.cursor/mcp.json
+// Claude Code: claude mcp add fable-engine -- uvx --from fable-engine==1.3.8 fable-engine
+// Cursor or another JSON-configured client:
 {
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.7", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.8", "fable-engine"]
     }
   }
 }
 ```
 
-Python 3.10+, zero runtime dependencies. Published on [PyPI as `fable-engine`](https://pypi.org/project/fable-engine/).
+[![Install MCP server in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-007ACC?logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22fable-engine%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22fable-engine%3D%3D1.3.8%22%2C%22fable-engine%22%5D%7D)
 
-<br/>
+#### Shell sandbox with internet, no MCP host
 
-### Optional: the Agent Skill
-
-Installing `fable-engine` gives your agent the MCP tools. It does not install
-or activate the Fable Mode Agent Skill - the prompt-side workflow in
-[`skills/fable-mode`](./skills/fable-mode/SKILL.md). Nothing in the package
-activates those instructions on its own; the skill is always a separate,
-explicit opt-in.
-
-The complete skill tree ships inside the wheel. To install it into your
-project's skills directory (the cross-client `.agents/skills/` convention):
+The same package exposes a direct JSON transport. Pipe one `fable_session`
+argument object to `fable-mode call`:
 
 ```bash
-uvx --from fable-engine==1.3.7 fable-mode install-skill --yes
+printf '%s\n' '{"action":"create_session","session_name":"demo","objective":"Verify this change","time_budget_minutes":2}' \
+  | uvx --from fable-engine==1.3.8 fable-mode call
 ```
 
-This copies the skill to `.agents/skills/fable-mode`. Preview first with
-`--dry-run`, choose another location with `--target <dir>`, and reload your
-agent afterwards so it picks up the skill.
+The command uses JSON Lines: one `fable_session` argument object per input line
+and one JSON result per output line. Keep that process open for a full workflow so
+the authority timer and session stay in the same trusted runtime. A one-line pipe
+is useful for a single inspection call. Each uvx command can resolve an
+isolated environment; `pip install` is better when the sandbox keeps a Python
+environment between calls. Session data persists outside that environment in
+Fable's data directory (`FABLE_DATA_DIR` can override it).
+
+Python 3.10+, zero runtime dependencies. Published on [PyPI as `fable-engine`](https://pypi.org/project/fable-engine/).
+
+#### Skill activation remains explicit
+
+`setup` is the unified path. The older `install-skill` command remains as a
+compatible alias for skill-only installation. Neither `fable-engine` nor
+`pip install fable-engine` writes instructions into a workspace on its own.
 
 <br/>
 

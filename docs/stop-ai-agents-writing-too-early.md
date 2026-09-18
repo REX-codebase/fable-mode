@@ -2,27 +2,45 @@
 
 AI coding agents often move from a plausible plan to editing files before they have gathered enough evidence. Fable Mode adds a mechanical session gate: the agent can inspect and reason, but the Fable Engine will not report write permission until the configured authority timer and proof prerequisites pass.
 
-Fable Mode is two separate pieces:
+Fable Mode ships as one package with three parts:
 
-- **Fable Engine** is the MCP server that stores session state and enforces its gates.
-- **The Fable Mode Agent Skill** is the optional workflow that tells a compatible agent how to use those gates.
+- **Fable Engine** is the stdio MCP server that stores session state and enforces its gates.
+- **The Fable Mode Agent Skill** is the bundled workflow for compatible agents.
+- **The shell transport** calls the same `fable_session` API when an agent has a shell and internet but no MCP host.
 
-Installing one does not silently activate the other.
+The package is unified; activation stays explicit. Installing or launching the
+server does not silently write Agent Skill instructions into a project.
 
-## Install the engine
+## Set up from one package
 
-You need Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+You need Python 3.10+ and either [uv](https://docs.astral.sh/uv/getting-started/installation/) or pip.
 
-Run the pinned release without changing your global Python environment:
+From the project the agent will work in:
 
 ```bash
-uvx --from fable-engine==1.3.7 fable-engine
+uvx --from fable-engine==1.3.8 fable-mode setup --dry-run
+uvx --from fable-engine==1.3.8 fable-mode setup --yes
 ```
+
+`setup` copies the complete bundled skill to `.agents/skills/fable-mode`. Use
+`--target <dir>` for another skill directory. The installer refuses to
+overwrite local edits unless you pass `--force`.
+
+For a persistent environment, install the same package once:
+
+```bash
+python -m pip install fable-engine
+fable-mode setup --yes
+```
+
+## Route A: an agent with native MCP access
+
+Run `fable-engine` as its stdio MCP server.
 
 ### Claude Code
 
 ```bash
-claude mcp add fable-engine -- uvx --from fable-engine==1.3.7 fable-engine
+claude mcp add fable-engine -- uvx --from fable-engine==1.3.8 fable-engine
 ```
 
 ### Cursor or another JSON-configured MCP client
@@ -32,26 +50,33 @@ claude mcp add fable-engine -- uvx --from fable-engine==1.3.7 fable-engine
   "mcpServers": {
     "fable-engine": {
       "command": "uvx",
-      "args": ["--from", "fable-engine==1.3.7", "fable-engine"]
+      "args": ["--from", "fable-engine==1.3.8", "fable-engine"]
     }
   }
 }
 ```
 
-Restart or reload the client, then inspect its MCP tools. You should see `fable_session` plus the browser tools exposed by the server.
+Restart or reload the client. Its tool list should include `fable_session`.
 
-## Install the optional Agent Skill
+## Route B: an internet-enabled shell sandbox without MCP access
 
-From the root of the project where you want the skill:
+Pipe one `fable_session` argument object to `fable-mode call`:
 
 ```bash
-uvx --from fable-engine==1.3.7 fable-mode install-skill --dry-run
-uvx --from fable-engine==1.3.7 fable-mode install-skill --yes
+printf '%s\n' '{"action":"create_session","session_name":"parser-refactor","objective":"Refactor the parser without changing its public behavior","time_budget_minutes":2}' \
+  | uvx --from fable-engine==1.3.8 fable-mode call
 ```
 
-The default destination is `.agents/skills/fable-mode`. Use `--target <dir>` for a different skill directory. The installer refuses to overwrite local edits unless you pass `--force`.
+The command uses JSON Lines and passes each object to the same Fable handler used
+by MCP. It prints one machine-readable result per input line. Keep one process
+open for the full Think -> Prove -> Attack -> Write workflow; restarting the
+process intentionally starts a fresh authority clock. Invalid, empty, non-object,
+or over-1-MiB requests fail with a nonzero exit code and write the error to stderr.
 
-Reload the agent after installation.
+For later calls, send the same argument objects shown below. When repeated uvx
+calls are undesirable, use the persistent pip installation and replace the
+command after the pipe with `fable-mode call`. Session files live outside the
+uvx environment; set `FABLE_DATA_DIR` to choose their location.
 
 ## Run a first session
 
